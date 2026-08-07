@@ -8,7 +8,10 @@ from typing import Any
 __all__ = ["describe", "log_fields", "summary"]
 
 #: The attributes a record already carries, which `extra=` is forbidden to overwrite.
-_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {"message", "asctime"}
+_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {
+    "message",
+    "asctime",
+}
 
 
 def summary(error: BaseException) -> str:
@@ -19,7 +22,10 @@ def summary(error: BaseException) -> str:
 
 def describe(error: BaseException) -> dict[str, Any]:
     """An exception as fields, with `cause` from a chained one, which is regularly the more interesting."""
-    described: dict[str, Any] = {"error": type(error).__name__, "message": " ".join(str(error).split())}
+    described: dict[str, Any] = {
+        "error": type(error).__name__,
+        "message": " ".join(str(error).split()),
+    }
     cause = error.__cause__ or error.__context__
     if cause is not None:
         described["cause"] = summary(cause)
@@ -31,4 +37,6 @@ def log_fields(error: BaseException | None = None, /, **context: Any) -> dict[st
     fields: dict[str, Any] = dict(context)
     if error is not None:
         fields.update(describe(error))
-    return {(f"detail_{name}" if name in _RESERVED else name): value for name, value in fields.items()}
+    return {
+        (f"detail_{name}" if name in _RESERVED else name): value for name, value in fields.items()
+    }

@@ -1,7 +1,28 @@
 "use client";
 
-import { Box, Code, Heading, Image, Link, List, Separator, Span, Table, Text } from "@chakra-ui/react";
-import { Children, memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
+import {
+  Box,
+  Code,
+  Heading,
+  Image,
+  Link,
+  List,
+  Separator,
+  Span,
+  Table,
+  Text,
+} from "@chakra-ui/react";
+import {
+  Children,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type SyntheticEvent,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -43,7 +64,9 @@ const twemojiStyle: CSSProperties = {
 };
 
 function twemojiCodePoint(rawEmoji: string): string {
-  const normalizedEmoji = rawEmoji.includes(zeroWidthJoiner) ? rawEmoji : rawEmoji.replace(variationSelectorPattern, "");
+  const normalizedEmoji = rawEmoji.includes(zeroWidthJoiner)
+    ? rawEmoji
+    : rawEmoji.replace(variationSelectorPattern, "");
   return twemoji.convert.toCodePoint(normalizedEmoji);
 }
 
@@ -88,7 +111,7 @@ function renderTextWithTwemoji(text: string): ReactNode {
         loading="lazy"
         style={twemojiStyle}
         onError={handleTwemojiError}
-      />
+      />,
     );
     previousIndex = matchIndex + match[0].length;
   }
@@ -99,7 +122,9 @@ function renderTextWithTwemoji(text: string): ReactNode {
 }
 
 function renderEmojiChildren(children: ReactNode): ReactNode {
-  return Children.map(children, (child) => typeof child === "string" ? renderTextWithTwemoji(child) : child);
+  return Children.map(children, (child) =>
+    typeof child === "string" ? renderTextWithTwemoji(child) : child,
+  );
 }
 
 // The streaming token animation is paint-only, so layout and shaping are identical before and after.
@@ -130,7 +155,9 @@ function AnimatedText({ text }: { text: string }): ReactNode {
 
 // Every text leaf keeps the same structure in both states, so settling a turn cannot change wrapping.
 function renderChildren(children: ReactNode): ReactNode {
-  return Children.map(children, (child) => typeof child === "string" ? <AnimatedText text={child} /> : child);
+  return Children.map(children, (child) =>
+    typeof child === "string" ? <AnimatedText text={child} /> : child,
+  );
 }
 
 // A single-line `$$...$$` parses as inline math, so a paragraph holding only it is centred here.
@@ -179,7 +206,11 @@ function useThrottledText(text: string, intervalMs: number, enabled: boolean): s
   return enabled ? throttled : text;
 }
 
-export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm", animate = false }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({
+  content,
+  fontSize = "sm",
+  animate = false,
+}: MarkdownContentProps) {
   const syntaxTheme = useColorModeValue(xcode, atomOneDark);
   // Reduced-motion readers keep the stable token structure but receive a zero-duration fade.
   const reduceMotion = useReducedMotion();
@@ -190,173 +221,246 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
   const tokenDuration = everAnimated ? TOKEN_DURATION : "0s";
   const renderedContent = useThrottledText(content, STREAMING_RENDER_INTERVAL_MS, animating);
 
-  const markdownComponents = useMemo<Components>(() => ({
-    img({ src, alt }) {
-      if (!src || (typeof src === "string" && !src.trim())) return null;
-      return <Image src={typeof src === "string" ? src : undefined} alt={alt ?? ""} maxW="100%" />;
-    },
-    p({ node, children }) {
-      if (isDisplayMathParagraph(node)) {
-        return <Box textAlign="center" fontSize="inherit">{children}</Box>;
-      }
-      return <Text fontSize="inherit" lineHeight="1.55">{renderChildren(children)}</Text>;
-    },
-    h1({ children }) {
-      return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderChildren(children)}</Heading>;
-    },
-    h2({ children }) {
-      return <Heading as="h2" fontSize="md" fontWeight="bold">{renderChildren(children)}</Heading>;
-    },
-    h3({ children }) {
-      return <Heading as="h3" fontSize="sm" fontWeight="bold">{renderChildren(children)}</Heading>;
-    },
-    h4({ children }) {
-      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{renderChildren(children)}</Heading>;
-    },
-    a({ href, children }) {
-      // An editorial underline, offset from the baseline and faint until hover, rather than a heavy rule.
-      return (
-        <Link
-          href={href}
-          colorPalette="blue"
-          fontSize="inherit"
-          textUnderlineOffset="2px"
-          textDecorationThickness="1px"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {renderChildren(children)}
-        </Link>
-      );
-    },
-    ul({ children }) {
-      return <List.Root pl={6} fontSize="inherit" listStyleType="disc">{children}</List.Root>;
-    },
-    ol({ children }) {
-      return <List.Root as="ol" pl={6} fontSize="inherit" listStyleType="decimal">{children}</List.Root>;
-    },
-    li({ children }) {
-      return <List.Item mb={0.5} fontSize="inherit" lineHeight="1.55" _last={{ mb: 0 }}>{renderChildren(children)}</List.Item>;
-    },
-    blockquote({ children }) {
-      // The same rule and padding as an expanded tool call's detail rail, so quoted prose reads as one language.
-      return (
-        <Box borderLeftWidth="2px" borderColor="border.muted" pl={3} py={0.5} color="fg.muted" fontSize="inherit">
-          {renderChildren(children)}
-        </Box>
-      );
-    },
-    code({ className, children }) {
-      const languageMatch = /language-(\w+)/.exec(className || "");
-      const codeString = String(children).replace(/\n$/, "");
-      const isBlock = !!languageMatch || codeString.includes("\n");
-
-      if (isBlock) {
-        const block = (
-          <Box
-            borderRadius="md"
-            overflow="auto"
-            borderWidth="1px"
-            borderColor="border.muted"
-            fontSize="xs"
-            my={1.5}
-            maxW="100%"
-            maxH="420px"
-            bg="bg.subtle"
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      img({ src, alt }) {
+        if (!src || (typeof src === "string" && !src.trim())) return null;
+        return (
+          <Image src={typeof src === "string" ? src : undefined} alt={alt ?? ""} maxW="100%" />
+        );
+      },
+      p({ node, children }) {
+        if (isDisplayMathParagraph(node)) {
+          return (
+            <Box textAlign="center" fontSize="inherit">
+              {children}
+            </Box>
+          );
+        }
+        return (
+          <Text fontSize="inherit" lineHeight="1.55">
+            {renderChildren(children)}
+          </Text>
+        );
+      },
+      h1({ children }) {
+        return (
+          <Heading as="h1" fontSize="lg" fontWeight="bold">
+            {renderChildren(children)}
+          </Heading>
+        );
+      },
+      h2({ children }) {
+        return (
+          <Heading as="h2" fontSize="md" fontWeight="bold">
+            {renderChildren(children)}
+          </Heading>
+        );
+      },
+      h3({ children }) {
+        return (
+          <Heading as="h3" fontSize="sm" fontWeight="bold">
+            {renderChildren(children)}
+          </Heading>
+        );
+      },
+      h4({ children }) {
+        return (
+          <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">
+            {renderChildren(children)}
+          </Heading>
+        );
+      },
+      a({ href, children }) {
+        // An editorial underline, offset from the baseline and faint until hover, rather than a heavy rule.
+        return (
+          <Link
+            href={href}
+            colorPalette="blue"
+            fontSize="inherit"
+            textUnderlineOffset="2px"
+            textDecorationThickness="1px"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            <SyntaxHighlighter
-              style={syntaxTheme}
-              language={languageMatch ? languageMatch[1] : "text"}
-              PreTag="div"
-              customStyle={{
-                margin: 0,
-                padding: "0.5rem 0.625rem",
-                lineHeight: 1.5,
-                borderRadius: "var(--chakra-radii-none)",
-                fontFamily: "var(--app-font-mono)",
-                fontSize: "inherit",
-                background: "var(--chakra-colors-bg-subtle)",
-                minWidth: "max-content",
-              }}
-              codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit", whiteSpace: "pre" } }}
-            >
-              {codeString}
-            </SyntaxHighlighter>
+            {renderChildren(children)}
+          </Link>
+        );
+      },
+      ul({ children }) {
+        return (
+          <List.Root pl={6} fontSize="inherit" listStyleType="disc">
+            {children}
+          </List.Root>
+        );
+      },
+      ol({ children }) {
+        return (
+          <List.Root as="ol" pl={6} fontSize="inherit" listStyleType="decimal">
+            {children}
+          </List.Root>
+        );
+      },
+      li({ children }) {
+        return (
+          <List.Item mb={0.5} fontSize="inherit" lineHeight="1.55" _last={{ mb: 0 }}>
+            {renderChildren(children)}
+          </List.Item>
+        );
+      },
+      blockquote({ children }) {
+        // The same rule and padding as an expanded tool call's detail rail, so quoted prose reads as one language.
+        return (
+          <Box
+            borderLeftWidth="2px"
+            borderColor="border.muted"
+            pl={3}
+            py={0.5}
+            color="fg.muted"
+            fontSize="inherit"
+          >
+            {renderChildren(children)}
           </Box>
         );
-        // A mermaid fence renders as a diagram once its source parses, with the code block as the fallback.
-        if (languageMatch?.[1] === "mermaid") {
-          return <MermaidDiagram code={codeString} fallback={block} />;
-        }
-        return block;
-      }
+      },
+      code({ className, children }) {
+        const languageMatch = /language-(\w+)/.exec(className || "");
+        const codeString = String(children).replace(/\n$/, "");
+        const isBlock = !!languageMatch || codeString.includes("\n");
 
-      // A subtle chip with no vertical padding, so inline code does not disturb the line rhythm.
-      return (
-        <Code
-          fontFamily="var(--app-font-mono)"
-          px={1.5}
-          py={0}
-          borderRadius="sm"
-          borderWidth="1px"
-          borderColor="border.muted"
-          bg="bg.subtle"
-          color="fg"
-        >
-          {children}
-        </Code>
-      );
-    },
-    pre({ children }) {
-      return <>{children}</>;
-    },
-    // A table with real cells: an outer frame, a filled header, and rules between every row and column.
-    table({ children }) {
-      return (
-        <Box overflowX="auto" maxW="100%" my={3} borderWidth="1px" borderColor="border" borderRadius="md">
-          <Table.Root variant="outline" showColumnBorder size="sm" minW="100%" fontSize="inherit" lineHeight="1.55" boxShadow="none">
+        if (isBlock) {
+          const block = (
+            <Box
+              borderRadius="md"
+              overflow="auto"
+              borderWidth="1px"
+              borderColor="border.muted"
+              fontSize="xs"
+              my={1.5}
+              maxW="100%"
+              maxH="420px"
+              bg="bg.subtle"
+            >
+              <SyntaxHighlighter
+                style={syntaxTheme}
+                language={languageMatch ? languageMatch[1] : "text"}
+                PreTag="div"
+                customStyle={{
+                  margin: 0,
+                  padding: "0.5rem 0.625rem",
+                  lineHeight: 1.5,
+                  borderRadius: "var(--chakra-radii-none)",
+                  fontFamily: "var(--app-font-mono)",
+                  fontSize: "inherit",
+                  background: "var(--chakra-colors-bg-subtle)",
+                  minWidth: "max-content",
+                }}
+                codeTagProps={{
+                  style: { fontFamily: "inherit", fontSize: "inherit", whiteSpace: "pre" },
+                }}
+              >
+                {codeString}
+              </SyntaxHighlighter>
+            </Box>
+          );
+          // A mermaid fence renders as a diagram once its source parses, with the code block as the fallback.
+          if (languageMatch?.[1] === "mermaid") {
+            return <MermaidDiagram code={codeString} fallback={block} />;
+          }
+          return block;
+        }
+
+        // A subtle chip with no vertical padding, so inline code does not disturb the line rhythm.
+        return (
+          <Code
+            fontFamily="var(--app-font-mono)"
+            px={1.5}
+            py={0}
+            borderRadius="sm"
+            borderWidth="1px"
+            borderColor="border.muted"
+            bg="bg.subtle"
+            color="fg"
+          >
+            {children}
+          </Code>
+        );
+      },
+      pre({ children }) {
+        return <>{children}</>;
+      },
+      // A table with real cells: an outer frame, a filled header, and rules between every row and column.
+      table({ children }) {
+        return (
+          <Box
+            overflowX="auto"
+            maxW="100%"
+            my={3}
+            borderWidth="1px"
+            borderColor="border"
+            borderRadius="md"
+          >
+            <Table.Root
+              variant="outline"
+              showColumnBorder
+              size="sm"
+              minW="100%"
+              fontSize="inherit"
+              lineHeight="1.55"
+              boxShadow="none"
+            >
+              {renderChildren(children)}
+            </Table.Root>
+          </Box>
+        );
+      },
+      // Mapped rather than left raw, since the header fill and row rules hang off these two slots.
+      thead({ children }) {
+        return <Table.Header>{renderChildren(children)}</Table.Header>;
+      },
+      tbody({ children }) {
+        return <Table.Body>{renderChildren(children)}</Table.Body>;
+      },
+      tr({ children }) {
+        return <Table.Row>{renderChildren(children)}</Table.Row>;
+      },
+      th({ children }) {
+        return (
+          <Table.ColumnHeader fontWeight="semibold" verticalAlign="top" overflowWrap="break-word">
             {renderChildren(children)}
-          </Table.Root>
-        </Box>
-      );
-    },
-    // Mapped rather than left raw, since the header fill and row rules hang off these two slots.
-    thead({ children }) {
-      return <Table.Header>{renderChildren(children)}</Table.Header>;
-    },
-    tbody({ children }) {
-      return <Table.Body>{renderChildren(children)}</Table.Body>;
-    },
-    tr({ children }) {
-      return <Table.Row>{renderChildren(children)}</Table.Row>;
-    },
-    th({ children }) {
-      return (
-        <Table.ColumnHeader fontWeight="semibold" verticalAlign="top" overflowWrap="break-word">
-          {renderChildren(children)}
-        </Table.ColumnHeader>
-      );
-    },
-    td({ children }) {
-      return (
-        <Table.Cell verticalAlign="top" overflowWrap="break-word">
-          {renderChildren(children)}
-        </Table.Cell>
-      );
-    },
-    hr() {
-      return <Separator borderColor="border" my={4} />;
-    },
-    strong({ children }) {
-      return <Strong fontSize="inherit" fontWeight="bold">{renderChildren(children)}</Strong>;
-    },
-    em({ children }) {
-      return <Emphasis fontSize="inherit" fontStyle="italic">{renderChildren(children)}</Emphasis>;
-    },
-    del({ children }) {
-      return <DeletedText fontSize="inherit">{renderChildren(children)}</DeletedText>;
-    },
-  }), [syntaxTheme]);
+          </Table.ColumnHeader>
+        );
+      },
+      td({ children }) {
+        return (
+          <Table.Cell verticalAlign="top" overflowWrap="break-word">
+            {renderChildren(children)}
+          </Table.Cell>
+        );
+      },
+      hr() {
+        return <Separator borderColor="border" my={4} />;
+      },
+      strong({ children }) {
+        return (
+          <Strong fontSize="inherit" fontWeight="bold">
+            {renderChildren(children)}
+          </Strong>
+        );
+      },
+      em({ children }) {
+        return (
+          <Emphasis fontSize="inherit" fontStyle="italic">
+            {renderChildren(children)}
+          </Emphasis>
+        );
+      },
+      del({ children }) {
+        return <DeletedText fontSize="inherit">{renderChildren(children)}</DeletedText>;
+      },
+    }),
+    [syntaxTheme],
+  );
 
   return (
     <Box
@@ -419,18 +523,35 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
 });
 
 // A single-line renderer for places where a label must stay inline, collapsing every block to its children.
-const passthrough = ({ children }: { children?: ReactNode }) => <>{renderEmojiChildren(children)}</>;
+const passthrough = ({ children }: { children?: ReactNode }) => (
+  <>{renderEmojiChildren(children)}</>
+);
 
 const inlineMarkdownComponents: Components = {
   p: passthrough,
-  h1: passthrough, h2: passthrough, h3: passthrough, h4: passthrough, h5: passthrough, h6: passthrough,
-  ul: passthrough, ol: passthrough, li: passthrough, pre: passthrough, blockquote: passthrough,
+  h1: passthrough,
+  h2: passthrough,
+  h3: passthrough,
+  h4: passthrough,
+  h5: passthrough,
+  h6: passthrough,
+  ul: passthrough,
+  ol: passthrough,
+  li: passthrough,
+  pre: passthrough,
+  blockquote: passthrough,
   hr: () => null,
   img: () => null,
   br: () => <> </>,
   a({ href, children }) {
     return (
-      <Link href={typeof href === "string" ? href : undefined} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
+      <Link
+        href={typeof href === "string" ? href : undefined}
+        colorPalette="blue"
+        fontSize="inherit"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         {renderEmojiChildren(children)}
       </Link>
     );
@@ -454,10 +575,18 @@ const inlineMarkdownComponents: Components = {
     );
   },
   strong({ children }) {
-    return <Strong fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Strong>;
+    return (
+      <Strong fontSize="inherit" fontWeight="bold">
+        {renderEmojiChildren(children)}
+      </Strong>
+    );
   },
   em({ children }) {
-    return <Emphasis fontSize="inherit" fontStyle="italic">{renderEmojiChildren(children)}</Emphasis>;
+    return (
+      <Emphasis fontSize="inherit" fontStyle="italic">
+        {renderEmojiChildren(children)}
+      </Emphasis>
+    );
   },
   del({ children }) {
     return <DeletedText fontSize="inherit">{renderEmojiChildren(children)}</DeletedText>;

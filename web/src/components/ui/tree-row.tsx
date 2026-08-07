@@ -99,7 +99,14 @@ export function TreeRow({
         ) : null}
 
         {glyph ? (
-          <Box w={SLOT_WIDTH} flexShrink={0} display="flex" alignItems="center" justifyContent="center" color="fg.muted">
+          <Box
+            w={SLOT_WIDTH}
+            flexShrink={0}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            color="fg.muted"
+          >
             {glyph}
           </Box>
         ) : null}

@@ -20,7 +20,10 @@ interface ZoneOption {
 // Shown in the identifier's own shape, with only its underscores spaced.
 function offsetOf(zone: string, at: Date): string {
   try {
-    const parts = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "shortOffset" }).formatToParts(at);
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: zone,
+      timeZoneName: "shortOffset",
+    }).formatToParts(at);
     return parts.find((part) => part.type === "timeZoneName")?.value ?? "";
   } catch (caught) {
     expected("a zone the formatter will not accept simply shows no offset", caught);
@@ -30,7 +33,8 @@ function offsetOf(zone: string, at: Date): string {
 
 /** Every zone this platform knows, with the offset each is on and the machine's own first. */
 function zoneOptions(): ZoneOption[] {
-  const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+  const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
+    .supportedValuesOf;
   let zones: string[];
   try {
     zones = supported ? supported("timeZone") : [];
@@ -42,18 +46,20 @@ function zoneOptions(): ZoneOption[] {
   const machineZone = currentZone();
   const known = zones.length > 0 ? zones : [machineZone];
   const now = new Date();
-  return known
-    .map((zone) => ({
-      zone,
-      label: zone.replace(/_/g, " "),
-      offset: offsetOf(zone, now),
-      current: zone === machineZone,
-    }))
-    // The machine's own zone first, since it is the answer nine times in ten, then IANA's own order.
-    .sort((left, right) => {
-      if (left.current !== right.current) return left.current ? -1 : 1;
-      return left.zone.localeCompare(right.zone);
-    });
+  return (
+    known
+      .map((zone) => ({
+        zone,
+        label: zone.replace(/_/g, " "),
+        offset: offsetOf(zone, now),
+        current: zone === machineZone,
+      }))
+      // The machine's own zone first, since it is the answer nine times in ten, then IANA's own order.
+      .sort((left, right) => {
+        if (left.current !== right.current) return left.current ? -1 : 1;
+        return left.zone.localeCompare(right.zone);
+      })
+  );
 }
 
 /** The machine's own zone — the only sensible default for "when should this fire". */
@@ -122,7 +128,14 @@ export function TimezoneSelect({
               <Combobox.Item item={item} key={item.zone}>
                 {/* The identifier, then its marks pushed to the trailing edge, separated by layout rather than punctuation. */}
                 <Combobox.ItemText>{item.label}</Combobox.ItemText>
-                <Flex align="center" gap={3} ms="auto" flexShrink={0} color="fg.muted" fontSize="xs">
+                <Flex
+                  align="center"
+                  gap={3}
+                  ms="auto"
+                  flexShrink={0}
+                  color="fg.muted"
+                  fontSize="xs"
+                >
                   {item.current && currentLabel ? <Span>{currentLabel}</Span> : null}
                   <Span>{item.offset}</Span>
                 </Flex>

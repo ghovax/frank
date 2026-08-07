@@ -55,7 +55,9 @@ def run(arguments) -> int:
     if arguments.setting is None:
         # No argument: what this machine has actually been set to, as the short answer to what has changed.
         print(compact(dict(sorted(_flatten(data)))))
-        logger.info("(what is set; `langmesh configure --all` lists every setting with its default)")
+        logger.info(
+            "(what is set; `langmesh configure --all` lists every setting with its default)"
+        )
         return 0
 
     if arguments.value is None:
@@ -73,7 +75,9 @@ def run(arguments) -> int:
         return 0
 
     if _known(arguments.setting) is None:
-        logger.info(f"langmesh: no setting named {arguments.setting!r} — it would be written and ignored")
+        logger.info(
+            f"langmesh: no setting named {arguments.setting!r} — it would be written and ignored"
+        )
         return 1
     _write(data, arguments.setting, _parse(arguments.value))
     invalid = _validates(data)

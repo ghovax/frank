@@ -4,12 +4,46 @@ import { Box, Flex } from "@chakra-ui/react";
 import { SessionsSidebar, type SessionSort } from "@/components/sessions-sidebar";
 import type { SessionActivity, SessionEntry } from "@/components/session-row";
 import { AnimatePresence, motion } from "motion/react";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 
 // A Chakra Flex that is also a motion component, so the history sidebar can animate open and closed without losing its flex props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, rememberLastSession, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeConnection, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import {
+  deleteSession,
+  fetchAccessibility,
+  fetchAgents,
+  fetchAgentCards,
+  fetchHomeDirectory,
+  fetchModels,
+  fetchRecentModels,
+  fetchSessionDraft,
+  fetchSessions,
+  fetchSettings,
+  getWorkspace,
+  listWorkspaces,
+  rememberLastSession,
+  saveAgentConfiguration,
+  saveSettings,
+  setSandboxEnforce,
+  subscribeConnection,
+  subscribeEvents,
+  updateComputerControlSetting,
+  type AgentCard,
+  type AgentSummary,
+  type ModelOption,
+  type PermissionMode,
+  type ProviderOption,
+  type SandboxEnforce,
+} from "@/lib/api";
 import { ChatPanel, type SidePanelKey } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
@@ -19,7 +53,6 @@ import { usePreferences } from "@/lib/preferences";
 // The sessions sidebar is its own component; this page owns the data and the notification tracking.
 
 // The last workspace the user was in and the last conversation within it, both kept by the daemon so a fresh launch reopens them.
-
 
 // The conversation a session belongs to: itself, or the one at the top of the chain that created it.
 function rootSessionOf(sessions: SessionEntry[], sessionId: string | null): string | null {
@@ -47,7 +80,8 @@ function Workspace() {
   // Where this interface opens and what it looks like, as the daemon has it, so the phone and this window agree.
   const { preferences, updatePreferences } = usePreferences();
   const readLastWorkspace = () => preferences.last_workspace_id;
-  const writeLastWorkspace = (workspaceId: string) => updatePreferences({ last_workspace_id: workspaceId });
+  const writeLastWorkspace = (workspaceId: string) =>
+    updatePreferences({ last_workspace_id: workspaceId });
   // The app opens straight into a workspace addressed by `?workspace=`, resolving the last used or the first available.
   const workspaceId = searchParams.get("workspace") ?? "";
 
@@ -60,7 +94,9 @@ function Workspace() {
       await updateComputerControlSetting(true);
       updatePreferences({ computer_control_awaiting_grant: false });
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferences.computer_control_awaiting_grant]);
 
@@ -77,15 +113,23 @@ function Workspace() {
       .then((workspaces) => {
         if (cancelled) return;
         const last = readLastWorkspace();
-        const target = last && workspaces.some((workspace) => workspace.id === last) ? last : workspaces[0]?.id;
+        const target =
+          last && workspaces.some((workspace) => workspace.id === last) ? last : workspaces[0]?.id;
         // Nothing to open into, so release the restore below to settle on the empty composer.
-        if (!target) { setRememberedSession(""); return; }
+        if (!target) {
+          setRememberedSession("");
+          return;
+        }
         const params = new URLSearchParams(window.location.search);
         params.set("workspace", target);
         router.replace(`?${params.toString()}`, { scroll: false });
       })
-      .catch((caught) => swallowed({ component: "workspace-page", operation: "read the home directory" }, caught));
-    return () => { cancelled = true; };
+      .catch((caught) =>
+        swallowed({ component: "workspace-page", operation: "read the home directory" }, caught),
+      );
+    return () => {
+      cancelled = true;
+    };
     // The workspace readers close over preferences, so naming them here would re-run this constantly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, router]);
@@ -95,13 +139,17 @@ function Workspace() {
     if (!workspaceId) return;
     let cancelled = false;
     getWorkspace(workspaceId)
-      .then((workspace) => { if (!cancelled) setRememberedSession(workspace?.last_session_id ?? ""); })
+      .then((workspace) => {
+        if (!cancelled) setRememberedSession(workspace?.last_session_id ?? "");
+      })
       .catch((caught) => {
         // A workspace that would not load is no reason to hang on the loading screen.
         if (!cancelled) setRememberedSession("");
         swallowed({ component: "workspace-page", operation: "read the last conversation" }, caught);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId]);
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
@@ -111,7 +159,9 @@ function Workspace() {
 
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => searchParams.get("session"));
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() =>
+    searchParams.get("session"),
+  );
   // Sessions that finished a run while you were not viewing them, detected by comparing snapshots and cleared when you open one.
   const [unseenCompletions, setUnseenCompletions] = useState<Set<string>>(new Set());
   const sessionsRef = useRef<SessionEntry[]>([]);
@@ -138,7 +188,9 @@ function Workspace() {
   const [worktreeStrategy, setWorktreeStrategy] = useState<"none" | "branch" | "worktree">("none");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
-  const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
+  const [recentModels, setRecentModels] = useState<
+    { id: string; name: string; provider: string }[]
+  >([]);
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("ask");
   const [historyOpen, setHistoryOpen] = useState(true);
   // The right-hand panels, held here because ChatPanel remounts on every conversation switch.
@@ -152,14 +204,17 @@ function Workspace() {
     return window.matchMedia("(max-width: 767px)").matches;
   }, []);
 
-
   // Agents, cards, servers and memories are scoped to the selected folder, and the ref lets live reload refetch with the current one.
   const workingDirectoryRef = useRef(workingDirectory);
   useEffect(() => {
     workingDirectoryRef.current = workingDirectory;
   }, [workingDirectory]);
   const loadAgentCards = useCallback(() => {
-    fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch((caught) => swallowed({ component: "workspace-page", operation: "list the workspaces" }, caught));
+    fetchAgentCards(workingDirectoryRef.current)
+      .then(setAgentCards)
+      .catch((caught) =>
+        swallowed({ component: "workspace-page", operation: "list the workspaces" }, caught),
+      );
   }, []);
   const loadAgents = useCallback(() => {
     fetchAgents(workingDirectoryRef.current)
@@ -167,7 +222,7 @@ function Workspace() {
         setAgents(agentList);
         // Keep the current selection when the folder still offers it, otherwise take the first agent rather than leave sending impossible.
         setSelectedAgent((current) =>
-          agentList.some((agent) => agent.id === current) ? current : agentList[0]?.id ?? ""
+          agentList.some((agent) => agent.id === current) ? current : (agentList[0]?.id ?? ""),
         );
         setIsConnected(true);
       })
@@ -180,28 +235,32 @@ function Workspace() {
         setModels(catalog.models);
         setModelProviders(catalog.providers);
       })
-      .catch((caught) => swallowed({ component: "workspace-page", operation: "list the models" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "workspace-page", operation: "list the models" }, caught),
+      );
   }, []);
 
-
-  const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>): SessionEntry[] => {
-    return serverSessions.map((session) => ({
-      sessionId: session.id,
-      parentSessionId: session.parent,
-      workspaceId: session.workspace_id,
-      agent: session.agent,
-      title: session.title,
-      createdAt: session.created_at,
-      workingDirectory: session.working_directory,
-      activity: (session.activity || "idle") as SessionActivity,
-      ended: session.lifecycle === "ended",
-      failed: session.outcome === "failed",
-      awaitingInput: session.awaiting_input ?? false,
-      exitReason: session.exit_reason,
-      permissionMode: session.permission_mode,
-      goal: session.goal ?? null,
-    }));
-  }, []);
+  const mapSessions = useCallback(
+    (serverSessions: Awaited<ReturnType<typeof fetchSessions>>): SessionEntry[] => {
+      return serverSessions.map((session) => ({
+        sessionId: session.id,
+        parentSessionId: session.parent,
+        workspaceId: session.workspace_id,
+        agent: session.agent,
+        title: session.title,
+        createdAt: session.created_at,
+        workingDirectory: session.working_directory,
+        activity: (session.activity || "idle") as SessionActivity,
+        ended: session.lifecycle === "ended",
+        failed: session.outcome === "failed",
+        awaitingInput: session.awaiting_input ?? false,
+        exitReason: session.exit_reason,
+        permissionMode: session.permission_mode,
+        goal: session.goal ?? null,
+      }));
+    },
+    [],
+  );
 
   const loadSessions = useCallback(async () => {
     const previousList = sessionsRef.current;
@@ -219,7 +278,9 @@ function Workspace() {
     const mapped = merged
       .map((session) => {
         const previous = previousById.get(session.sessionId);
-        return previous && JSON.stringify(previous) === JSON.stringify(session) ? previous : session;
+        return previous && JSON.stringify(previous) === JSON.stringify(session)
+          ? previous
+          : session;
       })
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     // Flag any non-active session that just went from busy to idle, computed outside the state updater so the chime plays once.
@@ -228,7 +289,13 @@ function Workspace() {
       .filter((session) => {
         const previous = previousById.get(session.sessionId);
         const wasBusy = !!previous && isSessionBusy(previous);
-        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && !session.failed;
+        return (
+          wasBusy &&
+          !isSessionBusy(session) &&
+          session.sessionId !== activeId &&
+          !session.awaitingInput &&
+          !session.failed
+        );
       })
       .map((session) => session.sessionId);
     if (finishedUnviewed.length > 0) {
@@ -247,11 +314,11 @@ function Workspace() {
       const previous = previousById.get(session.sessionId);
       if (!isSessionBusy(session)) attentionPlayedForRunRef.current.delete(session.sessionId);
       if (
-        session.awaitingInput
-        && !!previous
-        && !previous.awaitingInput
-        && session.sessionId !== activeId
-        && !attentionPlayedForRunRef.current.has(session.sessionId)
+        session.awaitingInput &&
+        !!previous &&
+        !previous.awaitingInput &&
+        session.sessionId !== activeId &&
+        !attentionPlayedForRunRef.current.has(session.sessionId)
       ) {
         attentionPlayedForRunRef.current.add(session.sessionId);
         shouldPlayAttentionSound = true;
@@ -264,10 +331,14 @@ function Workspace() {
   }, [mapSessions]);
 
   // Everything a lost connection took away, asked for again, so the daemon going away is recoverable without a relaunch.
-  useEffect(() => subscribeConnection((connected) => {
-    setIsConnected(connected);
-    if (connected) reconnectRef.current?.();
-  }), []);
+  useEffect(
+    () =>
+      subscribeConnection((connected) => {
+        setIsConnected(connected);
+        if (connected) reconnectRef.current?.();
+      }),
+    [],
+  );
 
   const reconnectRef = useRef<(() => void) | null>(null);
   const reconnect = useCallback(() => {
@@ -282,7 +353,9 @@ function Workspace() {
   const sessionsReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleSessionsReload = useCallback(() => {
     if (sessionsReloadTimerRef.current) clearTimeout(sessionsReloadTimerRef.current);
-    sessionsReloadTimerRef.current = setTimeout(() => { void loadSessions(); }, 350);
+    sessionsReloadTimerRef.current = setTimeout(() => {
+      void loadSessions();
+    }, 350);
   }, [loadSessions]);
 
   useEffect(() => {
@@ -294,22 +367,27 @@ function Workspace() {
           setSandboxBackend(settings.sandbox_backend);
           setWorktreeStrategy(settings.worktree_strategy);
         })
-        .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agents" }, caught));
+        .catch((caught) =>
+          swallowed({ component: "workspace-page", operation: "list the agents" }, caught),
+        );
     };
     // Arm the audio cues on the first user interaction, since browsers keep audio suspended until a gesture.
     primeSounds();
-    loadSessions()
-      .catch(() => loadSessions());
+    loadSessions().catch(() => loadSessions());
     loadSettings();
     // The model catalog drives the provider and agent model pickers.
     loadModelCatalog();
     fetchRecentModels()
       .then(setRecentModels)
-      .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agent cards" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "workspace-page", operation: "list the agent cards" }, caught),
+      );
     // Home is the default workspace for a brand-new chat, applied by the restoration effect rather than forced here.
     fetchHomeDirectory()
       .then(setHomeWorkspace)
-      .catch((caught) => swallowed({ component: "workspace-page", operation: "read the settings" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "workspace-page", operation: "read the settings" }, caught),
+      );
 
     // Live reload: refresh agents when they change on disk, and the session list when a title is generated.
     const unsubscribe = subscribeEvents((event) => {
@@ -323,7 +401,11 @@ function Workspace() {
       if (event.type === "settings_changed") {
         loadSettings();
         loadModelCatalog();
-        fetchRecentModels().then(setRecentModels).catch((caught) => swallowed({ component: "workspace-page", operation: "read the recent models" }, caught));
+        fetchRecentModels()
+          .then(setRecentModels)
+          .catch((caught) =>
+            swallowed({ component: "workspace-page", operation: "read the recent models" }, caught),
+          );
       }
     });
     return unsubscribe;
@@ -340,12 +422,12 @@ function Workspace() {
   const contextKey = activeSessionId ?? "__new__";
   if (restoredContext !== contextKey) {
     if (activeSessionId) {
-        const session = sessions.find((entry) => entry.sessionId === activeSessionId);
-        if (session) {
-          setRestoredContext(contextKey);
-          setWorkingDirectory(session.workingDirectory || homeWorkspace?.path || "");
-          setSelectedPermissionMode(session.permissionMode);
-        }
+      const session = sessions.find((entry) => entry.sessionId === activeSessionId);
+      if (session) {
+        setRestoredContext(contextKey);
+        setWorkingDirectory(session.workingDirectory || homeWorkspace?.path || "");
+        setSelectedPermissionMode(session.permissionMode);
+      }
     } else if (workingDirectory || homeWorkspace) {
       // A brand-new chat inherits the directory the user was just in, falling back to home only on first load.
       setRestoredContext(contextKey);
@@ -374,9 +456,18 @@ function Workspace() {
     if (!activeSessionId) return;
     let cancelled = false;
     fetchSessionDraft(activeSessionId)
-      .then((draft) => { if (!cancelled) setActiveSessionDraft(draft); })
-      .catch((caught) => swallowed({ component: "workspace-page", operation: "read the accessibility state" }, caught));
-    return () => { cancelled = true; };
+      .then((draft) => {
+        if (!cancelled) setActiveSessionDraft(draft);
+      })
+      .catch((caught) =>
+        swallowed(
+          { component: "workspace-page", operation: "read the accessibility state" },
+          caught,
+        ),
+      );
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId]);
 
   // Open the last conversation once, and only on a launch that arrived without a `session` in the URL.
@@ -385,9 +476,12 @@ function Workspace() {
     if (restoredInitialSession.current || !sessionsLoaded || rememberedSession === null) return;
     restoredInitialSession.current = true;
     if (activeSessionId) return;
-    const candidates = sessions.filter((entry) => !workspaceId || entry.workspaceId === workspaceId);
+    const candidates = sessions.filter(
+      (entry) => !workspaceId || entry.workspaceId === workspaceId,
+    );
     if (candidates.length === 0) return;
-    const target = candidates.find((entry) => entry.sessionId === rememberedSession) ?? candidates[0];
+    const target =
+      candidates.find((entry) => entry.sessionId === rememberedSession) ?? candidates[0];
     void handleResumeSession(target);
     // Redefined every render, and the ref above is what bounds this to running once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -399,7 +493,9 @@ function Workspace() {
     if (sessionSort !== "active") return sessions;
     const rank = (session: SessionEntry) =>
       session.awaitingInput ? 0 : isSessionBusy(session) ? 1 : 2;
-    return [...sessions].sort((left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt));
+    return [...sessions].sort(
+      (left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt),
+    );
   }, [sessions, sessionSort]);
   const workspaceSessions = useMemo(
     () => sortedSessions.filter((session) => session.workspaceId === workspaceId),
@@ -413,8 +509,9 @@ function Workspace() {
   );
 
   const refreshSessions = useCallback(() => {
-    loadSessions()
-      .catch((caught) => swallowed({ component: "workspace-page", operation: "save the settings" }, caught));
+    loadSessions().catch((caught) =>
+      swallowed({ component: "workspace-page", operation: "save the settings" }, caught),
+    );
   }, [loadSessions]);
 
   const handleSessionCreated = useCallback(
@@ -429,14 +526,17 @@ function Workspace() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [isCompactViewport, refreshSessions, router, workspaceId]
+    [isCompactViewport, refreshSessions, router, workspaceId],
   );
 
-  const handleStreamingChange = useCallback((streaming: boolean) => {
-    if (!streaming) {
-      setTimeout(refreshSessions, 1000);
-    }
-  }, [refreshSessions]);
+  const handleStreamingChange = useCallback(
+    (streaming: boolean) => {
+      if (!streaming) {
+        setTimeout(refreshSessions, 1000);
+      }
+    },
+    [refreshSessions],
+  );
 
   function handleNewChat() {
     setActiveSessionId(null);
@@ -489,7 +589,6 @@ function Workspace() {
     }
   }
 
-
   async function handleResumeSession(entry: SessionEntry) {
     // Opening a session acknowledges its notification.
     setUnseenCompletions((current) => {
@@ -538,7 +637,7 @@ function Workspace() {
         id: entry.sessionId,
         title: entry.title || "New conversation",
       })),
-    [workspaceSessions]
+    [workspaceSessions],
   );
   useTray({
     recents: trayRecents,
@@ -564,12 +663,16 @@ function Workspace() {
     const model = modelParts.join("/");
     setAgents((current) =>
       current.map((agent) =>
-        agent.id === selectedAgent ? { ...agent, model: modelIdentifier } : agent
-      )
+        agent.id === selectedAgent ? { ...agent, model: modelIdentifier } : agent,
+      ),
     );
     try {
       await saveAgentConfiguration(selectedAgent, { provider, model }, workingDirectory);
-      fetchRecentModels().then(setRecentModels).catch((caught) => swallowed({ component: "workspace-page", operation: "read a workspace" }, caught));
+      fetchRecentModels()
+        .then(setRecentModels)
+        .catch((caught) =>
+          swallowed({ component: "workspace-page", operation: "read a workspace" }, caught),
+        );
       loadAgents();
     } catch (caught) {
       // Reloading the agents puts the real value back on screen, which is the only signal the user gets.
@@ -585,7 +688,10 @@ function Workspace() {
       await setSandboxEnforce(enforce);
     } catch (caught) {
       // Roll the toggle back so it reflects the daemon rather than the click.
-      swallowed({ component: "workspace-page", operation: "change the sandbox enforcement" }, caught);
+      swallowed(
+        { component: "workspace-page", operation: "change the sandbox enforcement" },
+        caught,
+      );
       setSandboxEnforceState(previous);
     }
   }
@@ -620,43 +726,52 @@ function Workspace() {
     }
   }
 
-  const handleHistoryResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = historyWidth;
+  const handleHistoryResizeStart = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = historyWidth;
 
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(600, Math.max(240, startWidth + moveEvent.clientX - startX));
-      setHistoryWidth(nextWidth);
-    }
+      function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+        const nextWidth = Math.min(600, Math.max(240, startWidth + moveEvent.clientX - startX));
+        setHistoryWidth(nextWidth);
+      }
 
-    function handlePointerUp() {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
+      function handlePointerUp() {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
 
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, { once: true });
-  }, [historyWidth]);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp, { once: true });
+    },
+    [historyWidth],
+  );
 
   // Derive the working directory from the workspace's first local location, bouncing a dead deep link back to the home screen.
   useEffect(() => {
     if (!workspaceId) return;
     let cancelled = false;
-    getWorkspace(workspaceId).then((workspace) => {
-      if (cancelled) return;
-      if (!workspace) {
-        router.replace("/");
-        return;
-      }
-      const local = (workspace.locations ?? []).find((location) => location.kind === "local");
-      setWorkingDirectory(local?.base_directory || homeWorkspace?.path || "");
-    }).catch((caught) => swallowed({ component: "workspace-page", operation: "list the sessions" }, caught));
-    return () => { cancelled = true; };
+    getWorkspace(workspaceId)
+      .then((workspace) => {
+        if (cancelled) return;
+        if (!workspace) {
+          router.replace("/");
+          return;
+        }
+        const local = (workspace.locations ?? []).find((location) => location.kind === "local");
+        setWorkingDirectory(local?.base_directory || homeWorkspace?.path || "");
+      })
+      .catch((caught) =>
+        swallowed({ component: "workspace-page", operation: "list the sessions" }, caught),
+      );
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId, homeWorkspace, router]);
 
   return (
@@ -693,32 +808,32 @@ function Workspace() {
             exit={{ opacity: 0, x: -24 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           >
-          <Box
-            display={{ base: "none", md: "block" }}
-            position="absolute"
-            top={0}
-            bottom={0}
-            right={-1}
-            w={2}
-            cursor="col-resize"
-            zIndex={1}
-            onPointerDown={handleHistoryResizeStart}
-          />
-          <SessionsSidebar
-            sessions={sortedSessions}
-            sessionsLoaded={sessionsLoaded}
-            activeSessionId={rootSessionId}
-            sessionSort={sessionSort}
-            onSessionSortChange={setSessionSort}
-            unseenCompletions={unseenCompletions}
-            currentWorkspaceId={workspaceId}
-            onSwitchWorkspace={handleSwitchWorkspace}
-            onOpenWorkspaceSettings={openWorkspaceSettings}
-            onNewChat={handleNewChat}
-            onResume={(entry) => void handleResumeSession(entry)}
-            onDeleteSession={(entry) => void handleDeleteSession(entry.sessionId)}
-            agents={agents}
-          />
+            <Box
+              display={{ base: "none", md: "block" }}
+              position="absolute"
+              top={0}
+              bottom={0}
+              right={-1}
+              w={2}
+              cursor="col-resize"
+              zIndex={1}
+              onPointerDown={handleHistoryResizeStart}
+            />
+            <SessionsSidebar
+              sessions={sortedSessions}
+              sessionsLoaded={sessionsLoaded}
+              activeSessionId={rootSessionId}
+              sessionSort={sessionSort}
+              onSessionSortChange={setSessionSort}
+              unseenCompletions={unseenCompletions}
+              currentWorkspaceId={workspaceId}
+              onSwitchWorkspace={handleSwitchWorkspace}
+              onOpenWorkspaceSettings={openWorkspaceSettings}
+              onNewChat={handleNewChat}
+              onResume={(entry) => void handleResumeSession(entry)}
+              onDeleteSession={(entry) => void handleDeleteSession(entry.sessionId)}
+              agents={agents}
+            />
           </MotionFlex>
         )}
       </AnimatePresence>

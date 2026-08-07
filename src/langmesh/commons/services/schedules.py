@@ -18,8 +18,20 @@ from langmesh.commons import state
 from langmesh.commons.database import ScheduleRecord, WorkspaceRecord
 
 # Re-exported, so a caller catches one error for one concept without knowing which module defines it.
-__all__ = ["PERMISSION_MODES", "ScheduleError", "create", "delete", "due_now", "get",
-           "listing", "next_firing", "record_run", "serialize", "set_enabled", "validate"]
+__all__ = [
+    "PERMISSION_MODES",
+    "ScheduleError",
+    "create",
+    "delete",
+    "due_now",
+    "get",
+    "listing",
+    "next_firing",
+    "record_run",
+    "serialize",
+    "set_enabled",
+    "validate",
+]
 
 
 def _now() -> str:
@@ -41,12 +53,20 @@ def serialize(record: ScheduleRecord) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — a bad cron line must not make the listing unreadable
         upcoming = ""
     return {
-        "id": record.id, "workspace_id": record.workspace_id, "name": record.name,
-        "cron": record.cron, "timezone": record.timezone, "agent": record.agent,
-        "prompt": record.prompt, "permission_mode": record.permission_mode,
-        "working_directory": record.working_directory, "enabled": bool(record.enabled),
-        "last_fired_at": record.last_fired_at, "last_session_id": record.last_session_id,
-        "last_error": record.last_error, "created_at": record.created_at,
+        "id": record.id,
+        "workspace_id": record.workspace_id,
+        "name": record.name,
+        "cron": record.cron,
+        "timezone": record.timezone,
+        "agent": record.agent,
+        "prompt": record.prompt,
+        "permission_mode": record.permission_mode,
+        "working_directory": record.working_directory,
+        "enabled": bool(record.enabled),
+        "last_fired_at": record.last_fired_at,
+        "last_session_id": record.last_session_id,
+        "last_error": record.last_error,
+        "created_at": record.created_at,
         "next_firing": upcoming,
     }
 
@@ -56,8 +76,17 @@ def _database():
     return state.session_factory()
 
 
-def create(*, workspace_id: str, name: str, cron: str, prompt: str, agent: str,
-           permission_mode: str, timezone_name: str, working_directory: str = "") -> dict[str, Any]:
+def create(
+    *,
+    workspace_id: str,
+    name: str,
+    cron: str,
+    prompt: str,
+    agent: str,
+    permission_mode: str,
+    timezone_name: str,
+    working_directory: str = "",
+) -> dict[str, Any]:
     validate(cron, timezone_name, permission_mode)
     if not name.strip():
         raise ScheduleError("A schedule needs a name — it is how you will recognise it later.")
@@ -68,10 +97,21 @@ def create(*, workspace_id: str, name: str, cron: str, prompt: str, agent: str,
         if not database_session.get(WorkspaceRecord, workspace_id):
             raise ScheduleError(f"No workspace {workspace_id!r}.")
         record = ScheduleRecord(
-            id=str(uuid.uuid4()), workspace_id=workspace_id, name=name.strip(), cron=cron,
-            timezone=timezone_name, agent=agent, prompt=prompt, permission_mode=permission_mode,
-            working_directory=working_directory, enabled=True, last_fired_at="",
-            last_session_id="", last_error="", created_at=_now(), updated_at=_now(),
+            id=str(uuid.uuid4()),
+            workspace_id=workspace_id,
+            name=name.strip(),
+            cron=cron,
+            timezone=timezone_name,
+            agent=agent,
+            prompt=prompt,
+            permission_mode=permission_mode,
+            working_directory=working_directory,
+            enabled=True,
+            last_fired_at="",
+            last_session_id="",
+            last_error="",
+            created_at=_now(),
+            updated_at=_now(),
         )
         with sqlite_write_lock():
             database_session.add(record)

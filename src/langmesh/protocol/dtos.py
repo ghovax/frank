@@ -106,11 +106,13 @@ class SandboxUpdateRequest(BaseModel):
 
 class UserContextUpdateRequest(BaseModel):
     """Opt-in/out of the personal user-context snapshot in the system prompt."""
+
     enabled: bool
 
 
 class ComputerControlUpdateRequest(BaseModel):
     """Opt-in/out of the computer-use tool that controls macOS apps."""
+
     enabled: bool
 
 
@@ -123,11 +125,13 @@ class SettingValueRequest(BaseModel):
 
 class ToolboxUpdateRequest(BaseModel):
     """Turn a session's own tool profile on or off."""
+
     enabled: bool
 
 
 class DictationUpdateRequest(BaseModel):
     """Opt-in/out of transcribing the composer's dictation on this machine."""
+
     enabled: bool
 
 
@@ -137,6 +141,7 @@ class AttachmentsUpdateRequest(BaseModel):
 
 class CompactionUpdateRequest(BaseModel):
     """Observational-memory compaction settings. Only provided fields are changed."""
+
     automatic: bool | None = None
     reclaim_at_fraction: float | None = None
     output_reserve_fraction: float | None = None

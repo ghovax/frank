@@ -34,7 +34,10 @@ export const STATUS_GLYPH: Partial<Record<StatusKind, GlyphName>> = {
 };
 
 /** A live tool call's status — and whether it was pushed to the background — as a kind. */
-export function toolStatusKind(status: string | undefined, background = false): StatusKind {
+export function toolStatusKind(
+  status: string | undefined,
+  background = false,
+): StatusKind {
   if (status === "running") return background ? "background" : "running";
   if (status === "failed" || status === "error") return "failed";
   if (status === "input_required") return "input_required";

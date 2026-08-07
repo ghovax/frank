@@ -13,9 +13,18 @@ from langmesh.protocol.dtos import (
 from langmesh.commons import state
 from langmesh.commons.services.broadcast import _publish_broadcast
 from langmesh.base.configuration import write_agent_markdown
-from langmesh.commons.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _path_scope, _record_model_selection, _reload_agent_cards
+from langmesh.commons.services.agents import (
+    _agent_configuration_for_request,
+    _agent_configuration_payload,
+    _apply_agent_configuration_update,
+    _card_for,
+    _path_scope,
+    _record_model_selection,
+    _reload_agent_cards,
+)
 
 router = APIRouter()
+
 
 @router.get("/agents")
 async def agents(working_directory: str = ""):
@@ -27,16 +36,18 @@ async def agents(working_directory: str = ""):
         directories = state.global_configuration.agent_directories()
     # The bundled agents are always present, and none of them is singled out as a default.
     agent_data = list_agents(directories)
-    return AgentsList(agents=[
-        AgentInfo(
-            id=agent["id"],
-            name=agent["name"],
-            title=agent.get("title", agent["name"]),
-            description=agent.get("description", ""),
-            model=agent.get("model", ""),
-        )
-        for agent in agent_data
-    ])
+    return AgentsList(
+        agents=[
+            AgentInfo(
+                id=agent["id"],
+                name=agent["name"],
+                title=agent.get("title", agent["name"]),
+                description=agent.get("description", ""),
+                model=agent.get("model", ""),
+            )
+            for agent in agent_data
+        ]
+    )
 
 
 @router.get("/agents/{agent_name}/configuration")
@@ -49,14 +60,23 @@ async def agent_configuration(agent_name: str, working_directory: str = ""):
 
 
 @router.put("/agents/{agent_name}/configuration")
-async def update_agent_configuration(agent_name: str, request: AgentConfigurationUpdateRequest, working_directory: str = ""):
+async def update_agent_configuration(
+    agent_name: str, request: AgentConfigurationUpdateRequest, working_directory: str = ""
+):
     assert state.global_configuration is not None
     try:
-        agent_markdown_path, configuration = _agent_configuration_for_request(agent_name, working_directory)
-        write_agent_markdown(agent_markdown_path, _apply_agent_configuration_update(configuration, request))
+        agent_markdown_path, configuration = _agent_configuration_for_request(
+            agent_name, working_directory
+        )
+        write_agent_markdown(
+            agent_markdown_path, _apply_agent_configuration_update(configuration, request)
+        )
         saved_configuration = _agent_configuration_payload(agent_name, working_directory)
         if saved_configuration.provider and saved_configuration.model:
-            await asyncio.to_thread(_record_model_selection, f"{saved_configuration.provider}/{saved_configuration.model}")
+            await asyncio.to_thread(
+                _record_model_selection,
+                f"{saved_configuration.provider}/{saved_configuration.model}",
+            )
         await state.reset_runtimes()
         _reload_agent_cards()
         _publish_broadcast({"type": "agents_changed"})
@@ -82,7 +102,9 @@ async def agent_cards(working_directory: str = ""):
     if working_directory:
         allowed_agents = {
             agent["id"]
-            for agent in list_agents(state.global_configuration.agent_directories_for(working_directory))
+            for agent in list_agents(
+                state.global_configuration.agent_directories_for(working_directory)
+            )
         }
     cards: list[dict] = []
     for agent_name, existing in sorted(state.agent_cards.items()):

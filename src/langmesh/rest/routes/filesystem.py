@@ -13,10 +13,18 @@ from langmesh.protocol.dtos import (
     DirectoryValidationRequest,
 )
 from langmesh.commons import state
-from langmesh.rest.services.filesystem import _GIT_STATUS_WATCH_FILTER, _git_status_changes_relevant, _git_status_key, _git_status_watch_paths, _open_folder_picker, _validate_directory_payload
+from langmesh.rest.services.filesystem import (
+    _GIT_STATUS_WATCH_FILTER,
+    _git_status_changes_relevant,
+    _git_status_key,
+    _git_status_watch_paths,
+    _open_folder_picker,
+    _validate_directory_payload,
+)
 from langmesh.base.serialization import compact
 
 router = APIRouter()
+
 
 async def _idle(seconds: float) -> bool:
     """Sleep, unless the daemon is stopping. Answers whether it is."""
@@ -71,13 +79,17 @@ async def git_status_stream(directory: str, request: Request):
         try:
             # The stop event is why this can be shut down at all, since the watch is parked waiting for a change.
             async for changes in awatch(
-                *watch_paths, watch_filter=_GIT_STATUS_WATCH_FILTER, debounce=500,
+                *watch_paths,
+                watch_filter=_GIT_STATUS_WATCH_FILTER,
+                debounce=500,
                 stop_event=state.shutting_down,
             ):
                 if state.shutting_down.is_set() or await request.is_disconnected():
                     break
                 typed_changes = cast(set[tuple[object, str]], changes)
-                if not await asyncio.to_thread(_git_status_changes_relevant, directory, payload, typed_changes):
+                if not await asyncio.to_thread(
+                    _git_status_changes_relevant, directory, payload, typed_changes
+                ):
                     continue
                 payload = await asyncio.to_thread(_validate_directory_payload, directory)
                 next_key = _git_status_key(payload)
@@ -131,4 +143,6 @@ async def browse_directory():
 @router.get("/filesystem/leases")
 async def filesystem_leases():
     """Active filesystem mutation leases across all sessions in this backend."""
-    return {"leases": state.file_lease_manager.active() if state.file_lease_manager is not None else []}
+    return {
+        "leases": state.file_lease_manager.active() if state.file_lease_manager is not None else []
+    }

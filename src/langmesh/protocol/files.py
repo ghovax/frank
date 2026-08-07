@@ -102,8 +102,12 @@ async def ingest_file_part(
         except UntrustedHostError:
             return None
         # Pin the connection to the verified address, so a rebind cannot swap in a private target.
-        proxied = bool(os.environ.get(environment_variables.HTTPS_PROXY) or os.environ.get("https_proxy")
-                       or os.environ.get(environment_variables.ALL_PROXY) or os.environ.get("all_proxy"))
+        proxied = bool(
+            os.environ.get(environment_variables.HTTPS_PROXY)
+            or os.environ.get("https_proxy")
+            or os.environ.get(environment_variables.ALL_PROXY)
+            or os.environ.get("all_proxy")
+        )
         if proxied or not ips:
             fetch_url, headers, extensions = file.uri, {}, {}
         else:
@@ -112,7 +116,9 @@ async def ingest_file_part(
         client = client or httpx.AsyncClient(timeout=30.0, follow_redirects=False)
         try:
             raw = bytearray()
-            async with client.stream("GET", fetch_url, headers=headers, extensions=extensions) as response:
+            async with client.stream(
+                "GET", fetch_url, headers=headers, extensions=extensions
+            ) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_bytes():
                     raw.extend(chunk)
@@ -123,7 +129,9 @@ async def ingest_file_part(
         finally:
             if owns_client:
                 await client.aclose()
-        return _attachment(_store_bytes(bytes(raw), suffix, home_directory), name, mime_type, len(raw))
+        return _attachment(
+            _store_bytes(bytes(raw), suffix, home_directory), name, mime_type, len(raw)
+        )
 
     return None
 
@@ -139,7 +147,13 @@ _FILE_TOKEN_AUDIENCE = "urn:langmesh:a2a:file:v1"
 class FileUrlSigner:
     """Mints and verifies short-lived signed URLs, binding the path, the audience and the expiry."""
 
-    def __init__(self, secret: bytes | str, base_url: str, allowed_root: Path | str | None = None, route: str = "/a2a/files"):
+    def __init__(
+        self,
+        secret: bytes | str,
+        base_url: str,
+        allowed_root: Path | str | None = None,
+        route: str = "/a2a/files",
+    ):
         self._secret = secret
         self._base_url = base_url.rstrip("/")
         self._route = route
@@ -161,7 +175,9 @@ class FileUrlSigner:
         return self._within_root(file_path)
 
     def sign(self, file_path: str, *, ttl_seconds: Optional[int] = None) -> str:
-        ttl_seconds = ttl_seconds if ttl_seconds is not None else active_tuning().amount(Tunable.file_url_ttl)
+        ttl_seconds = (
+            ttl_seconds if ttl_seconds is not None else active_tuning().amount(Tunable.file_url_ttl)
+        )
         if not self._within_root(file_path):
             raise PathNotServableError(f"{file_path!r} is outside the servable file root")
         token = jwt.encode(
@@ -179,7 +195,9 @@ class FileUrlSigner:
     def verify(self, token: str, *, consume: bool = False) -> Optional[str]:
         """The file path a token authorizes, or `None` when it is malformed, expired, out of root or already spent."""
         try:
-            payload = jwt.decode(token, self._secret, algorithms=["HS256"], audience=_FILE_TOKEN_AUDIENCE)
+            payload = jwt.decode(
+                token, self._secret, algorithms=["HS256"], audience=_FILE_TOKEN_AUDIENCE
+            )
         except jwt.InvalidTokenError:
             return None
         path = payload.get("path")

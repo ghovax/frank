@@ -18,7 +18,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.requests import HTTPConnection
 from starlette.websockets import WebSocketClose
-from tenacity import AsyncRetrying, RetryError, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import (
+    AsyncRetrying,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_delay,
+    wait_fixed,
+)
 
 from langmesh.base.paths import (
     daemon_port_path,
@@ -186,13 +192,17 @@ def build_app() -> FastAPI:
                 if connection.url.path in {"/health"}:
                     return await self.application(scope, receive, send)
                 # A preflight is sent without credentials by specification, so demanding a token rejects the question rather than the request.
-                if scope.get("method") == "OPTIONS" and "access-control-request-method" in connection.headers:
+                if (
+                    scope.get("method") == "OPTIONS"
+                    and "access-control-request-method" in connection.headers
+                ):
                     return await self.application(scope, receive, send)
 
             header = connection.headers.get("Authorization", "")
             # A websocket handshake and an image URL cannot carry a header, so the token may also arrive as a query parameter.
             presented = (
-                header[len("Bearer "):] if header.startswith("Bearer ")
+                header[len("Bearer ") :]
+                if header.startswith("Bearer ")
                 else connection.query_params.get("token", "")
             )
             # Who the kernel says is calling, which no token can contradict and which is what identifies a session.
@@ -204,7 +214,11 @@ def build_app() -> FastAPI:
                 scope["state"]["calling_session"] = peer_session or ""
                 return await self.application(scope, receive, send)
             # A session's own token identifies which session is calling, which is what lets its control-plane calls be attributed to it.
-            caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
+            caller = (
+                state.registry.session_for_token(presented)
+                if (presented and state.registry)
+                else None
+            )
             if caller is None:
                 return await self._refuse(scope, receive, send)
             # The kernel's answer wins over the token's, so a session holding another's token is still itself.
@@ -276,7 +290,8 @@ async def _serve() -> int:
     else:
         logger.warning(
             "no confinement backend (%s). Sessions will refuse to start unless sandbox.enforce "
-            "is set to 'preferred' or 'off'.", confinement_state["detail"],
+            "is set to 'preferred' or 'off'.",
+            confinement_state["detail"],
         )
     state.daemon_token = secrets.token_urlsafe(32)
     state.daemon_socket = str(daemon_socket_path())
@@ -296,11 +311,14 @@ async def _serve() -> int:
     state.registry.restore(restored)
     live = [record for record in restored if record.is_live]
     if live:
-        logger.info("restored %d session(s), %d of them still live and asleep", len(restored), len(live))
+        logger.info(
+            "restored %d session(s), %d of them still live and asleep", len(restored), len(live)
+        )
     # The host holds the executors and the lifecycle drives them, wired here because this is the composition root.
     state.host = SessionHost()
     # Imported at boot rather than when the first session is built, since that import is seconds and this is not a hot path.
     import langmesh.worker.session  # noqa: F401
+
     # How a call from a session's tool child is attributed back to that session.
     from langmesh.runtime import background as runtime_background
 
@@ -325,15 +343,23 @@ async def _serve() -> int:
     # `log_config=None` leaves uvicorn's loggers inheriting the root configuration, so its output reaches the log file too.
     socket_server = announcing(
         uvicorn.Config(
-            app, uds=state.daemon_socket, log_level="warning", access_log=False, log_config=None,
+            app,
+            uds=state.daemon_socket,
+            log_level="warning",
+            access_log=False,
+            log_config=None,
             # Only the unix listener, because the kernel can name the process on the other end and that is what identifies a session.
             http=unix_peer_protocol(),
         )
     )
     tcp_server = announcing(
         uvicorn.Config(
-            app, host=LOOPBACK_HOST, port=commons_state.daemon_port,
-            log_level="warning", access_log=False, log_config=None,
+            app,
+            host=LOOPBACK_HOST,
+            port=commons_state.daemon_port,
+            log_level="warning",
+            access_log=False,
+            log_config=None,
         )
     )
     # uvicorn captures signals itself, so with two servers each handler would stop only its own listener.
@@ -372,10 +398,18 @@ async def _serve() -> int:
     _write_handshake(state.daemon_token, commons_state.daemon_port)
     # One line on stdout and then close it, since whoever started the daemon is waiting to read exactly this.
     with contextlib.suppress(OSError, ValueError):
-        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": commons_state.daemon_port}) + "\n")
+        sys.stdout.write(
+            json.dumps({"ready": True, "pid": os.getpid(), "port": commons_state.daemon_port})
+            + "\n"
+        )
         sys.stdout.flush()
         sys.stdout.close()
-    logger.info("langmeshd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, commons_state.daemon_port)
+    logger.info(
+        "langmeshd listening on %s and %s:%d",
+        state.daemon_socket,
+        LOOPBACK_HOST,
+        commons_state.daemon_port,
+    )
 
     try:
         await serving
@@ -420,7 +454,9 @@ async def _open_stores() -> None:
 
     await asyncio.to_thread(_initialize)
     commons_state.session_factory = sessionmaker(bind=sync_engine)
-    commons_state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
+    commons_state.async_engine = create_async_engine(
+        f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30}
+    )
 
     @event.listens_for(commons_state.async_engine.sync_engine, "connect")
     def _async_pragmas(dbapi_connection, _record):  # noqa: ANN001
@@ -442,7 +478,10 @@ def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr), logging.FileHandler(log_file_path("langmeshd"))],
+        handlers=[
+            logging.StreamHandler(sys.stderr),
+            logging.FileHandler(log_file_path("langmeshd")),
+        ],
     )
     try:
         return asyncio.run(_serve())

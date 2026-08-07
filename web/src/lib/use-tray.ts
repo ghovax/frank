@@ -33,7 +33,9 @@ export function useTray(handlers: TrayHandlers): void {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("update_tray_recent", {
         items: JSON.parse(recentsJson) as TrayRecentItem[],
-      }).catch((caught) => swallowed({ component: "tray", operation: "update the recent items" }, caught));
+      }).catch((caught) =>
+        swallowed({ component: "tray", operation: "update the recent items" }, caught),
+      );
     })();
   }, [recentsJson]);
 
@@ -43,13 +45,11 @@ export function useTray(handlers: TrayHandlers): void {
     const unlisteners: Array<() => void> = [];
     (async () => {
       const { listen } = await import("@tauri-apps/api/event");
-      unlisteners.push(
-        await listen("langmesh://new-chat", () => handlersRef.current.onNewChat())
-      );
+      unlisteners.push(await listen("langmesh://new-chat", () => handlersRef.current.onNewChat()));
       unlisteners.push(
         await listen<string>("langmesh://open-session", (event) =>
-          handlersRef.current.onOpenSession(event.payload)
-        )
+          handlersRef.current.onOpenSession(event.payload),
+        ),
       );
     })();
     return () => {

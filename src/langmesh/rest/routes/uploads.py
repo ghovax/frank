@@ -25,8 +25,11 @@ async def serve_a2a_file(token: str):
         raise HTTPException(status_code=404, detail="File serving is unavailable.")
     file_path = signer.verify(token, consume=True)
     if not file_path or not Path(file_path).exists():
-        raise HTTPException(status_code=404, detail="File not found, link expired, or already used.")
+        raise HTTPException(
+            status_code=404, detail="File not found, link expired, or already used."
+        )
     return FileResponse(file_path)
+
 
 @router.post("/uploads")
 async def upload_file(file: UploadFile = File(...)):

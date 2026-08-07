@@ -1,6 +1,17 @@
 "use client";
 
-import { Box, Button, Dialog, Flex, IconButton, Image, Link, Portal, Span, Text } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  Dialog,
+  Flex,
+  IconButton,
+  Image,
+  Link,
+  Portal,
+  Span,
+  Text,
+} from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 import { LuExternalLink, LuX } from "react-icons/lu";
@@ -81,10 +92,32 @@ function MediaChipCard({
         overflow="hidden"
         onClick={onClick}
       >
-        <Flex flex={1} minH={0} w="100%" overflow="hidden" bg="bg.subtle" borderBottom="1px solid" borderColor="border" align="center" justify="center">
+        <Flex
+          flex={1}
+          minH={0}
+          w="100%"
+          overflow="hidden"
+          bg="bg.subtle"
+          borderBottom="1px solid"
+          borderColor="border"
+          align="center"
+          justify="center"
+        >
           {thumbnail}
         </Flex>
-        <Flex flexShrink={0} w="100%" px={2.5} py={2} pe={onRemove ? 8 : 2.5} minW={0} align="center" gap={1} textStyle="fieldLabel" color="fg" title={filename}>
+        <Flex
+          flexShrink={0}
+          w="100%"
+          px={2.5}
+          py={2}
+          pe={onRemove ? 8 : 2.5}
+          minW={0}
+          align="center"
+          gap={1}
+          textStyle="fieldLabel"
+          color="fg"
+          title={filename}
+        >
           <Flex minW={0} flex={1}>
             <Span truncate>{head}</Span>
             <Span flexShrink={0}>{tail}</Span>
@@ -123,7 +156,14 @@ function AttachmentLightbox({
   const image = isImageAttachment(attachment);
   const pdf = isPdfAttachment(attachment);
   return (
-    <Dialog.Root open onOpenChange={(event) => { if (!event.open) onClose(); }} placement="center" size="cover">
+    <Dialog.Root
+      open
+      onOpenChange={(event) => {
+        if (!event.open) onClose();
+      }}
+      placement="center"
+      size="cover"
+    >
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
@@ -133,17 +173,39 @@ function AttachmentLightbox({
             overflow="hidden"
           >
             <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
-              <Dialog.Title textStyle="panelTitle" truncate>{attachment.filename}</Dialog.Title>
+              <Dialog.Title textStyle="panelTitle" truncate>
+                {attachment.filename}
+              </Dialog.Title>
               <Flex align="center" gap={2} ml="auto">
-                <Link href={url} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={translation("openInNewTab")}>
+                <Link
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  color="fg.muted"
+                  _hover={{ color: "fg" }}
+                  title={translation("openInNewTab")}
+                >
                   <LuExternalLink size={14} />
                 </Link>
                 <Dialog.CloseTrigger position="static" />
               </Flex>
             </Dialog.Header>
-            <Dialog.Body p={0} display="flex" alignItems="center" justifyContent="center" bg="bg.subtle" minH="60vh">
+            <Dialog.Body
+              p={0}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              bg="bg.subtle"
+              minH="60vh"
+            >
               {image ? (
-                <Image src={url} alt={attachment.filename} maxW="100%" maxH="90vh" objectFit="contain" />
+                <Image
+                  src={url}
+                  alt={attachment.filename}
+                  maxW="100%"
+                  maxH="90vh"
+                  objectFit="contain"
+                />
               ) : pdf ? (
                 <Box w="100%" h="100%">
                   <PdfDocumentView url={url} />
@@ -179,7 +241,14 @@ export function AttachmentChip({
   const pdf = isPdfAttachment(attachment);
   const { icon: Icon, iconColor } = iconForFilePath(attachment.filename);
   const thumbnail = image ? (
-    <Image src={localFileUrl(attachment.path)} alt={attachment.filename} w="100%" h="100%" objectFit="cover" objectPosition="top" />
+    <Image
+      src={localFileUrl(attachment.path)}
+      alt={attachment.filename}
+      w="100%"
+      h="100%"
+      objectFit="cover"
+      objectPosition="top"
+    />
   ) : pdf ? (
     <PdfThumbnail url={localFileUrl(attachment.path)} width={192} />
   ) : (
@@ -190,11 +259,29 @@ export function AttachmentChip({
   // The same hover card the git indicator uses, carrying whatever metadata the attachment has.
   const tooltip = (
     <Box whiteSpace="nowrap">
-      <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{attachment.filename}</Text>
+      <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>
+        {attachment.filename}
+      </Text>
       <Flex direction="column" gap={1}>
-        {attachment.mimeType && <InlineField label={translation("fieldType")}><Text truncate maxW={80}>{attachment.mimeType}</Text></InlineField>}
-        {attachment.size > 0 && <InlineField label={translation("fieldSize")}><Text>{formatFileSize(attachment.size)}</Text></InlineField>}
-        {attachment.path && <InlineField label={translation("fieldPath")}><Text truncate maxW={80}>{attachment.path}</Text></InlineField>}
+        {attachment.mimeType && (
+          <InlineField label={translation("fieldType")}>
+            <Text truncate maxW={80}>
+              {attachment.mimeType}
+            </Text>
+          </InlineField>
+        )}
+        {attachment.size > 0 && (
+          <InlineField label={translation("fieldSize")}>
+            <Text>{formatFileSize(attachment.size)}</Text>
+          </InlineField>
+        )}
+        {attachment.path && (
+          <InlineField label={translation("fieldPath")}>
+            <Text truncate maxW={80}>
+              {attachment.path}
+            </Text>
+          </InlineField>
+        )}
       </Flex>
     </Box>
   );

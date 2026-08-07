@@ -105,8 +105,15 @@ dev = [
 
 
 [tool.ruff]
-line-length = 120
+# What the formatter wraps code to. A comment is never rewrapped by any formatter, and `E501` is not
+# in the selected set, so the prose this tree writes on one line stays on one line.
+line-length = 100
 target-version = "py313"
+
+[tool.ruff.format]
+# The tree quotes with double already; saying so keeps a reformat from being about quotes.
+quote-style = "double"
+docstring-code-format = true
 
 [tool.ruff.lint]
 # The set the tree is actually written against and passes clean: pycodestyle errors, pyflakes.

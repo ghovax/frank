@@ -11,7 +11,12 @@ import { LuArrowUpRight, LuTrash2 } from "react-icons/lu";
 
 import { toaster } from "@/components/ui/toaster";
 import {
-  addMachine, forgetMachine, listMachines, machineAddress, subscribeEvents, type Machine,
+  addMachine,
+  forgetMachine,
+  listMachines,
+  machineAddress,
+  subscribeEvents,
+  type Machine,
 } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useOrigin } from "@/lib/pointer";
@@ -22,13 +27,15 @@ export function MachinesPanel() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [link, setLink] = useState("");
   const [saving, setSaving] = useState(false);
-/** Which of these is serving this page, read from the address bar rather than offered as a reload. */
+  /** Which of these is serving this page, read from the address bar rather than offered as a reload. */
   const origin = useOrigin();
 
   const refresh = useCallback(() => {
     listMachines()
       .then(setMachines)
-      .catch((caught) => swallowed({ component: "machines-panel", operation: "list the machines" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "machines-panel", operation: "list the machines" }, caught),
+      );
   }, []);
 
   useEffect(() => {
@@ -48,7 +55,12 @@ export function MachinesPanel() {
       setLink("");
       refresh();
     } catch (caught) {
-      toaster.create({ type: "error", title: translation("couldNotConnect"), description: errorMessage(caught), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("couldNotConnect"),
+        description: errorMessage(caught),
+        closable: true,
+      });
     } finally {
       setSaving(false);
     }
@@ -59,18 +71,29 @@ export function MachinesPanel() {
       // Fetched now rather than held since the list rendered: it is the one thing here carrying a token.
       window.location.assign(await machineAddress(machine.id));
     } catch (caught) {
-      toaster.create({ type: "error", title: translation("couldNotReach", { name: machine.name }), description: errorMessage(caught), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("couldNotReach", { name: machine.name }),
+        description: errorMessage(caught),
+        closable: true,
+      });
     }
   }
 
   return (
     <Flex direction="column" gap={4} w="100%">
       <Flex direction="column" gap={2}>
-        <Text textStyle="sectionLabel" color="fg.muted">{translation("savedConnections")}</Text>
+        <Text textStyle="sectionLabel" color="fg.muted">
+          {translation("savedConnections")}
+        </Text>
         {machines.length === 0 ? (
           <Box borderWidth="1px" borderColor="border" borderRadius="md" px={3} py={4}>
-            <Text fontSize="sm" color="fg.muted">{translation("noSavedConnections")}</Text>
-            <Text fontSize="xs" color="fg.subtle" mt={1}>{translation("noSavedConnectionsHint")}</Text>
+            <Text fontSize="sm" color="fg.muted">
+              {translation("noSavedConnections")}
+            </Text>
+            <Text fontSize="xs" color="fg.subtle" mt={1}>
+              {translation("noSavedConnectionsHint")}
+            </Text>
           </Box>
         ) : (
           <Flex direction="column" gap={2}>
@@ -87,9 +110,13 @@ export function MachinesPanel() {
                 bg="bg.panel"
               >
                 <Box flex={1} minW={0}>
-                  <Text fontSize="sm" fontWeight="medium" truncate>{machine.name}</Text>
+                  <Text fontSize="sm" fontWeight="medium" truncate>
+                    {machine.name}
+                  </Text>
                   {/* The address, because it is what tells two similarly named machines apart. */}
-                  <Text fontSize="xs" color="fg.subtle" truncate>{machine.endpoint.replace(/^https:\/\//, "")}</Text>
+                  <Text fontSize="xs" color="fg.subtle" truncate>
+                    {machine.endpoint.replace(/^https:\/\//, "")}
+                  </Text>
                 </Box>
                 {machine.endpoint === origin ? (
                   // Not a disabled button: a greyed control invites working out why, and a state does not.
@@ -111,9 +138,14 @@ export function MachinesPanel() {
                   disabled={machine.endpoint === origin}
                   aria-label={translation("deleteConnection", { url: machine.endpoint })}
                   onClick={() => {
-                    void forgetMachine(machine.id).then(refresh).catch((caught) =>
-                      swallowed({ component: "machines-panel", operation: "forget a machine" }, caught)
-                    );
+                    void forgetMachine(machine.id)
+                      .then(refresh)
+                      .catch((caught) =>
+                        swallowed(
+                          { component: "machines-panel", operation: "forget a machine" },
+                          caught,
+                        ),
+                      );
                   }}
                 >
                   <LuTrash2 />
@@ -125,7 +157,9 @@ export function MachinesPanel() {
       </Flex>
 
       <Flex direction="column" gap={2}>
-        <Text textStyle="sectionLabel" color="fg.muted">{translation("pairingLink")}</Text>
+        <Text textStyle="sectionLabel" color="fg.muted">
+          {translation("pairingLink")}
+        </Text>
         <Flex gap={2} align="center">
           <Input
             size="xs"
@@ -137,11 +171,20 @@ export function MachinesPanel() {
               if (event.key === "Enter") void save();
             }}
           />
-          <Button size="xs" variant="solid" colorPalette="blue" loading={saving} disabled={!link.trim()} onClick={() => void save()}>
+          <Button
+            size="xs"
+            variant="solid"
+            colorPalette="blue"
+            loading={saving}
+            disabled={!link.trim()}
+            onClick={() => void save()}
+          >
             {translation("saveConnection")}
           </Button>
         </Flex>
-        <Text fontSize="xs" color="fg.subtle">{translation.rich("pairingLinkHelper", richTags)}</Text>
+        <Text fontSize="xs" color="fg.subtle">
+          {translation.rich("pairingLinkHelper", richTags)}
+        </Text>
       </Flex>
     </Flex>
   );

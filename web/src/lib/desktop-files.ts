@@ -28,7 +28,10 @@ export async function watchDesktopFileDrop(
   if (!isTauri()) return () => {};
   const { getCurrentWebview } = await import("@tauri-apps/api/webview");
   const ratio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  const toCss = (position: { x: number; y: number }) => ({ x: position.x / ratio, y: position.y / ratio });
+  const toCss = (position: { x: number; y: number }) => ({
+    x: position.x / ratio,
+    y: position.y / ratio,
+  });
   const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
     const payload = event.payload;
     if (payload.type === "enter") {

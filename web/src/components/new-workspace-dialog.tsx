@@ -28,14 +28,18 @@ export function NewWorkspaceDialog({
   const [saving, setSaving] = useState(false);
 
   const locationValid = (location: LocationInput) =>
-    location.base_directory.trim().length > 0 && (location.kind === "local" || (location.host_alias ?? "").length > 0);
+    location.base_directory.trim().length > 0 &&
+    (location.kind === "local" || (location.host_alias ?? "").length > 0);
   const conflict = locationConflict(locations);
   const canCreate = locations.length > 0 && locations.every(locationValid) && !conflict;
 
   const updateLocation = (index: number, next: LocationInput) =>
-    setLocations((current) => current.map((location, position) => (position === index ? next : location)));
+    setLocations((current) =>
+      current.map((location, position) => (position === index ? next : location)),
+    );
   const addLocation = () => setLocations((current) => [...current, emptyLocation()]);
-  const removeLocation = (index: number) => setLocations((current) => current.filter((_, position) => position !== index));
+  const removeLocation = (index: number) =>
+    setLocations((current) => current.filter((_, position) => position !== index));
 
   async function handleCreate() {
     setSaving(true);
@@ -44,7 +48,12 @@ export function NewWorkspaceDialog({
       onCreated(workspace);
       onOpenChange(false);
     } catch (error) {
-      toaster.create({ type: "error", title: translation("createError"), description: errorMessage(error), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("createError"),
+        description: errorMessage(error),
+        closable: true,
+      });
     } finally {
       setSaving(false);
     }
@@ -58,17 +67,35 @@ export function NewWorkspaceDialog({
           <Dialog.Content w="min(560px, calc(100vw - 16px))">
             <Dialog.Header display="flex" flexDirection="column" alignItems="flex-start" gap={1}>
               <Dialog.Title textStyle="panelTitle">{translation("title")}</Dialog.Title>
-              <Text fontSize="sm" color="fg.muted">{translation("description")}</Text>
+              <Text fontSize="sm" color="fg.muted">
+                {translation("description")}
+              </Text>
             </Dialog.Header>
             <Dialog.Body display="flex" flexDirection="column" gap={4}>
               <Box>
-                <Text textStyle="panelTitle" mb={2}>{translation("environments")}</Text>
-                <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} loading={!hostsLoaded} />
+                <Text textStyle="panelTitle" mb={2}>
+                  {translation("environments")}
+                </Text>
+                <LocationEditorList
+                  hosts={hosts}
+                  locations={locations}
+                  onChange={updateLocation}
+                  onAdd={addLocation}
+                  onRemove={removeLocation}
+                  loading={!hostsLoaded}
+                />
               </Box>
             </Dialog.Body>
             <Dialog.Footer>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>{tc("cancel")}</Button>
-              <Button colorPalette="blue" disabled={!canCreate || saving} loading={saving} onClick={handleCreate}>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button
+                colorPalette="blue"
+                disabled={!canCreate || saving}
+                loading={saving}
+                onClick={handleCreate}
+              >
                 {translation("create")}
               </Button>
             </Dialog.Footer>

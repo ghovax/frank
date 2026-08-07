@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Awaitable, Mapping, Optional, Protocol, Sequence, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    runtime_checkable,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import only for typing; `base` stays free of langchain
     from langchain_core.language_models.chat_models import BaseChatModel
@@ -77,8 +86,7 @@ class Observation:
 class Observer(Protocol):
     """Receives the audit trail. May return an awaitable, which an async caller awaits."""
 
-    def observe(self, observation: Observation) -> Awaitable[None] | None:
-        ...
+    def observe(self, observation: Observation) -> Awaitable[None] | None: ...
 
 
 # Where a session's resumable state lives.
@@ -88,8 +96,7 @@ class Observer(Protocol):
 class Checkpoints(Protocol):
     """Where a session's resumable state lives, which is what makes it survive the process that ran it."""
 
-    async def save(self, session_id: str, state: Mapping[str, Any]) -> None:
-        ...
+    async def save(self, session_id: str, state: Mapping[str, Any]) -> None: ...
 
     async def load(self, session_id: str) -> Optional[Mapping[str, Any]]:
         """The last saved state, or ``None`` for a session that has never been saved."""
@@ -194,8 +201,10 @@ class MemoryJobStore:
 
     def running_jobs(self, agent_name: str | None = None) -> Sequence[Mapping[str, Any]]:
         return [
-            job for job in self._jobs.values()
-            if job["status"] == "running" and (agent_name is None or job["agent_name"] == agent_name)
+            job
+            for job in self._jobs.values()
+            if job["status"] == "running"
+            and (agent_name is None or job["agent_name"] == agent_name)
         ]
 
     def orphaned_process_groups(self) -> Sequence[int]:
@@ -204,7 +213,8 @@ class MemoryJobStore:
 
     def undelivered_jobs(self, session_id: str, agent_name: str) -> Sequence[Mapping[str, Any]]:
         return [
-            job for job in self._jobs.values()
+            job
+            for job in self._jobs.values()
             if job["status"] == "completed"
             and job["session_id"] == session_id
             and job["agent_name"] == agent_name
@@ -214,10 +224,13 @@ class MemoryJobStore:
         return bool(self.undelivered_jobs(session_id, agent_name))
 
     def contexts_with_undelivered(self, agent_name: str) -> Sequence[str]:
-        return sorted({
-            job["session_id"] for job in self._jobs.values()
-            if job["status"] == "completed" and job["agent_name"] == agent_name
-        })
+        return sorted(
+            {
+                job["session_id"]
+                for job in self._jobs.values()
+                if job["status"] == "completed" and job["agent_name"] == agent_name
+            }
+        )
 
 
 # The record of what a session actually did.
@@ -245,8 +258,7 @@ class TurnSummary:
 class Transcript(Protocol):
     """Where the record of a session's turns goes. Not a2a's `TaskStore`: an embedder owes nobody a Task."""
 
-    async def record(self, turn: TurnSummary) -> None:
-        ...
+    async def record(self, turn: TurnSummary) -> None: ...
 
     async def turns(self, session_id: str) -> Sequence[TurnSummary]:
         """Every turn recorded for a session, oldest first."""
@@ -277,11 +289,9 @@ class Credentials(Protocol):
         """The stored tokens, or ``None`` when nothing is signed in."""
         ...
 
-    def save(self, tokens: Any) -> None:
-        ...
+    def save(self, tokens: Any) -> None: ...
 
-    def clear(self) -> None:
-        ...
+    def clear(self) -> None: ...
 
 
 # Where the prompt's material comes from.
@@ -355,11 +365,9 @@ class CatalogueLike(Protocol):
         """Every agent name this catalogue can supply, for listing and for error messages."""
         ...
 
-    def skills(self) -> Sequence[Any]:
-        ...
+    def skills(self) -> Sequence[Any]: ...
 
-    def memories(self) -> Sequence[Any]:
-        ...
+    def memories(self) -> Sequence[Any]: ...
 
     def instructions(self) -> Sequence[Any]:
         """The project's own conventions, as `Instruction` values."""
@@ -373,15 +381,13 @@ class CatalogueLike(Protocol):
 def describe_unmet(port: type, candidate: Any) -> str:
     """Which of a port's methods ``candidate`` is missing, as a sentence, so a refusal can be acted on."""
     missing = sorted(
-        name for name in getattr(port, "__protocol_attrs__", ())
-        if not hasattr(candidate, name)
+        name for name in getattr(port, "__protocol_attrs__", ()) if not hasattr(candidate, name)
     )
     if not missing:
         return ""
     described = ", ".join(f"`{name}`" for name in missing)
     return (
-        f"{type(candidate).__name__} does not satisfy {port.__name__}: it is missing "
-        f"{described}."
+        f"{type(candidate).__name__} does not satisfy {port.__name__}: it is missing {described}."
     )
 
 

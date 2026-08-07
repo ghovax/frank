@@ -209,17 +209,38 @@ class FilesystemConfiguration(Section):
         default=[
             # Where a person's own agents, skills and workflows live, which a screen script imports from.
             "~/.agents",
-            "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
-            "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
+            "~/.config",
+            "~/.local",
+            "~/.ssh",
+            "~/.gitconfig",
+            "~/.gitignore_global",
+            "~/.cargo",
+            "~/.rustup",
+            "~/.npmrc",
+            "~/.nvm",
+            "~/.pyenv",
+            "~/.docker",
+            "~/.netrc",
         ],
     )
-    writable: list[str] = Field(default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"])
+    writable: list[str] = Field(
+        default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"]
+    )
     # `/tmp` beside `$TMPDIR` because on macOS they are not the same place, and nothing personal lives there.
     grantable: list[str] = Field(default=[])
-    deny: list[str] = Field(default=[
-            "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
-            "~/Library/Mail", "~/Library/Messages", "~/Library/Safari",
-        ])
+    deny: list[str] = Field(
+        default=[
+            "~/Documents",
+            "~/Desktop",
+            "~/Downloads",
+            "~/Pictures",
+            "~/Movies",
+            "~/Music",
+            "~/Library/Mail",
+            "~/Library/Messages",
+            "~/Library/Safari",
+        ]
+    )
 
 
 class SandboxConfiguration(Section):
@@ -228,11 +249,13 @@ class SandboxConfiguration(Section):
     enforce: Literal["required", "preferred", "off"] = Field("required")
     filesystem: FilesystemConfiguration = Field(default_factory=FilesystemConfiguration)
     network: bool = Field(False)
-    limits: dict[str, int] = Field(default={
+    limits: dict[str, int] = Field(
+        default={
             "RLIMIT_CORE": 0,
             "RLIMIT_FSIZE": 8 * 1024 * 1024 * 1024,
             "RLIMIT_NPROC": 2048,
-        })
+        }
+    )
     umask: Optional[str] = Field(None)
     nice: int = Field(0)
 
@@ -269,8 +292,13 @@ _COMPACTION_RENAMED = {
 
 #: Compaction settings that are gone with nothing standing in for them.
 _COMPACTION_REMOVED = (
-    "keep_recent_turns", "preserve_recent_tokens", "prune", "prune_tool_results",
-    "pruned_result_tokens", "condense_log_at_fraction", "reflector_observation_fraction",
+    "keep_recent_turns",
+    "preserve_recent_tokens",
+    "prune",
+    "prune_tool_results",
+    "pruned_result_tokens",
+    "condense_log_at_fraction",
+    "reflector_observation_fraction",
 )
 
 
@@ -292,7 +320,8 @@ class CompactionConfiguration(Section):
             if carried.pop(gone, None) is not None:
                 logger.warning(
                     "ignoring compaction.%s: the setting no longer exists. Remove it from your "
-                    "configuration file.", gone,
+                    "configuration file.",
+                    gone,
                 )
         return carried
 
@@ -438,11 +467,7 @@ class MCPConfiguration(Section):
     servers: dict[str, MCPServerConfiguration] = Field(default={})
 
     def enabled_servers(self) -> dict[str, MCPServerConfiguration]:
-        return {
-            name: server
-            for name, server in self.servers.items()
-            if server.enabled
-        }
+        return {name: server for name, server in self.servers.items() if server.enabled}
 
     @classmethod
     def from_dotagents_roots(cls, roots: Iterable[Path]) -> MCPConfiguration:
@@ -496,9 +521,7 @@ class RemoteAgentsConfiguration(Section):
 
     def enabled_agents(self) -> dict[str, RemoteAgentServerConfiguration]:
         return {
-            name: agent
-            for name, agent in self.agents.items()
-            if agent.enabled and agent.card_url
+            name: agent for name, agent in self.agents.items() if agent.enabled and agent.card_url
         }
 
     @classmethod
@@ -570,9 +593,13 @@ class Configuration(Section):
     compaction: CompactionConfiguration = Field(default_factory=CompactionConfiguration)
     attachments: AttachmentsConfiguration = Field(default_factory=AttachmentsConfiguration)
     user_context: UserContextConfiguration = Field(default_factory=UserContextConfiguration)
-    computer_control: ComputerControlConfiguration = Field(default_factory=ComputerControlConfiguration)
+    computer_control: ComputerControlConfiguration = Field(
+        default_factory=ComputerControlConfiguration
+    )
     toolbox: ToolboxConfiguration = Field(default_factory=ToolboxConfiguration)
-    permission_reviewer: PermissionReviewerConfiguration = Field(default_factory=PermissionReviewerConfiguration)
+    permission_reviewer: PermissionReviewerConfiguration = Field(
+        default_factory=PermissionReviewerConfiguration
+    )
     dictation: DictationConfiguration = Field(default_factory=DictationConfiguration)
     tuning: TuningConfiguration = Field(default_factory=TuningConfiguration)
     composio: ComposioConfiguration = Field(default_factory=ComposioConfiguration)
@@ -596,8 +623,12 @@ class Configuration(Section):
         with open(path) as file_handle:
             data = yaml.safe_load(file_handle)
         configuration = cls(**(data or {}))
-        configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
-        configuration.remote_agents = RemoteAgentsConfiguration.from_dotagents_roots(configuration.agents_root_directories())
+        configuration.mcp = MCPConfiguration.from_dotagents_roots(
+            configuration.agents_root_directories()
+        )
+        configuration.remote_agents = RemoteAgentsConfiguration.from_dotagents_roots(
+            configuration.agents_root_directories()
+        )
         return configuration
 
     def configured_provider_keys(self) -> dict[str, str]:
@@ -617,34 +648,42 @@ class Configuration(Section):
         }
 
     def agents_root_directories(self) -> list[Path]:
-        return _dedupe_paths([
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser(),
-            Path(self.AGENTS_ROOT_DIRECTORY),
-        ])
+        return _dedupe_paths(
+            [
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser(),
+                Path(self.AGENTS_ROOT_DIRECTORY),
+            ]
+        )
 
     def agent_directories(self) -> list[Path]:
-        return _dedupe_paths([
-            # Bundled agents are the base layer; home and project profiles override one of the same id.
-            BUNDLED_DOTAGENTS_ROOT / "agents",
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
-            Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
-            Path(self.AGENTS_DIRECTORY),
-        ])
+        return _dedupe_paths(
+            [
+                # Bundled agents are the base layer; home and project profiles override one of the same id.
+                BUNDLED_DOTAGENTS_ROOT / "agents",
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
+                Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
+                Path(self.AGENTS_DIRECTORY),
+            ]
+        )
 
     def skill_directories(self) -> list[Path]:
-        return _dedupe_paths([
-            # Bundled skills are the base layer, exactly like agents.
-            BUNDLED_DOTAGENTS_ROOT / "skills",
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
-            Path(self.AGENTS_ROOT_DIRECTORY) / "skills",
-            Path(self.SKILLS_DIRECTORY),
-        ])
+        return _dedupe_paths(
+            [
+                # Bundled skills are the base layer, exactly like agents.
+                BUNDLED_DOTAGENTS_ROOT / "skills",
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
+                Path(self.AGENTS_ROOT_DIRECTORY) / "skills",
+                Path(self.SKILLS_DIRECTORY),
+            ]
+        )
 
     def memory_directories(self) -> list[Path]:
-        return _dedupe_paths([
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
-            Path(self.AGENTS_ROOT_DIRECTORY) / "memories",
-        ])
+        return _dedupe_paths(
+            [
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
+                Path(self.AGENTS_ROOT_DIRECTORY) / "memories",
+            ]
+        )
 
     # Project-relative roots resolve against the session's working directory, not the harness's CWD.
 
@@ -665,42 +704,54 @@ class Configuration(Section):
         return self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY)
 
     def agents_root_directories_for(self, working_directory: str) -> list[Path]:
-        return _dedupe_paths([
-            self.home_agents_root(),
-            self.project_agents_root_for(working_directory),
-        ])
+        return _dedupe_paths(
+            [
+                self.home_agents_root(),
+                self.project_agents_root_for(working_directory),
+            ]
+        )
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
-        return _dedupe_paths([
-            # Bundled agents are the base layer; home and project profiles override one of the same id.
-            BUNDLED_DOTAGENTS_ROOT / "agents",
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
-            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
-            self._resolve_local(working_directory, self.AGENTS_DIRECTORY),
-        ])
+        return _dedupe_paths(
+            [
+                # Bundled agents are the base layer; home and project profiles override one of the same id.
+                BUNDLED_DOTAGENTS_ROOT / "agents",
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
+                self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
+                self._resolve_local(working_directory, self.AGENTS_DIRECTORY),
+            ]
+        )
 
     def skill_directories_for(self, working_directory: str) -> list[Path]:
-        return _dedupe_paths([
-            # Bundled skills are the base layer, exactly like agents.
-            BUNDLED_DOTAGENTS_ROOT / "skills",
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
-            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "skills",
-            self._resolve_local(working_directory, self.SKILLS_DIRECTORY),
-        ])
+        return _dedupe_paths(
+            [
+                # Bundled skills are the base layer, exactly like agents.
+                BUNDLED_DOTAGENTS_ROOT / "skills",
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
+                self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "skills",
+                self._resolve_local(working_directory, self.SKILLS_DIRECTORY),
+            ]
+        )
 
     def memory_directories_for(self, working_directory: str) -> list[Path]:
-        return _dedupe_paths([
-            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
-            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "memories",
-        ])
+        return _dedupe_paths(
+            [
+                Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
+                self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "memories",
+            ]
+        )
 
     def mcp_configuration_for(self, working_directory: str) -> MCPConfiguration:
         """The MCP servers declared for a working directory: home plus its own, deduped, the folder winning."""
-        return MCPConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
+        return MCPConfiguration.from_dotagents_roots(
+            self.agents_root_directories_for(working_directory)
+        )
 
     def remote_agents_configuration_for(self, working_directory: str) -> RemoteAgentsConfiguration:
         """The external agents declared for a working directory: home plus its own."""
-        return RemoteAgentsConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
+        return RemoteAgentsConfiguration.from_dotagents_roots(
+            self.agents_root_directories_for(working_directory)
+        )
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
@@ -789,7 +840,9 @@ class BashToolConfiguration(BaseModel):
 
     def _extract_segments(self, command: str) -> list[str]:
         """Split a command into segments, on shell operators and through subshells."""
-        segments = [segment.strip() for segment in self._SHELL_SPLIT.split(command) if segment.strip()]
+        segments = [
+            segment.strip() for segment in self._SHELL_SPLIT.split(command) if segment.strip()
+        ]
         for match in self._SUBSHELL.finditer(command):
             inner = (match.group(1) or match.group(2)).strip()
             if inner:
@@ -873,9 +926,7 @@ class AgentConfiguration(BaseModel):
         with open(path) as file_handle:
             content = file_handle.read()
 
-        frontmatter_match = re.match(
-            r"^---\s*\n(.*?)\n---\s*\n(.*)", content, re.DOTALL
-        )
+        frontmatter_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)", content, re.DOTALL)
         if not frontmatter_match:
             raise ValueError(f"No YAML frontmatter found in {path}")
 
@@ -905,11 +956,16 @@ def write_agent_markdown(path: str | Path, configuration: AgentConfiguration) ->
     path = Path(path)
     body = configuration.system_prompt.strip()
     front = configuration.model_dump(
-        mode="json", exclude_defaults=True, exclude_none=True, exclude={"system_prompt"},
+        mode="json",
+        exclude_defaults=True,
+        exclude_none=True,
+        exclude={"system_prompt"},
     )
     # `name` is the identity the harness addresses this agent by, stated even when it matches the directory.
     front.setdefault("name", configuration.identifier)
-    rendered = yaml.safe_dump(front, sort_keys=False, allow_unicode=True, default_flow_style=False).strip()
+    rendered = yaml.safe_dump(
+        front, sort_keys=False, allow_unicode=True, default_flow_style=False
+    ).strip()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{rendered}\n---\n\n{body}\n" if body else f"---\n{rendered}\n---\n")
 
@@ -920,10 +976,7 @@ class PermissionEvaluator:
 
     def check_tool_enabled(self, tool_name: str) -> None:
         """Refuse a tool the profile does not list, whatever `tools_enabled` names."""
-        if (
-            self._configuration.tools_enabled
-            and tool_name not in self._configuration.tools_enabled
-        ):
+        if self._configuration.tools_enabled and tool_name not in self._configuration.tools_enabled:
             raise PermissionDenied(
                 f"Tool '{tool_name}' is not enabled for agent '{self._configuration.identifier}'"
             )
@@ -973,7 +1026,9 @@ class PromptLoader:
         return cls._replace_variables(template, variables, template_name)
 
     @staticmethod
-    def _replace_variables(template: str, variables: dict[str, str], template_name: str = "") -> str:
+    def _replace_variables(
+        template: str, variables: dict[str, str], template_name: str = ""
+    ) -> str:
         """Substitute ``{{ name }}`` placeholders strictly: a missing variable or a malformed brace raises."""
         where = f" in prompt '{template_name}'" if template_name else ""
         placeholder = re.compile(r"\{\{\s*(\w+)\s*\}\}")
@@ -1018,7 +1073,9 @@ def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path
     return [Path(directory).expanduser() for directory in directories]
 
 
-def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_aliases: bool = False) -> dict[str, Path]:
+def _agent_paths(
+    agents_directories: str | Path | Iterable[str | Path], include_aliases: bool = False
+) -> dict[str, Path]:
     paths: dict[str, Path] = {}
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
@@ -1074,17 +1131,17 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
     for name, path in sorted(_agent_paths(agents_directory).items()):
         try:
             config = AgentConfiguration.from_markdown(path)
-            agents.append({
-                "id": config.identifier,
-                "name": config.identifier,
-                "title": config.display_name,
-                # What the agent is for — surfaced as the subtitle in the UI's agent picker.
-                "description": config.description,
-                # The resolved `provider/model`; empty means no runnable model is configured.
-                "model": config.model_identifier or "",
-            })
+            agents.append(
+                {
+                    "id": config.identifier,
+                    "name": config.identifier,
+                    "title": config.display_name,
+                    # What the agent is for — surfaced as the subtitle in the UI's agent picker.
+                    "description": config.description,
+                    # The resolved `provider/model`; empty means no runnable model is configured.
+                    "model": config.model_identifier or "",
+                }
+            )
         except Exception:
             agents.append({"id": name, "name": name, "title": name, "description": "", "model": ""})
     return agents
-
-

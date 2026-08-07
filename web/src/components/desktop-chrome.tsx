@@ -6,8 +6,7 @@ import { useEffect } from "react";
 // Wires up native-window chrome under Tauri, and renders nothing in a plain browser.
 export function DesktopChrome() {
   useEffect(() => {
-    const isTauri =
-      typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
     if (isTauri) {
       document.documentElement.setAttribute("data-tauri", "true");
     }

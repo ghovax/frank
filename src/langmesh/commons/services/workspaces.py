@@ -12,7 +12,15 @@ import subprocess
 import uuid
 from langmesh.commons import state
 from langmesh.commons.database import LocationRecord, WorkspaceRecord, SessionRecord
-from langmesh.commons.services.locations import _add_location_row, _derive_location_name, _existing_location_entries, _iso_now, _locations_conflict_message, _serialize_location, _serialize_workspace
+from langmesh.commons.services.locations import (
+    _add_location_row,
+    _derive_location_name,
+    _existing_location_entries,
+    _iso_now,
+    _locations_conflict_message,
+    _serialize_location,
+    _serialize_workspace,
+)
 
 
 def _workspace_name(path: str) -> str:
@@ -24,7 +32,11 @@ def _workspaces_payload() -> dict[str, list[dict[str, Any]]]:
     assert state.session_factory is not None
     database_session = state.session_factory()
     try:
-        rows = database_session.query(WorkspaceRecord).order_by(WorkspaceRecord.updated_at.desc()).all()
+        rows = (
+            database_session.query(WorkspaceRecord)
+            .order_by(WorkspaceRecord.updated_at.desc())
+            .all()
+        )
         return {"workspaces": [_serialize_workspace(row, database_session) for row in rows]}
     finally:
         database_session.close()
@@ -42,7 +54,12 @@ def _workspace_payload(workspace_id: str) -> dict[str, Any] | None:
 
 def _create_workspace(request: WorkspaceCreateRequest) -> dict[str, Any]:
     assert state.session_factory is not None
-    conflict = _locations_conflict_message([(location.kind, location.host_alias, location.base_directory) for location in request.locations])
+    conflict = _locations_conflict_message(
+        [
+            (location.kind, location.host_alias, location.base_directory)
+            for location in request.locations
+        ]
+    )
     if conflict:
         raise ValueError(conflict)
     with sqlite_write_lock():
@@ -82,7 +99,8 @@ def _ensure_default_project() -> None:
             )
             database_session.add(workspace)
             _add_location_row(
-                database_session, workspace.id,
+                database_session,
+                workspace.id,
                 LocationInput(kind="local", base_directory=str(Path.home())),
             )
             database_session.commit()
@@ -138,7 +156,8 @@ def _open_full_disk_access_settings() -> None:
     with suppress(OSError, subprocess.SubprocessError):
         subprocess.run(
             ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"],
-            check=False, timeout=5,
+            check=False,
+            timeout=5,
         )
 
 
@@ -151,8 +170,12 @@ def _delete_workspace(workspace_id: str) -> bool:
             workspace = database_session.get(WorkspaceRecord, workspace_id)
             if workspace is None:
                 return False
-            database_session.query(LocationRecord).filter(LocationRecord.workspace_id == workspace_id).delete()
-            database_session.query(SessionRecord).filter(SessionRecord.workspace_id == workspace_id).delete()
+            database_session.query(LocationRecord).filter(
+                LocationRecord.workspace_id == workspace_id
+            ).delete()
+            database_session.query(SessionRecord).filter(
+                SessionRecord.workspace_id == workspace_id
+            ).delete()
             database_session.delete(workspace)
             database_session.commit()
             return True
@@ -172,7 +195,8 @@ def _create_location(workspace_id: str, request: LocationInput) -> dict[str, Any
             if workspace is None:
                 return None
             conflict = _locations_conflict_message(
-                _existing_location_entries(database_session, workspace_id) + [(request.kind, request.host_alias, request.base_directory)]
+                _existing_location_entries(database_session, workspace_id)
+                + [(request.kind, request.host_alias, request.base_directory)]
             )
             if conflict:
                 raise ValueError(conflict)
@@ -199,7 +223,9 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             next_base_directory = request.base_directory.strip() or record.base_directory
             next_host_alias = (request.host_alias or "").strip()
             conflict = _locations_conflict_message(
-                _existing_location_entries(database_session, record.workspace_id, exclude_id=location_id)
+                _existing_location_entries(
+                    database_session, record.workspace_id, exclude_id=location_id
+                )
                 + [(next_kind, next_host_alias, next_base_directory)]
             )
             if conflict:
@@ -210,7 +236,12 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             record.permission_mode = request.permission_mode or "ask"
             # The name follows the connection, so re-derive it whenever the connection changes.
             record.name = _derive_location_name(
-                database_session, record.workspace_id, record.kind, record.base_directory, record.host_alias, exclude_id=record.id
+                database_session,
+                record.workspace_id,
+                record.kind,
+                record.base_directory,
+                record.host_alias,
+                exclude_id=record.id,
             )
             workspace = database_session.get(WorkspaceRecord, record.workspace_id)
             if workspace is not None:
@@ -246,7 +277,13 @@ def _hosts_payload() -> dict[str, list[dict[str, Any]]]:
     hosts = _ssh_hosts.list_ssh_hosts()
     return {
         "hosts": [
-            {"alias": host.alias, "hostname": host.hostname, "user": host.user, "port": host.port, "identity_files": list(host.identity_files)}
+            {
+                "alias": host.alias,
+                "hostname": host.hostname,
+                "user": host.user,
+                "port": host.port,
+                "identity_files": list(host.identity_files),
+            }
             for host in hosts
         ]
     }

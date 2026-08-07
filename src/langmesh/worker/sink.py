@@ -44,6 +44,7 @@ from langmesh.runtime.turn_events import (
     Usage,
 )
 
+
 class _TextPartBuffer:
     """Coalesce adjacent text chunks onto the display's clock: 60 a second, which is what the browser can draw."""
 
@@ -168,23 +169,31 @@ class _TurnEventSink:
     async def emit_compaction(self, event: CompactionStarted | CompactionDone) -> None:
         """Map a compaction event to its part, so a manual pass and an automatic one render identically."""
         if isinstance(event, CompactionStarted):
-            await self._emit(_event_part(CompactionEvent(
-                status="started",
-                reason=event.reason,
-                messages_before=event.messages_before,
-                tokens_before=event.tokens_before,
-            )))
+            await self._emit(
+                _event_part(
+                    CompactionEvent(
+                        status="started",
+                        reason=event.reason,
+                        messages_before=event.messages_before,
+                        tokens_before=event.tokens_before,
+                    )
+                )
+            )
         elif isinstance(event, CompactionDone):
-            await self._emit(_event_part(CompactionEvent(
-                status="done",
-                reason=event.reason,
-                ok=event.ok,
-                messages_before=event.messages_before,
-                messages_after=event.messages_after,
-                tokens_before=event.tokens_before,
-                tokens_after=event.tokens_after,
-                log_tokens=event.log_tokens,
-            )))
+            await self._emit(
+                _event_part(
+                    CompactionEvent(
+                        status="done",
+                        reason=event.reason,
+                        ok=event.ok,
+                        messages_before=event.messages_before,
+                        messages_after=event.messages_after,
+                        tokens_before=event.tokens_before,
+                        tokens_after=event.tokens_after,
+                        log_tokens=event.log_tokens,
+                    )
+                )
+            )
 
     async def handle(self, event: TurnEventUnion) -> bool:
         """Consume one runtime event, emitting its parts and advancing turn state, exhaustively."""
@@ -201,63 +210,87 @@ class _TurnEventSink:
                 await self._thinking.push(event.text, (event.block_id,))
             case ThinkingDone():
                 await self.flush()
-                await self._emit(_event_part(ThinkingDoneEvent(duration_milliseconds=event.duration_milliseconds)))
+                await self._emit(
+                    _event_part(
+                        ThinkingDoneEvent(duration_milliseconds=event.duration_milliseconds)
+                    )
+                )
             case Status():
                 await self.flush()
                 await self._emit(_event_part(StatusEvent(code=event.code)))
             case ToolCall():
                 await self.flush()
-                await self._emit(_event_part(ToolCallEvent(
-                    tool_name=event.name,
-                    arguments=event.arguments if event.arguments is not None else {}, tool_call_id=event.id,
-                )))
+                await self._emit(
+                    _event_part(
+                        ToolCallEvent(
+                            tool_name=event.name,
+                            arguments=event.arguments if event.arguments is not None else {},
+                            tool_call_id=event.id,
+                        )
+                    )
+                )
             case ToolResult():
                 await self.flush()
-                await self._emit(_tool_result_part(event.name, event.id, event.result, event.status))
+                await self._emit(
+                    _tool_result_part(event.name, event.id, event.result, event.status)
+                )
             case Checkpoint():
                 # A durable-safe point: snapshot the conversation so a crash leaves completed tools' results in the record.
                 await self._save_conversation()
             case Mcp():
                 await self.flush()
-                await self._emit(_event_part(McpWireEvent(
-                    server=event.server,
-                    tool=event.tool,
-                    event=event.event if event.event is not None else {},
-                    tool_call_id=event.id,
-                )))
+                await self._emit(
+                    _event_part(
+                        McpWireEvent(
+                            server=event.server,
+                            tool=event.tool,
+                            event=event.event if event.event is not None else {},
+                            tool_call_id=event.id,
+                        )
+                    )
+                )
             case Usage():
                 await self.flush()
                 cumulative = event.cumulative or {}
                 model_identifier = self._model_identifier()
-                _telemetry.set_attributes(self._span, {
-                    "gen_ai.request.model": model_identifier or None,
-                    "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
-                    "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
-                    "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
-                    "gen_ai.model.calls": cumulative.get("model_calls", 0),
-                })
+                _telemetry.set_attributes(
+                    self._span,
+                    {
+                        "gen_ai.request.model": model_identifier or None,
+                        "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
+                        "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
+                        "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
+                        "gen_ai.model.calls": cumulative.get("model_calls", 0),
+                    },
+                )
                 _telemetry.record_usage(model_identifier, event.input_tokens, event.output_tokens)
-                await self._emit(_event_part(TokenUsageEvent(
-                    input_tokens=event.input_tokens,
-                    output_tokens=event.output_tokens,
-                    context_window=event.context_window,
-                    cache_read_tokens=event.cache_read_tokens,
-                    reasoning_tokens=event.reasoning_tokens,
-                    prefix_intact=event.prefix_intact,
-                    reachable_tokens=event.reachable_tokens,
-                    segments=event.segments,
-                    shared_segments=event.shared_segments,
-                    divergence=PrefixDivergence.model_validate(event.divergence) if event.divergence else None,
-                    cumulative=CumulativeUsage(
-                        input_tokens=cumulative.get("input_tokens", 0),
-                        output_tokens=cumulative.get("output_tokens", 0),
-                        total_tokens=cumulative.get("total_tokens", 0),
-                        cache_read_tokens=cumulative.get("cache_read_tokens", 0),
-                        reachable_tokens=cumulative.get("reachable_tokens", 0),
-                        reasoning_tokens=cumulative.get("reasoning_tokens", 0),
-                        model_calls=cumulative.get("model_calls", 0),
-                    ),
-                )))
+                await self._emit(
+                    _event_part(
+                        TokenUsageEvent(
+                            input_tokens=event.input_tokens,
+                            output_tokens=event.output_tokens,
+                            context_window=event.context_window,
+                            cache_read_tokens=event.cache_read_tokens,
+                            reasoning_tokens=event.reasoning_tokens,
+                            prefix_intact=event.prefix_intact,
+                            reachable_tokens=event.reachable_tokens,
+                            segments=event.segments,
+                            shared_segments=event.shared_segments,
+                            divergence=PrefixDivergence.model_validate(event.divergence)
+                            if event.divergence
+                            else None,
+                            cumulative=CumulativeUsage(
+                                input_tokens=cumulative.get("input_tokens", 0),
+                                output_tokens=cumulative.get("output_tokens", 0),
+                                total_tokens=cumulative.get("total_tokens", 0),
+                                cache_read_tokens=cumulative.get("cache_read_tokens", 0),
+                                reachable_tokens=cumulative.get("reachable_tokens", 0),
+                                reasoning_tokens=cumulative.get("reasoning_tokens", 0),
+                                model_calls=cumulative.get("model_calls", 0),
+                            ),
+                        )
+                    )
+                )
             case Suspended():
                 # The turn needs a decision before it can run its batch, so each gate is surfaced and the segment closed durably.
                 await self.flush()
@@ -265,30 +298,52 @@ class _TurnEventSink:
                 plans = event.plans or {}
                 for gate in interactions:
                     if gate.kind == "question":
-                        await self._emit(_event_part(QuestionEvent(
-                            request_id=gate.request_id,
-                            tool_call_id=gate.tool_call_id,
-                            questions=gate.questions or [],
-                        )))
+                        await self._emit(
+                            _event_part(
+                                QuestionEvent(
+                                    request_id=gate.request_id,
+                                    tool_call_id=gate.tool_call_id,
+                                    questions=gate.questions or [],
+                                )
+                            )
+                        )
                     else:
-                        await self._emit(_event_part(PermissionRequestEvent(
-                            request_id=gate.request_id,
-                            tool_call_id=gate.tool_call_id,
-                            tool_name=gate.tool_name, arguments=gate.arguments,
-                            command=gate.command, explanation=gate.explanation,
-                            reason=gate.reason,
-                        )))
+                        await self._emit(
+                            _event_part(
+                                PermissionRequestEvent(
+                                    request_id=gate.request_id,
+                                    tool_call_id=gate.tool_call_id,
+                                    tool_name=gate.tool_name,
+                                    arguments=gate.arguments,
+                                    command=gate.command,
+                                    explanation=gate.explanation,
+                                    reason=gate.reason,
+                                )
+                            )
+                        )
                 return await self._suspend(interactions, plans)
             case Error():
                 await self.flush()
-                await self._emit(_event_part(ErrorEvent(
-                    message=event.message or "error", tool_call_id=event.id, tool_name=event.tool,
-                )))
+                await self._emit(
+                    _event_part(
+                        ErrorEvent(
+                            message=event.message or "error",
+                            tool_call_id=event.id,
+                            tool_name=event.tool,
+                        )
+                    )
+                )
             case Steering():
                 await self.flush()
-                await self._emit(_event_part(SteeringEvent(
-                    text=event.text, message_id=event.message_id, peer_sender=event.peer_sender,
-                )))
+                await self._emit(
+                    _event_part(
+                        SteeringEvent(
+                            text=event.text,
+                            message_id=event.message_id,
+                            peer_sender=event.peer_sender,
+                        )
+                    )
+                )
             case CompactionStarted() | CompactionDone():
                 await self.flush()
                 await self.emit_compaction(event)

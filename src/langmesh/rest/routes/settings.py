@@ -38,7 +38,10 @@ from langmesh.commons.services import workspaces as _workspaces
 from langmesh.rest.services import filesystem as _system
 from langmesh.commons import state
 from langmesh.commons.services.broadcast import _publish_broadcast
-from langmesh.commons.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
+from langmesh.commons.services.sessions import (
+    _normalize_permission_mode,
+    _reset_work_habits_acknowledgements,
+)
 from langmesh.commons.services.agents import _recent_models
 from langmesh.commons.services.settings import (
     _apply_live_credentials,
@@ -81,7 +84,9 @@ def _live_additions(
 def _merged_sandbox(current, posted: dict):
     """The stored confinement with a posted patch laid over it, validated whole so an unknown key fails rather than vanishes."""
     try:
-        return _configuration.SandboxConfiguration.model_validate({**current.model_dump(), **posted})
+        return _configuration.SandboxConfiguration.model_validate(
+            {**current.model_dump(), **posted}
+        )
     except Exception as error:  # noqa: BLE001 — the validator's own message is the useful part
         raise HTTPException(status_code=400, detail=f"invalid sandbox settings: {error}") from error
 
@@ -126,13 +131,25 @@ async def list_models_endpoint():
     )
     catalog = list_models()
     # Live models the static list has not caught are appended, filtered to what this harness can actually route.
-    catalog.extend(_live_additions(
-        "chatgpt", live_chatgpt, catalog, lambda slug: slug.startswith("gpt-"), ("text", "image"),
-    ))
+    catalog.extend(
+        _live_additions(
+            "chatgpt",
+            live_chatgpt,
+            catalog,
+            lambda slug: slug.startswith("gpt-"),
+            ("text", "image"),
+        )
+    )
     # Cursor's agent service takes a text turn, so nothing there claims image input.
-    catalog.extend(_live_additions(
-        "cursor", live_cursor, catalog, lambda _model_id: True, ("text",),
-    ))
+    catalog.extend(
+        _live_additions(
+            "cursor",
+            live_cursor,
+            catalog,
+            lambda _model_id: True,
+            ("text",),
+        )
+    )
     live_by_provider = {"chatgpt": set(live_chatgpt), "cursor": set(live_cursor)}
 
     def _is_available(model: ModelDefinition) -> bool:
@@ -333,12 +350,15 @@ async def update_settings(request: SettingsUpdateRequest):
             worktree_strategy=request.worktree_strategy,
             permission_mode=(
                 _normalize_permission_mode(request.permission_mode)
-                if request.permission_mode is not None else None
+                if request.permission_mode is not None
+                else None
             ),
         )
         # `agent.permission_mode` in the configuration file, which is where it is read from too.
         if request.permission_mode is not None:
-            configuration.agent.permission_mode = _normalize_permission_mode(request.permission_mode)
+            configuration.agent.permission_mode = _normalize_permission_mode(
+                request.permission_mode
+            )
             await state.reset_runtimes()
         if request.exa_api_key is not None:
             configuration.exa.api_key = request.exa_api_key
@@ -362,11 +382,17 @@ async def update_settings(request: SettingsUpdateRequest):
             for identifier, credential in configuration.providers.items()
         }
         for provider_identifier, api_key in (request.provider_keys or {}).items():
-            existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
+            existing = (
+                merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
+            )
             merged_providers[provider_identifier] = existing.model_copy(update={"api_key": api_key})
         for provider_identifier, base_url in (request.provider_base_urls or {}).items():
-            existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
-            merged_providers[provider_identifier] = existing.model_copy(update={"base_url": base_url})
+            existing = (
+                merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
+            )
+            merged_providers[provider_identifier] = existing.model_copy(
+                update={"base_url": base_url}
+            )
         configuration.providers = merged_providers
         await _apply_live_credentials()
     _publish_broadcast({"type": "settings_changed"})
@@ -395,17 +421,19 @@ async def settings_schema():
         except KeyError:
             value = setting.default
             configured = False
-        entry["settings"].append({
-            "path": setting.path,
-            "kind": setting.kind,
-            "choices": list(setting.choices),
-            "optional": setting.optional,
-            "secret": setting.secret,
-            "default": setting.default,
-            "value": value,
-            # Whether the file says this, as opposed to the code shipping it.
-            "configured": configured,
-        })
+        entry["settings"].append(
+            {
+                "path": setting.path,
+                "kind": setting.kind,
+                "choices": list(setting.choices),
+                "optional": setting.optional,
+                "secret": setting.secret,
+                "default": setting.default,
+                "value": value,
+                # Whether the file says this, as opposed to the code shipping it.
+                "configured": configured,
+            }
+        )
     return {"sections": [section for section in sections.values() if section["settings"]]}
 
 
@@ -485,7 +513,10 @@ async def update_user_context(request: UserContextUpdateRequest):
             await asyncio.to_thread(_reset_work_habits_acknowledgements)
             await state.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "user_context_enabled": state.global_configuration.user_context.enabled}
+    return {
+        "status": "saved",
+        "user_context_enabled": state.global_configuration.user_context.enabled,
+    }
 
 
 @router.post("/settings/computer-control")
@@ -497,7 +528,10 @@ async def update_computer_control(request: ComputerControlUpdateRequest):
         state.global_configuration.computer_control.enabled = request.enabled
         await state.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "computer_control_enabled": state.global_configuration.computer_control.enabled}
+    return {
+        "status": "saved",
+        "computer_control_enabled": state.global_configuration.computer_control.enabled,
+    }
 
 
 @router.post("/settings/toolbox")
@@ -520,7 +554,9 @@ async def update_attachments(request: AttachmentsUpdateRequest):
     if changes:
         async with state.configuration_lock:
             await _persist_configuration(attachments=changes)
-            state.global_configuration.attachments = state.global_configuration.attachments.model_copy(update=changes)
+            state.global_configuration.attachments = (
+                state.global_configuration.attachments.model_copy(update=changes)
+            )
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "attachments": state.global_configuration.attachments.model_dump()}
 
@@ -533,6 +569,8 @@ async def update_compaction(request: CompactionUpdateRequest):
     if changes:
         async with state.configuration_lock:
             await _persist_configuration(compaction=changes)
-            state.global_configuration.compaction = state.global_configuration.compaction.model_copy(update=changes)
+            state.global_configuration.compaction = (
+                state.global_configuration.compaction.model_copy(update=changes)
+            )
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "compaction": state.global_configuration.compaction.model_dump()}

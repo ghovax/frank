@@ -28,7 +28,8 @@ def build_agent_card(
     sandbox = getattr(configuration, "sandbox", None)
     writes = sandbox is None or bool(sandbox.filesystem.writable)
     capability = (
-        "Can read and modify the system." if writes
+        "Can read and modify the system."
+        if writes
         else "Investigates and reports — its confinement permits no writes."
     )
     skills = [
@@ -46,7 +47,11 @@ def build_agent_card(
                 id=configuration.identifier,
                 name=configuration.identifier,
                 description=(configuration.description or display_name) + f" {capability}",
-                tags=["harness", configuration.permission_mode or "unbounded", configuration.model or "unconfigured-model"],
+                tags=[
+                    "harness",
+                    configuration.permission_mode or "unbounded",
+                    configuration.model or "unconfigured-model",
+                ],
                 examples=[f"Ask {display_name} to help with a task in its domain."],
             )
         )
@@ -66,16 +71,18 @@ def build_agent_card(
             streaming=True,
             push_notifications=True,
             state_transition_history=True,
-            extensions=[AgentExtension(
-                uri=METADATA_KEY,
-                description=(
-                    "LangMesh turn state and envelopes. Under this key: a message's per-turn inputs "
-                    "(working directory, permission mode, peer sender), a task's durable "
-                    "control-state (turn kind, peer sender, pending interaction, referenced "
-                    "turns), and the payload of every DataPart the harness emits or reads."
-                ),
-                required=False,
-            )],
+            extensions=[
+                AgentExtension(
+                    uri=METADATA_KEY,
+                    description=(
+                        "LangMesh turn state and envelopes. Under this key: a message's per-turn inputs "
+                        "(working directory, permission mode, peer sender), a task's durable "
+                        "control-state (turn kind, peer sender, pending interaction, referenced "
+                        "turns), and the payload of every DataPart the harness emits or reads."
+                    ),
+                    required=False,
+                )
+            ],
         ),
         skills=skills,
     )

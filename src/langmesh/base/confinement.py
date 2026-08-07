@@ -19,12 +19,31 @@ ENFORCE_PREFERRED = "preferred"
 ENFORCE_OFF = "off"
 
 # The rlimits the configuration may name, so a typo is an error rather than ignored.
-_SUPPORTED_LIMITS = ("RLIMIT_CPU", "RLIMIT_AS", "RLIMIT_FSIZE", "RLIMIT_NPROC", "RLIMIT_CORE", "RLIMIT_NOFILE")
+_SUPPORTED_LIMITS = (
+    "RLIMIT_CPU",
+    "RLIMIT_AS",
+    "RLIMIT_FSIZE",
+    "RLIMIT_NPROC",
+    "RLIMIT_CORE",
+    "RLIMIT_NOFILE",
+)
 
 # What a child needs to be a usable Unix process. Everything else, API keys above all, is left behind.
 _BASE_ENVIRONMENT_KEYS = (
-    "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LOGNAME", "PATH", "SHELL", "TERM", "TZ", "USER",
-    "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LOGNAME",
+    "PATH",
+    "SHELL",
+    "TERM",
+    "TZ",
+    "USER",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_RUNTIME_DIR",
 )
 
 # The agent is told to recognise a refusal by its wording, and `strerror` is translated, so the message
@@ -112,7 +131,9 @@ def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
 
     return AccessRequest(
         mutates=bool(value["mutates"]),
-        reads=paths["reads"], writes=paths["writes"], network=network,
+        reads=paths["reads"],
+        writes=paths["writes"],
+        network=network,
     ), ""
 
 
@@ -130,9 +151,12 @@ class Grant:
 
     def as_dict(self) -> dict:
         return {
-            "reads": list(self.reads), "writes": list(self.writes),
-            "network": self.network, "whole_disk": self.whole_disk,
-            "purpose": self.purpose, "granted_at": self.granted_at,
+            "reads": list(self.reads),
+            "writes": list(self.writes),
+            "network": self.network,
+            "whole_disk": self.whole_disk,
+            "purpose": self.purpose,
+            "granted_at": self.granted_at,
             "approved_by": self.approved_by,
         }
 
@@ -208,7 +232,11 @@ class Profile:
             filesystem=self.filesystem.intersect(parent.filesystem),
             network=self.network and parent.network,
             limits=limits,
-            umask=self.umask if parent.umask is None else (self.umask if self.umask is not None and self.umask > parent.umask else parent.umask),
+            umask=self.umask
+            if parent.umask is None
+            else (
+                self.umask if self.umask is not None and self.umask > parent.umask else parent.umask
+            ),
             nice=max(self.nice, parent.nice),
             environment={**self.environment},
             enforce=max(self.enforce, parent.enforce, key=strictness.index),
@@ -221,7 +249,9 @@ class Profile:
             filesystem=Filesystem(
                 readable=self.filesystem.readable,
                 # A strict intersection with no fallback, since the one method that narrows must not widen.
-                writable=_contained_in(tuple(writable), self.filesystem.writable, workspace=workspace),
+                writable=_contained_in(
+                    tuple(writable), self.filesystem.writable, workspace=workspace
+                ),
                 deny=self.filesystem.deny,
                 # Nothing: a bridged helper has no route by which to ask for more.
                 grantable=(),
@@ -241,7 +271,11 @@ class Profile:
                 ),
                 network=True,
             )
-        denied = [Path(resolved) for entry in self.filesystem.deny if (resolved := expand(entry, workspace=workspace))]
+        denied = [
+            Path(resolved)
+            for entry in self.filesystem.deny
+            if (resolved := expand(entry, workspace=workspace))
+        ]
 
         def permitted(paths: Iterable[str]) -> tuple[str, ...]:
             kept = []
@@ -261,7 +295,9 @@ class Profile:
             self,
             filesystem=Filesystem(
                 # A granted write implies its read, or the grant fails on the read half nobody could explain.
-                readable=tuple(dict.fromkeys(self.filesystem.readable + granted_reads + granted_writes)),
+                readable=tuple(
+                    dict.fromkeys(self.filesystem.readable + granted_reads + granted_writes)
+                ),
                 writable=tuple(dict.fromkeys(self.filesystem.writable + granted_writes)),
                 deny=self.filesystem.deny,
                 grantable=self.filesystem.grantable,
@@ -315,8 +351,7 @@ class Profile:
 
     def _is_denied(self, resolved: str, *, workspace: str) -> bool:
         return any(
-            _within(resolved, expand(entry, workspace=workspace))
-            for entry in self.filesystem.deny
+            _within(resolved, expand(entry, workspace=workspace)) for entry in self.filesystem.deny
         )
 
     def _is_attached(self, resolved: str, *, workspace: str) -> bool:
@@ -329,7 +364,9 @@ class Profile:
         listed = tuple(paths)
         if not listed or not self.filesystem.grantable:
             return False
-        return len(_contained_in(listed, self.filesystem.grantable, workspace=workspace)) == len(listed)
+        return len(_contained_in(listed, self.filesystem.grantable, workspace=workspace)) == len(
+            listed
+        )
 
     def as_dict(self) -> dict:
         """The form that travels to a worker and out to a client."""
@@ -390,7 +427,9 @@ class Profile:
             umask=int(umask) if umask is not None else None,
             nice=int(data.get("nice") or 0),
             enforce=str(data.get("enforce") or ENFORCE_REQUIRED),
-            environment={str(key): str(value) for key, value in (data.get("environment") or {}).items()},
+            environment={
+                str(key): str(value) for key, value in (data.get("environment") or {}).items()
+            },
         )
 
 
@@ -431,9 +470,13 @@ def _outside_home(resolved: str) -> bool:
     return not home or home == "/" or not _within(resolved, home)
 
 
-def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: str = "") -> tuple[str, ...]:
+def _contained_in(
+    paths: Iterable[str], allowed: Iterable[str], *, workspace: str = ""
+) -> tuple[str, ...]:
     """The paths lying within ``allowed``, both sides expanded. An empty allowance permits nothing."""
-    allowed_paths = [Path(resolved) for entry in allowed if (resolved := expand(entry, workspace=workspace))]
+    allowed_paths = [
+        Path(resolved) for entry in allowed if (resolved := expand(entry, workspace=workspace))
+    ]
     kept = []
     for entry in paths:
         candidate = Path(entry)
@@ -469,7 +512,9 @@ def _apply_posix(profile: Profile) -> None:
             pass
 
 
-def child_environment(profile: Profile, *, workspace: str = "", extra: Optional[dict] = None) -> dict[str, str]:
+def child_environment(
+    profile: Profile, *, workspace: str = "", extra: Optional[dict] = None
+) -> dict[str, str]:
     """A confined child's environment: what makes a process usable, plus the profile's own, and nothing else."""
     environment = {key: os.environ[key] for key in _BASE_ENVIRONMENT_KEYS if key in os.environ}
     environment.update(_MESSAGE_LOCALE)
@@ -597,7 +642,13 @@ def _libc():
     # Only the return type: `syscall` is variadic and is called here with three different signatures.
     library.syscall.restype = ctypes.c_long
     library.prctl.restype = ctypes.c_int
-    library.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+    library.prctl.argtypes = [
+        ctypes.c_int,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+    ]
     library.unshare.restype = ctypes.c_int
     library.unshare.argtypes = [ctypes.c_int]
     return library, ctypes
@@ -610,17 +661,19 @@ def _landlock_available() -> bool:
     try:
         library, ctypes = _libc()
         version = library.syscall(
-            ctypes.c_long(_SYS_LANDLOCK_CREATE_RULESET), ctypes.c_void_p(None),
-            ctypes.c_size_t(0), ctypes.c_uint32(1),
+            ctypes.c_long(_SYS_LANDLOCK_CREATE_RULESET),
+            ctypes.c_void_p(None),
+            ctypes.c_size_t(0),
+            ctypes.c_uint32(1),
         )
         return version > 0
     except (OSError, AttributeError, ValueError):
         return False
 
 
-_LANDLOCK_FS_READ = 0x00008004      # execute | read_file
+_LANDLOCK_FS_READ = 0x00008004  # execute | read_file
 _LANDLOCK_FS_READ_DIR = 0x00004000  # read_dir
-_LANDLOCK_FS_WRITE = 0x0000377A     # write_file, create/remove of every kind, truncate
+_LANDLOCK_FS_WRITE = 0x0000377A  # write_file, create/remove of every kind, truncate
 
 
 def _apply_landlock(profile: Profile, workspace: str) -> None:
@@ -639,14 +692,17 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
     handled = _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR | _LANDLOCK_FS_WRITE
     attribute = RulesetAttribute(handled_access_fs=handled, handled_access_net=0)
     ruleset = libc.syscall(
-        ctypes.c_long(_SYS_LANDLOCK_CREATE_RULESET), ctypes.byref(attribute),
-        ctypes.c_size_t(ctypes.sizeof(attribute)), ctypes.c_uint32(0),
+        ctypes.c_long(_SYS_LANDLOCK_CREATE_RULESET),
+        ctypes.byref(attribute),
+        ctypes.c_size_t(ctypes.sizeof(attribute)),
+        ctypes.c_uint32(0),
     )
     if ruleset < 0:
         return
 
     denied = tuple(
-        resolved for entry in profile.filesystem.deny
+        resolved
+        for entry in profile.filesystem.deny
         if (resolved := expand(entry, workspace=workspace))
     )
 
@@ -655,8 +711,11 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
         try:
             rule = PathBeneathAttribute(allowed_access=access, parent_fd=descriptor)
             libc.syscall(
-                ctypes.c_long(_SYS_LANDLOCK_ADD_RULE), ctypes.c_int(ruleset),
-                ctypes.c_int(1), ctypes.byref(rule), ctypes.c_uint32(0),
+                ctypes.c_long(_SYS_LANDLOCK_ADD_RULE),
+                ctypes.c_int(ruleset),
+                ctypes.c_int(1),
+                ctypes.byref(rule),
+                ctypes.c_uint32(0),
             )
         finally:
             os.close(descriptor)
@@ -678,7 +737,9 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
         frontier = [root]
         while frontier:
             current = frontier.pop()
-            blocking = [entry for entry in inside if entry.is_relative_to(current) and entry != current]
+            blocking = [
+                entry for entry in inside if entry.is_relative_to(current) and entry != current
+            ]
             if not blocking:
                 if current not in inside and os.path.exists(current):
                     add(str(current), access)
@@ -696,7 +757,18 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
                     add(str(child), access)
 
     # The system is readable; the home is unnamed, because anything ungranted is already refused.
-    for root in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/proc", "/dev", "/var"):
+    for root in (
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/etc",
+        "/opt",
+        "/proc",
+        "/dev",
+        "/var",
+    ):
         allow(root, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR)
     for entry in profile.filesystem.readable:
         allow(entry, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR)
@@ -801,6 +873,7 @@ _NETWORK_DENIAL_MARKERS = (
     "no address associated with hostname",
 )
 
+
 @dataclass(frozen=True)
 class Denial:
     """The operating system refused this child, as far as can be told from what it left behind."""
@@ -878,7 +951,11 @@ def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> s
 
     def usable(entry: str) -> str:
         resolved = expand(entry, workspace=workspace)
-        return resolved if resolved and os.path.isdir(resolved) and os.access(resolved, os.W_OK) else ""
+        return (
+            resolved
+            if resolved and os.path.isdir(resolved) and os.access(resolved, os.W_OK)
+            else ""
+        )
 
     worktree_root = os.path.realpath(workspace) if workspace else ""
 
@@ -893,7 +970,9 @@ def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> s
     return outside[0] if outside else next((path for path in candidates if path), "")
 
 
-def private_scratch(profile: Optional[Profile], *, workspace: str = "", prefix: str = "langmesh-") -> str:
+def private_scratch(
+    profile: Optional[Profile], *, workspace: str = "", prefix: str = "langmesh-"
+) -> str:
     """A fresh directory of a child's own, refusing the workspace outright, or ``""`` when nowhere qualifies."""
     base = temporary_directory(profile, workspace=workspace)
     if not base:
@@ -922,11 +1001,18 @@ def probe() -> dict:
         try:
             finished = subprocess.run(
                 [SANDBOX_EXEC, "-p", "(version 1)(allow default)", "/bin/echo", "ok"],
-                capture_output=True, text=True, timeout=10, check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
             )
             working = finished.returncode == 0 and "ok" in finished.stdout
         except (OSError, subprocess.SubprocessError):
             working = False
-        return {"backend": name if working else "", "detail": describe_backend() if working else
-                f"{SANDBOX_EXEC} is present but did not run a trivial profile"}
+        return {
+            "backend": name if working else "",
+            "detail": describe_backend()
+            if working
+            else f"{SANDBOX_EXEC} is present but did not run a trivial profile",
+        }
     return {"backend": name, "detail": describe_backend()}

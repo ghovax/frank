@@ -11,7 +11,12 @@ import { toaster } from "./ui/toaster";
 
 type TerminalToastType = "error" | "warning" | "info";
 
-function resolveCssColor(host: HTMLElement, cssValue: string, fallback: string, property: "color" | "backgroundColor" = "color"): string {
+function resolveCssColor(
+  host: HTMLElement,
+  cssValue: string,
+  fallback: string,
+  property: "color" | "backgroundColor" = "color",
+): string {
   const probe = host.ownerDocument.createElement("span");
   probe.style.position = "absolute";
   probe.style.pointerEvents = "none";
@@ -27,7 +32,11 @@ function appTerminalTheme(host: HTMLElement): ITheme {
   const background = resolveCssColor(host, "var(--chakra-colors-bg)", "#ffffff", "backgroundColor");
   const foreground = resolveCssColor(host, "var(--chakra-colors-fg)", "#111111");
   const mutedForeground = resolveCssColor(host, "var(--chakra-colors-fg-muted)", foreground);
-  const emphasizedForeground = resolveCssColor(host, "var(--chakra-colors-fg-emphasized)", foreground);
+  const emphasizedForeground = resolveCssColor(
+    host,
+    "var(--chakra-colors-fg-emphasized)",
+    foreground,
+  );
   const blue = resolveCssColor(host, "var(--chakra-colors-blue-solid)", "#2563eb");
 
   return {
@@ -35,9 +44,19 @@ function appTerminalTheme(host: HTMLElement): ITheme {
     foreground,
     cursor: foreground,
     cursorAccent: background,
-    selectionBackground: resolveCssColor(host, "var(--chakra-colors-blue-muted)", blue, "backgroundColor"),
+    selectionBackground: resolveCssColor(
+      host,
+      "var(--chakra-colors-blue-muted)",
+      blue,
+      "backgroundColor",
+    ),
     selectionForeground: foreground,
-    black: resolveCssColor(host, "var(--chakra-colors-bg-emphasized)", background, "backgroundColor"),
+    black: resolveCssColor(
+      host,
+      "var(--chakra-colors-bg-emphasized)",
+      background,
+      "backgroundColor",
+    ),
     red: resolveCssColor(host, "var(--chakra-colors-red-solid)", "#dc2626"),
     green: resolveCssColor(host, "var(--chakra-colors-green-solid)", "#16a34a"),
     yellow: resolveCssColor(host, "var(--chakra-colors-yellow-solid)", "#ca8a04"),
@@ -72,7 +91,10 @@ export function TerminalSurface({
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const errorToastKeysRef = useRef<Set<string>>(new Set());
-  const [, setConnectionStatus] = useState<{ state: "connecting" | "connected" | "disconnected" | "exited"; label: string } | null>(null);
+  const [, setConnectionStatus] = useState<{
+    state: "connecting" | "connected" | "disconnected" | "exited";
+    label: string;
+  } | null>(null);
   const { colorMode } = useColorMode();
   const translation = useTranslations("TerminalPanel");
   // In a ref, so the toast copy stays current without a dependency that would remount the terminal.
@@ -86,8 +108,8 @@ export function TerminalSurface({
     if (!host) return;
 
     // A terminal on a touch screen is a different instrument: no hover, no wheel, and a wider cell.
-    const coarse = typeof window !== "undefined"
-      && window.matchMedia?.("(pointer: coarse)").matches === true;
+    const coarse =
+      typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
 
     const terminal = new Terminal({
       cursorBlink: true,
@@ -114,7 +136,12 @@ export function TerminalSurface({
     terminalRef.current = terminal;
     setConnectionStatus({ state: "connecting", label: "Connecting terminal" });
 
-    const notifyTerminal = (type: TerminalToastType, title: string, description: string, key = `${type}:${title}:${description}`) => {
+    const notifyTerminal = (
+      type: TerminalToastType,
+      title: string,
+      description: string,
+      key = `${type}:${title}:${description}`,
+    ) => {
       if (errorToastKeysRef.current.has(key)) return;
       errorToastKeysRef.current.add(key);
       toaster.create({
@@ -125,7 +152,11 @@ export function TerminalSurface({
       });
     };
 
-    const notifyTerminalFailure = (title: string, description: string, key = `${title}:${description}`) => {
+    const notifyTerminalFailure = (
+      title: string,
+      description: string,
+      key = `${title}:${description}`,
+    ) => {
       notifyTerminal("error", title, description, key);
     };
 
@@ -133,7 +164,9 @@ export function TerminalSurface({
       if (!host.clientWidth || !host.clientHeight) return;
       fitAddon.fit();
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "resize", rows: terminal.rows, columns: terminal.cols }));
+        socket.send(
+          JSON.stringify({ type: "resize", rows: terminal.rows, columns: terminal.cols }),
+        );
       }
     };
 
@@ -181,14 +214,22 @@ export function TerminalSurface({
           // A frame that will not parse is handled by the error flag set below.
           socketHadError = true;
           setConnectionStatus(null);
-          notifyTerminalFailure(translateRef.current("protocolErrorTitle"), translateRef.current("protocolErrorDescription"), "terminal_protocol_error");
+          notifyTerminalFailure(
+            translateRef.current("protocolErrorTitle"),
+            translateRef.current("protocolErrorDescription"),
+            "terminal_protocol_error",
+          );
           return;
         }
         if (message.type === "ready") {
           const cwd = String(message.cwd ?? (workingDirectory || "terminal"));
           setConnectionStatus({ state: "connected", label: `Connected to ${cwd}` });
           for (const key of errorToastKeysRef.current) {
-            if (key.startsWith("terminal_") && !key.startsWith("terminal_closed") && !key.startsWith("terminal_exit")) {
+            if (
+              key.startsWith("terminal_") &&
+              !key.startsWith("terminal_closed") &&
+              !key.startsWith("terminal_exit")
+            ) {
               errorToastKeysRef.current.delete(key);
             }
           }
@@ -203,32 +244,49 @@ export function TerminalSurface({
         } else if (message.type === "exit") {
           const exitCode = message.exit_code;
           const exitSignal = message.exit_signal;
-          const label = exitSignal != null
-            ? translateRef.current("shellExitedSignal", { signal: String(exitSignal) })
-            : exitCode != null
-              ? translateRef.current("shellExitedCode", { code: String(exitCode) })
-              : translateRef.current("shellExited");
+          const label =
+            exitSignal != null
+              ? translateRef.current("shellExitedSignal", { signal: String(exitSignal) })
+              : exitCode != null
+                ? translateRef.current("shellExitedCode", { code: String(exitCode) })
+                : translateRef.current("shellExited");
           setConnectionStatus({ state: "exited", label });
-          notifyTerminal("info", translateRef.current("processExitedTitle"), label, `terminal_exit:${String(exitCode ?? "")}:${String(exitSignal ?? "")}`);
+          notifyTerminal(
+            "info",
+            translateRef.current("processExitedTitle"),
+            label,
+            `terminal_exit:${String(exitCode ?? "")}:${String(exitSignal ?? "")}`,
+          );
         }
       });
       socket.addEventListener("error", () => {
         socketHadError = true;
         setConnectionStatus(null);
-        notifyTerminalFailure(translateRef.current("connectionFailedTitle"), translateRef.current("websocketErrorDescription"), "terminal_websocket_error");
+        notifyTerminalFailure(
+          translateRef.current("connectionFailedTitle"),
+          translateRef.current("websocketErrorDescription"),
+          "terminal_websocket_error",
+        );
       });
       socket.addEventListener("close", (event) => {
         if (disposed) return;
         if (!socketHadError) {
-          setConnectionStatus({ state: "disconnected", label: "Terminal disconnected, reconnecting" });
+          setConnectionStatus({
+            state: "disconnected",
+            label: "Terminal disconnected, reconnecting",
+          });
           notifyTerminal(
             "warning",
             translateRef.current("disconnectedTitle"),
-            event.reason ? translateRef.current("disconnectedReason", { reason: event.reason }) : translateRef.current("disconnectedReconnecting"),
+            event.reason
+              ? translateRef.current("disconnectedReason", { reason: event.reason })
+              : translateRef.current("disconnectedReconnecting"),
             `terminal_closed:${event.code}:${event.reason || "no_reason"}`,
           );
         }
-        reconnectTimer = window.setTimeout(() => { void openSocket(true); }, 1000);
+        reconnectTimer = window.setTimeout(() => {
+          void openSocket(true);
+        }, 1000);
       });
     };
 
@@ -236,7 +294,12 @@ export function TerminalSurface({
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "input", data }));
       } else if (data) {
-        notifyTerminal("warning", translateRef.current("notConnectedTitle"), translateRef.current("notConnectedDescription"), "terminal_input_disconnected");
+        notifyTerminal(
+          "warning",
+          translateRef.current("notConnectedTitle"),
+          translateRef.current("notConnectedDescription"),
+          "terminal_input_disconnected",
+        );
       }
     });
     const resizeObserver = new ResizeObserver(() => scheduleFitAndResize());
@@ -263,12 +326,22 @@ export function TerminalSurface({
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleFitAndResize);
       dataDisposable.dispose();
-      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      if (
+        socket &&
+        (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+      ) {
         socket.close();
       }
       terminal.dispose();
     };
-  }, [sessionId, workingDirectory, terminalKey, location?.kind, location?.base_directory, location?.host_alias]);
+  }, [
+    sessionId,
+    workingDirectory,
+    terminalKey,
+    location?.kind,
+    location?.base_directory,
+    location?.host_alias,
+  ]);
 
   useEffect(() => {
     const terminal = terminalRef.current;

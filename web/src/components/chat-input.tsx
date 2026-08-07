@@ -13,12 +13,39 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
-import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import {
+  LuArrowUp,
+  LuCoins,
+  LuFoldVertical,
+  LuMic,
+  LuMicOff,
+  LuPaperclip,
+  LuSquare,
+} from "react-icons/lu";
+import {
+  fetchChatGPTAuthStatus,
+  fetchDictationStatus,
+  type DictationState,
+  fetchMessageHistory,
+  referenceAttachment,
+  saveMessageHistory,
+  subscribeEvents,
+  uploadFile,
+  type Attachment,
+  type ChatGPTUsage,
+  type ModelOption,
+  type PermissionMode,
+  type ProviderOption,
+  type SandboxEnforce,
+} from "@/lib/api";
 import { DictationRecordingError, startDictation, type Dictation } from "@/lib/dictation";
 import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
-import { AgentSelectControl, PermissionModeControl, SandboxToggleControl } from "./session-controls";
+import {
+  AgentSelectControl,
+  PermissionModeControl,
+  SandboxToggleControl,
+} from "./session-controls";
 import { isTauri } from "@/lib/tauri";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
 import { AttachmentChip } from "./attachment-chips";
@@ -93,15 +120,30 @@ function ContextFillRing({ fraction }: { fraction: number }) {
   const radius = 5.5;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - clamped);
-  const stroke = clamped >= 0.9
-    ? "var(--chakra-colors-red-solid)"
-    : clamped >= 0.75
-      ? "var(--chakra-colors-orange-solid)"
-      : "var(--chakra-colors-blue-solid)";
+  const stroke =
+    clamped >= 0.9
+      ? "var(--chakra-colors-red-solid)"
+      : clamped >= 0.75
+        ? "var(--chakra-colors-orange-solid)"
+        : "var(--chakra-colors-blue-solid)";
   return (
-    <Box w="13px" h="13px" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
+    <Box
+      w="13px"
+      h="13px"
+      flexShrink={0}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+    >
       <svg width="13" height="13" viewBox="0 0 14 14">
-        <circle cx="7" cy="7" r={radius} fill="none" stroke="var(--chakra-colors-bg-muted)" strokeWidth="2" />
+        <circle
+          cx="7"
+          cy="7"
+          r={radius}
+          fill="none"
+          stroke="var(--chakra-colors-bg-muted)"
+          strokeWidth="2"
+        />
         <circle
           cx="7"
           cy="7"
@@ -120,7 +162,10 @@ function ContextFillRing({ fraction }: { fraction: number }) {
 }
 
 // The plan usage for the token view, fetched only when the active model is on the chatgpt provider.
-function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): ChatGPTUsage | null {
+function useChatGPTUsage(
+  agentModel: string | undefined,
+  isStreaming: boolean,
+): ChatGPTUsage | null {
   const isChatGPT = !!agentModel && agentModel.startsWith("chatgpt/");
   const [usage, setUsage] = useState<ChatGPTUsage | null>(null);
 
@@ -132,7 +177,9 @@ function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): 
       .then((status) => {
         if (!cancelled) setUsage(status?.usage ?? null);
       })
-      .catch((caught) => swallowed({ component: "chat-input", operation: "read the ChatGPT plan usage" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "chat-input", operation: "read the ChatGPT plan usage" }, caught),
+      );
     return () => {
       cancelled = true;
     };
@@ -163,33 +210,49 @@ function ContextUsageChip({
         {translation("sessionTotals")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={translation("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={translation("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={translation("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("input")}>
+          <Text>{tokenUsage.inputTokens.toLocaleString()}</Text>
+        </InlineField>
+        <InlineField label={translation("output")}>
+          <Text>{tokenUsage.outputTokens.toLocaleString()}</Text>
+        </InlineField>
+        <InlineField label={translation("total")}>
+          <Text>{tokenUsage.totalTokens.toLocaleString()}</Text>
+        </InlineField>
         {/* Always shown, because zero cache reads is the reading worth having, and the share is of what was reachable. */}
         <InlineField label={translation("cacheReads")}>
           <Text>
             {tokenUsage.cacheReadTokens.toLocaleString()}
-            {tokenUsage.cacheReachableTokens > 0
-              && ` / ${tokenUsage.cacheReachableTokens.toLocaleString()} (${
-                Math.round((tokenUsage.cacheReadTokens / tokenUsage.cacheReachableTokens) * 100)
-              }%)`}
+            {tokenUsage.cacheReachableTokens > 0 &&
+              ` / ${tokenUsage.cacheReachableTokens.toLocaleString()} (${Math.round(
+                (tokenUsage.cacheReadTokens / tokenUsage.cacheReachableTokens) * 100,
+              )}%)`}
           </Text>
         </InlineField>
         {tokenUsage.reasoningTokens > 0 && (
-          <InlineField label={translation("reasoning")}><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("reasoning")}>
+            <Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text>
+          </InlineField>
         )}
-        <InlineField label={translation("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
+        <InlineField label={translation("modelCalls")}>
+          <Text>{tokenUsage.modelCalls}</Text>
+        </InlineField>
       </Flex>
       <Separator my={2} />
       <Text fontWeight="semibold" mb={1} color="fg">
         {translation("usageThisTurn")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={translation("input")}><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={translation("output")}><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("input")}>
+          <Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text>
+        </InlineField>
+        <InlineField label={translation("output")}>
+          <Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text>
+        </InlineField>
         {hasContext && (
-          <InlineField label={translation("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("window")}>
+            <Text>{tokenUsage.contextWindow.toLocaleString()}</Text>
+          </InlineField>
         )}
       </Flex>
       {chatgptUsage && chatgptUsage.windows.length > 0 && (
@@ -226,7 +289,12 @@ function ContextUsageChip({
         {hasContext && (
           <>
             <ContextFillRing fraction={contextFraction} />
-            <Text data-fit-label="context-percent" data-fit-hidden={hidden.has("context-percent") ? "" : undefined} textStyle="fieldLabel" whiteSpace="nowrap">
+            <Text
+              data-fit-label="context-percent"
+              data-fit-hidden={hidden.has("context-percent") ? "" : undefined}
+              textStyle="fieldLabel"
+              whiteSpace="nowrap"
+            >
               {contextPercent}%
             </Text>
             {hidden.has("context-detail") ? null : (
@@ -234,10 +302,21 @@ function ContextUsageChip({
             )}
           </>
         )}
-        <Box data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} display="flex" alignItems="center" flexShrink={0}>
+        <Box
+          data-fit-label="context-detail"
+          data-fit-hidden={hidden.has("context-detail") ? "" : undefined}
+          display="flex"
+          alignItems="center"
+          flexShrink={0}
+        >
           <LuCoins size={CONTROL_ICON_SIZE} />
         </Box>
-        <Text data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} textStyle="fieldLabel" whiteSpace="nowrap">
+        <Text
+          data-fit-label="context-detail"
+          data-fit-hidden={hidden.has("context-detail") ? "" : undefined}
+          textStyle="fieldLabel"
+          whiteSpace="nowrap"
+        >
           {tokenUsage.contextTokens.toLocaleString()}
           {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
         </Text>
@@ -325,7 +404,9 @@ export function ChatInput({
       </Text>
       <Flex direction="column" ps={2} gap={1}>
         <InlineField label={translation("images")}>
-          <Text>{visionSupported ? translation("imagesSupported") : translation("imagesUnsupported")}</Text>
+          <Text>
+            {visionSupported ? translation("imagesSupported") : translation("imagesUnsupported")}
+          </Text>
         </InlineField>
       </Flex>
     </Box>
@@ -382,7 +463,9 @@ export function ChatInput({
       .then((history) => {
         if (!cancelled) setMessageHistory(history);
       })
-      .catch((caught) => swallowed({ component: "chat-input", operation: "read the message history" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "chat-input", operation: "read the message history" }, caught),
+      );
     return () => {
       cancelled = true;
     };
@@ -435,7 +518,9 @@ export function ChatInput({
             timer = window.setTimeout(() => read(false), 1000);
           }
         })
-        .catch((caught) => swallowed({ component: "chat-input", operation: "read the dictation status" }, caught));
+        .catch((caught) =>
+          swallowed({ component: "chat-input", operation: "read the dictation status" }, caught),
+        );
     };
     read(true);
     const unsubscribe = subscribeEvents((event) => {
@@ -576,12 +661,16 @@ export function ChatInput({
       if (trimmed) {
         setMessageHistory((previous) => [trimmed, ...previous]);
         if (workingDirectory) {
-          saveMessageHistory(workingDirectory, trimmed)
-            .catch((caught) => swallowed({ component: "chat-input", operation: "save the message history" }, caught));
+          saveMessageHistory(workingDirectory, trimmed).catch((caught) =>
+            swallowed({ component: "chat-input", operation: "save the message history" }, caught),
+          );
         }
       }
     } finally {
-      window.setTimeout(() => setSendPending(false), Math.max(0, 450 - (performance.now() - startedAt)));
+      window.setTimeout(
+        () => setSendPending(false),
+        Math.max(0, 450 - (performance.now() - startedAt)),
+      );
     }
   }
 
@@ -591,7 +680,10 @@ export function ChatInput({
     try {
       await onAbort();
     } finally {
-      window.setTimeout(() => setStopPending(false), Math.max(0, 450 - (performance.now() - startedAt)));
+      window.setTimeout(
+        () => setStopPending(false),
+        Math.max(0, 450 - (performance.now() - startedAt)),
+      );
     }
   }
 
@@ -601,15 +693,18 @@ export function ChatInput({
       void handleSubmit();
       return;
     }
-    if (event.key === "ArrowUp" && messageHistory.length > 0 && inputRef.current?.selectionStart === 0) {
+    if (
+      event.key === "ArrowUp" &&
+      messageHistory.length > 0 &&
+      inputRef.current?.selectionStart === 0
+    ) {
       event.preventDefault();
       // Save the current draft when first navigating up, so it returns when the user comes back down.
       if (historyIndex === -1) {
         draftInputRef.current = inputValue;
       }
-      const nextIndex = historyIndex === -1
-        ? 0
-        : Math.min(messageHistory.length - 1, historyIndex + 1);
+      const nextIndex =
+        historyIndex === -1 ? 0 : Math.min(messageHistory.length - 1, historyIndex + 1);
       setHistoryIndex(nextIndex);
       setInputValue(messageHistory[nextIndex]);
       return;
@@ -625,10 +720,7 @@ export function ChatInput({
   }
 
   return (
-    <Box
-      position="relative"
-      pb={2}
-    >
+    <Box position="relative" pb={2}>
       <ConfirmDialog
         open={compactConfirmOpen}
         onOpenChange={setCompactConfirmOpen}
@@ -658,9 +750,22 @@ export function ChatInput({
               />
             ))}
             {uploadingCount > 0 ? (
-              <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="md" bg="bg.subtle">
-                <Box color="blue.fg"><LuPaperclip size={14} /></Box>
-                <Text fontSize="xs" color="fg.subtle">{translation("uploading", { count: uploadingCount })}</Text>
+              <Flex
+                align="center"
+                gap={1.5}
+                px={1.5}
+                py={1}
+                border="1px solid"
+                borderColor="border"
+                borderRadius="md"
+                bg="bg.subtle"
+              >
+                <Box color="blue.fg">
+                  <LuPaperclip size={14} />
+                </Box>
+                <Text fontSize="xs" color="fg.subtle">
+                  {translation("uploading", { count: uploadingCount })}
+                </Text>
               </Flex>
             ) : null}
           </Flex>
@@ -707,8 +812,8 @@ export function ChatInput({
                       : attachments.length > 0
                         ? translation("placeholderAttachments")
                         : isCompacting
-                          // Compaction runs as a turn, so this says the message drains when the fold is done rather than next turn.
-                          ? translation("placeholderCompacting")
+                          ? // Compaction runs as a turn, so this says the message drains when the fold is done rather than next turn.
+                            translation("placeholderCompacting")
                           : isStreaming
                             ? translation("placeholderStreaming")
                             : translation("placeholderDefault")
@@ -753,7 +858,9 @@ export function ChatInput({
                 positioning={{ placement: "top" }}
               >
                 <IconButton
-                  aria-label={recording ? translation("dictationStop") : translation("dictationStart")}
+                  aria-label={
+                    recording ? translation("dictationStop") : translation("dictationStart")
+                  }
                   onClick={() => void handleDictationClick()}
                   size="sm"
                   // Recording is a state the machine is in, so it is coloured rather than outlined and cannot be left open unnoticed.
@@ -800,7 +907,9 @@ export function ChatInput({
                 disabled={stopPending || isCompacting}
                 title={isCompacting ? translation("stopUnavailableWhileCompacting") : undefined}
               >
-                <ComposerIcon draw={18}><LuSquare /></ComposerIcon>
+                <ComposerIcon draw={18}>
+                  <LuSquare />
+                </ComposerIcon>
                 {translation("stop")}
               </Button>
             ) : (
@@ -811,9 +920,17 @@ export function ChatInput({
                 variant="solid"
                 loading={sendPending}
                 loadingText={translation("sending")}
-                disabled={sendPending || composerClosed || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
+                disabled={
+                  sendPending ||
+                  composerClosed ||
+                  !directoryValid ||
+                  uploadingCount > 0 ||
+                  !inputValue.trim()
+                }
               >
-                <ComposerIcon draw={22}><LuArrowUp /></ComposerIcon>
+                <ComposerIcon draw={22}>
+                  <LuArrowUp />
+                </ComposerIcon>
                 {translation("send")}
               </Button>
             )}
@@ -858,7 +975,9 @@ export function ChatInput({
         {/* Adjustable at any point in a session's life, so a conversation need not restart to run under a looser mode. */}
         <PermissionModeControl
           value={permissionMode}
-          onChange={(mode) => { if (mode) onPermissionModeChange?.(mode); }}
+          onChange={(mode) => {
+            if (mode) onPermissionModeChange?.(mode);
+          }}
           fitted
           labelHidden={hiddenLabels.has("permission")}
         />
@@ -888,20 +1007,30 @@ export function ChatInput({
               flexShrink={0}
               disabled={isStreaming || isCompacting}
               onClick={() => setCompactConfirmOpen(true)}
-              title={isCompacting ? translation("compactingTooltip") : translation("compactTooltip")}
+              title={
+                isCompacting ? translation("compactingTooltip") : translation("compactTooltip")
+              }
             >
-              {isCompacting
-                ? <Spinner boxSize={`${CONTROL_ICON_SIZE}px`} borderWidth="1.5px" />
-                : <LuFoldVertical size={CONTROL_ICON_SIZE} />}
-              <Text data-fit-label="compact" data-fit-hidden={hiddenLabels.has("compact") ? "" : undefined}>
+              {isCompacting ? (
+                <Spinner boxSize={`${CONTROL_ICON_SIZE}px`} borderWidth="1.5px" />
+              ) : (
+                <LuFoldVertical size={CONTROL_ICON_SIZE} />
+              )}
+              <Text
+                data-fit-label="compact"
+                data-fit-hidden={hiddenLabels.has("compact") ? "" : undefined}
+              >
                 {isCompacting ? translation("compacting") : translation("compact")}
               </Text>
             </Button>
           )}
-          <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} hidden={hiddenLabels} />
+          <ContextUsageChip
+            tokenUsage={tokenUsage}
+            chatgptUsage={chatgptUsage}
+            hidden={hiddenLabels}
+          />
         </Flex>
       </Flex>
-
     </Box>
   );
 }

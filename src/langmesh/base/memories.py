@@ -35,7 +35,13 @@ def _parse_memory(path: Path) -> Memory:
     match = _FRONTMATTER.match(content)
     if not match:
         first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
-        return Memory(name=path.stem, title=path.stem, description=first_line[:240], body=content.strip(), path=str(path))
+        return Memory(
+            name=path.stem,
+            title=path.stem,
+            description=first_line[:240],
+            body=content.strip(),
+            path=str(path),
+        )
     frontmatter = yaml.safe_load(match.group(1)) or {}
     raw_tags = frontmatter.get("tags", [])
     if isinstance(raw_tags, str):

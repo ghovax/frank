@@ -52,7 +52,9 @@ class ChatGPTTokens:
     email: str
     expires_at: float
 
-    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway)) -> bool:
+    def is_expired(
+        self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway)
+    ) -> bool:
         return time.time() >= (self.expires_at - leeway_seconds)
 
 
@@ -82,9 +84,7 @@ class FileCredentials:
 
 
 # Which store the process uses, as a context variable so two sessions may hold different credentials.
-_store: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "langmesh_credentials", default=None
-)
+_store: contextvars.ContextVar[Any] = contextvars.ContextVar("langmesh_credentials", default=None)
 
 
 def set_credentials(store: Any) -> contextvars.Token:
@@ -122,6 +122,7 @@ def is_signed_in() -> bool:
 
 
 # PKCE + JWT helpers.
+
 
 def _b64url_decode(segment: str) -> bytes:
     padding = "=" * (-len(segment) % 4)
@@ -175,25 +176,31 @@ def _tokens_from_payload(payload: dict, previous: Optional[ChatGPTTokens] = None
 
 async def _exchange_code(code: str, code_verifier: str) -> ChatGPTTokens:
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(TOKEN_URL, data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": REDIRECT_URI,
-            "client_id": CLIENT_ID,
-            "code_verifier": code_verifier,
-        })
+        response = await client.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": REDIRECT_URI,
+                "client_id": CLIENT_ID,
+                "code_verifier": code_verifier,
+            },
+        )
         response.raise_for_status()
         return _tokens_from_payload(response.json())
 
 
 async def _refresh(tokens: ChatGPTTokens) -> ChatGPTTokens:
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(TOKEN_URL, data={
-            "grant_type": "refresh_token",
-            "refresh_token": tokens.refresh_token,
-            "client_id": CLIENT_ID,
-            "scope": SCOPE,
-        })
+        response = await client.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": tokens.refresh_token,
+                "client_id": CLIENT_ID,
+                "scope": SCOPE,
+            },
+        )
         response.raise_for_status()
         return _tokens_from_payload(response.json(), previous=tokens)
 
@@ -317,7 +324,9 @@ class ChatGPTLoginFlow:
                     self._page(400, failure)
                     return
                 flow._captured["code"] = query["code"][0]
-                self._page(200, "Signed in to ChatGPT. You can close this tab and return to LangMesh.")
+                self._page(
+                    200, "Signed in to ChatGPT. You can close this tab and return to LangMesh."
+                )
 
             def _page(self, status: int, message: str) -> None:
                 body = _callback_page(message).encode("utf-8")
@@ -331,7 +340,7 @@ class ChatGPTLoginFlow:
 
     def _callback_failure(self, query: dict[str, list[str]]) -> Optional[str]:
         """Why the callback is unusable, or `None` when it carries a valid, state-matched code."""
-        if (error := query.get("error", [""])[0]):
+        if error := query.get("error", [""])[0]:
             return f"Authorization failed: {error}"
         if query.get("state", [""])[0] != self._state:
             return "State mismatch — sign-in aborted for safety."

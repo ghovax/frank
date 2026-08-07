@@ -47,9 +47,9 @@ class SessionEventBus:
 
 # The supervision singletons: what a session's existence depends on, as distinct from what the browser surface needs.
 
-registry: Any = None            # SessionRegistry
-host: Any = None                # SessionHost
-lifecycle: Any = None           # SessionLifecycle
+registry: Any = None  # SessionRegistry
+host: Any = None  # SessionHost
+lifecycle: Any = None  # SessionLifecycle
 
 event_bus = SessionEventBus()
 
@@ -63,6 +63,7 @@ def __getattr__(name: str) -> Any:
     if hasattr(commons_state, name):
         return getattr(commons_state, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # The running and awaiting sets live on the workspace module and reach this one through the lookup above.
 _title_tasks: set = set()
@@ -95,7 +96,8 @@ async def refresh_workspace_locations(workspace_id: str) -> None:
     from langmesh.commons.services.locations import _resolve_session_locations
 
     live = [
-        record for record in registry.live()
+        record
+        for record in registry.live()
         if record.workspace_id == workspace_id and host is not None and host.hosts(record.id)
     ]
     if not live:
@@ -126,7 +128,9 @@ async def _wake(record) -> None:
         if host is not None and host.hosts(record.id):
             return
         if lifecycle is None:
-            raise RuntimeError(f"Session {record.id} has no executor and there is nothing to build one.")
+            raise RuntimeError(
+                f"Session {record.id} has no executor and there is nothing to build one."
+            )
         if not await lifecycle.start(record):
             raise RuntimeError(f"Session {record.id} could not be started; see the daemon log.")
 

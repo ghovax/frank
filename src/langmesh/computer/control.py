@@ -1,4 +1,5 @@
 """Run a `control_screen` script in a killable subprocess and bridge its primitive calls back to the live surface."""
+
 from __future__ import annotations
 
 import asyncio
@@ -36,9 +37,11 @@ def _child_command(request_write: int, reply_read: int) -> list[str]:
 class _NotPermitted(Exception):
     """A primitive this session may not run, given its own type so the pump can answer with what is available."""
 
+
 def _script_ceiling() -> float:
     """The child's wall-clock limit, and the base of a stack the surface's guard and worker thread sit above."""
     return active_tuning().duration(Tunable.control_script)
+
 
 Dispatch = Callable[[str, list, dict], Awaitable[Any]]
 
@@ -59,8 +62,8 @@ async def run_control_script(
     """Execute `script` in a child process, servicing its primitive calls, and return the child's result."""
     timeout = timeout if timeout is not None else _script_ceiling()
     permitted = frozenset(primitives or ())
-    request_read, request_write = os.pipe()   # child to parent (primitive calls)
-    reply_read, reply_write = os.pipe()        # parent to child (configuration, then results)
+    request_read, request_write = os.pipe()  # child to parent (primitive calls)
+    reply_read, reply_write = os.pipe()  # parent to child (configuration, then results)
 
     configuration = {
         "script": script,
@@ -84,16 +87,20 @@ async def run_control_script(
     scratch = confinement.private_scratch(profile, workspace=workspace, prefix="langmesh-screen-")
     child_profile = (
         profile.narrowed(writable=[scratch] if scratch else [], network=False, workspace=workspace)
-        if profile is not None else None
+        if profile is not None
+        else None
     )
     spawn = confinement.spawn_recipe(
-        confinement.first_attempt(child_profile, workspace=workspace), workspace=workspace,
+        confinement.first_attempt(child_profile, workspace=workspace),
+        workspace=workspace,
         # No permitted scratch means the child is told about none, rather than pointed at a directory it was refused.
         extra_environment={"TMPDIR": scratch, "PWD": scratch} if scratch else None,
     )
     process = await asyncio.create_subprocess_exec(
-        *spawn.prefix, *child_command,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        *spawn.prefix,
+        *child_command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
         pass_fds=(request_write, reply_read),
         env=spawn.environment,
         preexec_fn=spawn.preexec,
@@ -124,9 +131,16 @@ async def run_control_script(
                 value = await dispatch(name, call.get("args", []), call.get("kwargs", {}))
                 reply: Any = {"value": value}
             except _NotPermitted as refusal:
-                reply = {"error": message("primitive_not_permitted", primitive=str(refusal),
-                                          available=", ".join(sorted(permitted)))}
-            except Exception as error:  # a failed primitive is raised into the script, not fatal here
+                reply = {
+                    "error": message(
+                        "primitive_not_permitted",
+                        primitive=str(refusal),
+                        available=", ".join(sorted(permitted)),
+                    )
+                }
+            except (
+                Exception
+            ) as error:  # a failed primitive is raised into the script, not fatal here
                 reply = {"error": f"{type(error).__name__}: {error}"}
             await loop.run_in_executor(None, _write_line, replies, compact(reply, default=str))
 
@@ -137,7 +151,10 @@ async def run_control_script(
     except asyncio.TimeoutError:
         process.kill()
         await _drain(process)
-        return {"ok": False, "error": f"control_screen: the script exceeded its {int(timeout)}s time limit and was stopped."}
+        return {
+            "ok": False,
+            "error": f"control_screen: the script exceeded its {int(timeout)}s time limit and was stopped.",
+        }
     finally:
         pump_task.cancel()
         _quietly_close(requests)
@@ -198,17 +215,22 @@ def _explain_silent_exit(complaint: str) -> str:
             "nothing about why — it was most likely killed as it started."
         )
     # The child's own words rather than a summary of them, since that is what lets a script be fixed.
-    return f"The screen-control helper stopped before it could report a result. It said:\n{complaint}"
+    return (
+        f"The screen-control helper stopped before it could report a result. It said:\n{complaint}"
+    )
 
 
-def _parse_result(stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_code: Optional[int] = None) -> dict:
+def _parse_result(
+    stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_code: Optional[int] = None
+) -> dict:
     text = (stdout or b"").decode("utf-8", "replace").strip()
     complaint = (stderr or b"").decode("utf-8", "replace").strip()
     if not text:
         # The child writes its JSON last, so empty stdout means it never got there.
         logger.warning(
             "control_screen produced no result (exit code %s): %s",
-            exit_code, complaint[-2000:] or "(nothing on stderr either)",
+            exit_code,
+            complaint[-2000:] or "(nothing on stderr either)",
         )
         # The child's own words go to the log rather than into the answer, which needs a sentence a person can act on.
         return {"ok": False, "error": _explain_silent_exit(complaint), "exit_code": exit_code}
@@ -216,5 +238,11 @@ def _parse_result(stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_
         return json.loads(text)
     except Exception:
         # The child always writes JSON last; anything else is a hard crash (segfault, OOM kill).
-        logger.warning("control_screen returned unparseable output (exit code %s): %s", exit_code, text[-500:])
-        return {"ok": False, "error": "The screen-control script stopped before it finished.", "output": text[-2000:]}
+        logger.warning(
+            "control_screen returned unparseable output (exit code %s): %s", exit_code, text[-500:]
+        )
+        return {
+            "ok": False,
+            "error": "The screen-control script stopped before it finished.",
+            "output": text[-2000:],
+        }

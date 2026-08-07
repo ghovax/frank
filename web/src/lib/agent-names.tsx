@@ -7,9 +7,16 @@ import type { AgentSummary } from "@/lib/api";
 
 const AgentCatalogue = createContext<Map<string, string> | null>(null);
 
-export function AgentNamesProvider({ agents, children }: { agents: AgentSummary[]; children: ReactNode }) {
+export function AgentNamesProvider({
+  agents,
+  children,
+}: {
+  agents: AgentSummary[];
+  children: ReactNode;
+}) {
   const names = useMemo(
-    () => new Map(agents.map((agent) => [agent.id, (agent.title || agent.name || agent.id).trim()])),
+    () =>
+      new Map(agents.map((agent) => [agent.id, (agent.title || agent.name || agent.id).trim()])),
     [agents],
   );
   return <AgentCatalogue.Provider value={names}>{children}</AgentCatalogue.Provider>;

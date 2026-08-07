@@ -30,9 +30,7 @@ function emptyDraft(agent: string): Draft {
 }
 
 // What a cron expression actually says, in the reader's own language.
-type CronReading =
-  | { kind: "described"; text: string }
-  | { kind: "invalid"; reason: string };
+type CronReading = { kind: "described"; text: string } | { kind: "invalid"; reason: string };
 
 function readCron(expression: string, locale: string): CronReading | null {
   if (expression.trim() === "") return null;
@@ -50,7 +48,15 @@ function readCron(expression: string, locale: string): CronReading | null {
 }
 
 // One field: its label above, its control below, and whatever it has to say underneath.
-function ScheduleField({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+function ScheduleField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <Flex direction="column" gap={1} minW={0}>
       <Text textStyle="fieldLabel">{label}</Text>
@@ -85,8 +91,12 @@ export function ScheduleForm({
   const reading = readCron(draft.cron, locale);
   // Required-ness is expressed by the button being unavailable rather than by a failure after the fact.
   const complete =
-    draft.name.trim() !== "" && draft.cron.trim() !== "" && draft.prompt.trim() !== "" &&
-    draft.agent !== "" && draft.timezone.trim() !== "" && reading?.kind === "described";
+    draft.name.trim() !== "" &&
+    draft.cron.trim() !== "" &&
+    draft.prompt.trim() !== "" &&
+    draft.agent !== "" &&
+    draft.timezone.trim() !== "" &&
+    reading?.kind === "described";
 
   async function handleCreate() {
     if (!complete) return;
@@ -105,7 +115,12 @@ export function ScheduleForm({
       await onCreated();
     } catch (error) {
       // The daemon's own sentence, said while somebody is still here to read it.
-      toaster.create({ type: "error", title: translation("createError"), description: errorMessage(error), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("createError"),
+        description: errorMessage(error),
+        closable: true,
+      });
     } finally {
       setSaving(false);
     }
@@ -114,8 +129,11 @@ export function ScheduleForm({
   return (
     <Flex direction="column" gap={3}>
       <ScheduleField label={translation("labelName")}>
-        <Input placeholder={translation("namePlaceholder")} value={draft.name}
-               onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        <Input
+          placeholder={translation("namePlaceholder")}
+          value={draft.name}
+          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+        />
       </ScheduleField>
 
       <ScheduleField
@@ -173,8 +191,12 @@ export function ScheduleForm({
       </ScheduleField>
 
       <ScheduleField label={translation("labelPrompt")}>
-        <Textarea rows={3} placeholder={translation("promptPlaceholder")} value={draft.prompt}
-                  onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} />
+        <Textarea
+          rows={3}
+          placeholder={translation("promptPlaceholder")}
+          value={draft.prompt}
+          onChange={(event) => setDraft({ ...draft, prompt: event.target.value })}
+        />
       </ScheduleField>
 
       {/* One per row, so the permission hint has the width its sentence needs. */}
@@ -188,20 +210,33 @@ export function ScheduleForm({
         />
       </ScheduleField>
 
-      <ScheduleField label={translation("labelPermission")} hint={
-        <Text fontSize="xs" color="fg.muted">{translation("modeHint")}</Text>
-      }>
+      <ScheduleField
+        label={translation("labelPermission")}
+        hint={
+          <Text fontSize="xs" color="fg.muted">
+            {translation("modeHint")}
+          </Text>
+        }
+      >
         <PermissionModeControl
           layout="field"
           value={draft.permissionMode}
-          onChange={(next) => { if (next) setDraft({ ...draft, permissionMode: next }); }}
+          onChange={(next) => {
+            if (next) setDraft({ ...draft, permissionMode: next });
+          }}
         />
       </ScheduleField>
 
       <Flex justify="flex-end" gap={2} mt={1}>
-        <Button variant="ghost" onClick={onCancel} disabled={saving}>{translation("cancel")}</Button>
-        <Button colorPalette="blue" disabled={!complete || saving} loading={saving}
-                onClick={() => void handleCreate()}>
+        <Button variant="ghost" onClick={onCancel} disabled={saving}>
+          {translation("cancel")}
+        </Button>
+        <Button
+          colorPalette="blue"
+          disabled={!complete || saving}
+          loading={saving}
+          onClick={() => void handleCreate()}
+        >
           {translation("create")}
         </Button>
       </Flex>

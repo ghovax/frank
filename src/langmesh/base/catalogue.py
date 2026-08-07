@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Instruction files a project may carry, in preference order, with the first match winning.
 PROJECT_INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md", "CONTEXT.md")
 
+
 # Well-known user-wide instruction files, read only when a catalogue is explicitly given them.
 def home_instruction_paths() -> tuple[Path, ...]:
     home = Path.home()
@@ -103,17 +104,23 @@ class FileCatalogue:
                     continue
                 seen.add(resolved)
                 # A home-wide document governs everything, which is also why it loses to a project's own.
-                entries.append(Instruction(
-                    source=str(resolved), scope=str(resolved.parent),
-                    content=resolved.read_text(errors="ignore").strip(),
-                ))
+                entries.append(
+                    Instruction(
+                        source=str(resolved),
+                        scope=str(resolved.parent),
+                        content=resolved.read_text(errors="ignore").strip(),
+                    )
+                )
 
         project = self._project_instruction()
         if project is not None and project not in seen:
-            entries.append(Instruction(
-                source=str(project), scope=str(project.parent),
-                content=project.read_text(errors="ignore").strip(),
-            ))
+            entries.append(
+                Instruction(
+                    source=str(project),
+                    scope=str(project.parent),
+                    content=project.read_text(errors="ignore").strip(),
+                )
+            )
 
         return entries
 
@@ -198,14 +205,16 @@ def packaged_prompts_directory() -> Path:
 
 def machine_catalogue(configuration: Any, working_directory: str = "") -> FileCatalogue:
     """The catalogue a person's machine has, including the home roots."""
-    return FileCatalogue(CatalogueRoots(
-        agents=_as_paths(configuration.agent_directories_for(working_directory)),
-        skills=_as_paths(configuration.skill_directories_for(working_directory)),
-        memories=_as_paths(configuration.memory_directories_for(working_directory)),
-        prompts=packaged_prompts_directory(),
-        project_directory=Path(working_directory).expanduser() if working_directory else None,
-        include_home_instructions=True,
-    ))
+    return FileCatalogue(
+        CatalogueRoots(
+            agents=_as_paths(configuration.agent_directories_for(working_directory)),
+            skills=_as_paths(configuration.skill_directories_for(working_directory)),
+            memories=_as_paths(configuration.memory_directories_for(working_directory)),
+            prompts=packaged_prompts_directory(),
+            project_directory=Path(working_directory).expanduser() if working_directory else None,
+            include_home_instructions=True,
+        )
+    )
 
 
 def project_catalogue(configuration: Any, working_directory: str) -> FileCatalogue:
@@ -213,14 +222,24 @@ def project_catalogue(configuration: Any, working_directory: str) -> FileCatalog
     from langmesh.base.configuration import BUNDLED_DOTAGENTS_ROOT
 
     local = Path(working_directory).expanduser()
-    return FileCatalogue(CatalogueRoots(
-        agents=(BUNDLED_DOTAGENTS_ROOT / "agents", local / ".agents" / "agents", local / "agents"),
-        skills=(BUNDLED_DOTAGENTS_ROOT / "skills", local / ".agents" / "skills", local / "skills"),
-        memories=(local / ".agents" / "memories",),
-        prompts=packaged_prompts_directory(),
-        project_directory=local,
-        include_home_instructions=False,
-    ))
+    return FileCatalogue(
+        CatalogueRoots(
+            agents=(
+                BUNDLED_DOTAGENTS_ROOT / "agents",
+                local / ".agents" / "agents",
+                local / "agents",
+            ),
+            skills=(
+                BUNDLED_DOTAGENTS_ROOT / "skills",
+                local / ".agents" / "skills",
+                local / "skills",
+            ),
+            memories=(local / ".agents" / "memories",),
+            prompts=packaged_prompts_directory(),
+            project_directory=local,
+            include_home_instructions=False,
+        )
+    )
 
 
 __all__ = [

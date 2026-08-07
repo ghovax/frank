@@ -61,7 +61,11 @@ export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: stri
 
 // Narrow an arbitrary value to a known status, for the raw strings that arrive on wire events.
 export function toolStatus(status: unknown): ToolEventStatus | undefined {
-  return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required"
+  return status === "running" ||
+    status === "completed" ||
+    status === "done" ||
+    status === "failed" ||
+    status === "input_required"
     ? status
     : undefined;
 }

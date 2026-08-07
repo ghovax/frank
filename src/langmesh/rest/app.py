@@ -8,8 +8,19 @@ from fastapi import FastAPI
 
 # Imported by name, since several route modules share a name with something else in scope.
 ROUTE_MODULES = (
-    "agents", "dictation", "filesystem", "machines", "mcp", "preferences",
-    "workspaces", "schedules", "remote_agents", "sessions", "settings", "terminals", "uploads",
+    "agents",
+    "dictation",
+    "filesystem",
+    "machines",
+    "mcp",
+    "preferences",
+    "workspaces",
+    "schedules",
+    "remote_agents",
+    "sessions",
+    "settings",
+    "terminals",
+    "uploads",
 )
 
 

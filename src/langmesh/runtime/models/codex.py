@@ -35,7 +35,15 @@ from langmesh.base.message_content import (
     message_text,
 )
 from langmesh.base.model_errors import CONTEXT_OVERFLOW_CODES, ContextWindowExceeded
-from langmesh.runtime.cache_trace import INSTRUCTIONS, ITEM, TOOLS, Piece, RequestTrace, diagnose, trace
+from langmesh.runtime.cache_trace import (
+    INSTRUCTIONS,
+    ITEM,
+    TOOLS,
+    Piece,
+    RequestTrace,
+    diagnose,
+    trace,
+)
 from langmesh.base.serialization import compact, upstream_detail
 from langmesh.base.subscription import (
     RESPONSES_URL,
@@ -85,7 +93,11 @@ class ChatCodexModel(BaseChatModel):
         if live and live.get("context"):
             return int(live["context"])
         # Until the catalogue is warm, models.dev's figure is wrong in the direction that does harm, since Codex serves less.
-        return min(self.context_length, COLD_START_WINDOW) if self.context_length else COLD_START_WINDOW
+        return (
+            min(self.context_length, COLD_START_WINDOW)
+            if self.context_length
+            else COLD_START_WINDOW
+        )
 
     @property
     def _identifying_params(self) -> dict[str, Any]:
@@ -115,7 +127,9 @@ class ChatCodexModel(BaseChatModel):
     def _text_of(message: BaseMessage) -> str:
         return message_text(message)
 
-    def _to_responses_input(self, messages: Sequence[BaseMessage]) -> tuple[str, list[dict[str, Any]]]:
+    def _to_responses_input(
+        self, messages: Sequence[BaseMessage]
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Translate LangChain messages into a Responses `(instructions, input)` pair."""
         instructions = ""
         items: list[dict[str, Any]] = []
@@ -126,46 +140,58 @@ class ChatCodexModel(BaseChatModel):
                 if not instructions:
                     instructions = text
                 elif text:
-                    items.append({
-                        "type": "message",
-                        "role": "developer",
-                        "content": [{"type": "input_text", "text": text}],
-                    })
+                    items.append(
+                        {
+                            "type": "message",
+                            "role": "developer",
+                            "content": [{"type": "input_text", "text": text}],
+                        }
+                    )
                 continue
             if isinstance(message, ToolMessage):
-                items.append({
-                    "type": "function_call_output",
-                    "call_id": message.tool_call_id,
-                    "output": self._text_of(message),
-                })
+                items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": message.tool_call_id,
+                        "output": self._text_of(message),
+                    }
+                )
                 continue
             if isinstance(message, AIMessage):
                 # The model's own prior thinking, handed back before the calls it produced, since the endpoint reads this in order.
-                items.extend(carried_reasoning_for(message, self.model).get("reasoning_items") or [])
+                items.extend(
+                    carried_reasoning_for(message, self.model).get("reasoning_items") or []
+                )
                 text = self._text_of(message)
                 if text:
-                    items.append({
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": text}],
-                    })
+                    items.append(
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": text}],
+                        }
+                    )
                 for call in message.tool_calls or []:
                     arguments = call.get("args")
                     serialized = arguments if isinstance(arguments, str) else compact(arguments)
-                    items.append({
-                        "type": "function_call",
-                        "call_id": call.get("id"),
-                        "name": call.get("name"),
-                        "arguments": serialized,
-                    })
+                    items.append(
+                        {
+                            "type": "function_call",
+                            "call_id": call.get("id"),
+                            "name": call.get("name"),
+                            "arguments": serialized,
+                        }
+                    )
                 continue
             # A reminder is not the user talking, and a `developer` item stays where it was written.
             role = "developer" if message.additional_kwargs.get("reminder") else "user"
-            items.append({
-                "type": "message",
-                "role": role,
-                "content": [{"type": "input_text", "text": self._text_of(message)}],
-            })
+            items.append(
+                {
+                    "type": "message",
+                    "role": role,
+                    "content": [{"type": "input_text", "text": self._text_of(message)}],
+                }
+            )
         return instructions, items
 
     @staticmethod
@@ -180,7 +206,9 @@ class ChatCodexModel(BaseChatModel):
             "strict": False,
         }
 
-    def _build_payload(self, messages: Sequence[BaseMessage], *, stream: bool, **kwargs: Any) -> dict[str, Any]:
+    def _build_payload(
+        self, messages: Sequence[BaseMessage], *, stream: bool, **kwargs: Any
+    ) -> dict[str, Any]:
         instructions, input_items = self._to_responses_input(messages)
         payload: dict[str, Any] = {
             "model": self.model,
@@ -202,7 +230,8 @@ class ChatCodexModel(BaseChatModel):
             payload["prompt_cache_key"] = self.session_id
         # Both unconditional, as in the Codex client: asking for the encrypted reasoning is what makes `store: false` workable.
         payload["reasoning"] = {
-            "effort": self.reasoning_effort or None, "summary": "auto",
+            "effort": self.reasoning_effort or None,
+            "summary": "auto",
         }
         payload["include"] = ["reasoning.encrypted_content"]
         return payload
@@ -229,7 +258,7 @@ class ChatCodexModel(BaseChatModel):
     def _line_to_chunk(cls, line: str, state: dict[str, Any]) -> Optional[ChatGenerationChunk]:
         if not line or not line.startswith("data:"):
             return None
-        payload = line[len("data:"):].strip()
+        payload = line[len("data:") :].strip()
         if not payload or payload == "[DONE]":
             return None
         try:
@@ -239,7 +268,9 @@ class ChatCodexModel(BaseChatModel):
         return cls._translate_event(data, state)
 
     @classmethod
-    def _translate_event(cls, data: dict[str, Any], state: dict[str, Any]) -> Optional[ChatGenerationChunk]:
+    def _translate_event(
+        cls, data: dict[str, Any], state: dict[str, Any]
+    ) -> Optional[ChatGenerationChunk]:
         event_type = data.get("type", "")
         if event_type == "response.output_text.delta":
             return cls._chunk(content_block=cls._text_content_block(data))
@@ -249,33 +280,40 @@ class ChatCodexModel(BaseChatModel):
             # A finished reasoning item, kept in its encrypted form because that is what the endpoint accepts back.
             item = data.get("item") or {}
             if item.get("type") == "reasoning" and item.get("encrypted_content"):
-                return cls._chunk(reasoning_item={
-                    "type": "reasoning",
-                    "id": item.get("id"),
-                    "summary": item.get("summary") or [],
-                    "encrypted_content": item["encrypted_content"],
-                }, model=str(state.get("model") or ""))
+                return cls._chunk(
+                    reasoning_item={
+                        "type": "reasoning",
+                        "id": item.get("id"),
+                        "summary": item.get("summary") or [],
+                        "encrypted_content": item["encrypted_content"],
+                    },
+                    model=str(state.get("model") or ""),
+                )
             return None
         if event_type == "response.output_item.added":
             item = data.get("item") or {}
             if item.get("type") == "function_call":
                 state["saw_tool_call"] = True
-                return cls._chunk(tool_call_chunk={
-                    "index": int(data.get("output_index", 0) or 0),
-                    "id": item.get("call_id"),
-                    "name": item.get("name"),
-                    "args": item.get("arguments") or "",
-                    "type": "tool_call_chunk",
-                })
+                return cls._chunk(
+                    tool_call_chunk={
+                        "index": int(data.get("output_index", 0) or 0),
+                        "id": item.get("call_id"),
+                        "name": item.get("name"),
+                        "args": item.get("arguments") or "",
+                        "type": "tool_call_chunk",
+                    }
+                )
             return None
         if event_type == "response.function_call_arguments.delta":
-            return cls._chunk(tool_call_chunk={
-                "index": int(data.get("output_index", 0) or 0),
-                "id": None,
-                "name": None,
-                "args": str(data.get("delta", "")),
-                "type": "tool_call_chunk",
-            })
+            return cls._chunk(
+                tool_call_chunk={
+                    "index": int(data.get("output_index", 0) or 0),
+                    "id": None,
+                    "name": None,
+                    "args": str(data.get("delta", "")),
+                    "type": "tool_call_chunk",
+                }
+            )
         if event_type == "response.completed":
             response = data.get("response") or {}
             usage = cls._usage(response.get("usage"))
@@ -286,7 +324,7 @@ class ChatCodexModel(BaseChatModel):
             )
         if event_type in ("response.failed", "response.error", "error"):
             response = data.get("response") or {}
-            detail = (response.get("error") or data.get("error") or {})
+            detail = response.get("error") or data.get("error") or {}
             structured = detail if isinstance(detail, dict) else {}
             message = structured.get("message") if structured else str(detail)
             # The failure event carries a machine-readable code beside its message, so an overflow is raised as one.
@@ -349,11 +387,11 @@ class ChatCodexModel(BaseChatModel):
             # One item per chunk accumulates into the turn's reasoning in order, carrying no `index` so the list is not merged by it.
             additional_kwargs=(
                 {"reasoning_items": [reasoning_item], REASONING_MODEL_KEY: model}
-                if reasoning_item else {}
+                if reasoning_item
+                else {}
             ),
         )
         return ChatGenerationChunk(message=message)
-
 
     def _trace_payload(self, payload: dict[str, Any]) -> RequestTrace:
         """Cut the outgoing request into the pieces a prompt cache matches on, in the order the endpoint reads them."""
@@ -363,8 +401,14 @@ class ChatCodexModel(BaseChatModel):
         ]
         for position, item in enumerate(payload.get("input") or []):
             # A Responses item is identified by its type, and by its role where it has one, which is the more telling of the two.
-            pieces.append(Piece(kind=ITEM, text=compact(item), position=position,
-                                role=str(item.get("role") or item.get("type") or "")))
+            pieces.append(
+                Piece(
+                    kind=ITEM,
+                    text=compact(item),
+                    position=position,
+                    role=str(item.get("role") or item.get("type") or ""),
+                )
+            )
         return trace(pieces)
 
     @staticmethod
@@ -391,7 +435,6 @@ class ChatCodexModel(BaseChatModel):
 
     # Streaming generation (the path the harness actually uses).
 
-
     def _cache_diagnosis(self, current: RequestTrace) -> dict[str, object]:
         """What this request kept from the last one, and remember it for the next."""
         diagnosis = diagnose(current, self._previous_trace)
@@ -411,10 +454,15 @@ class ChatCodexModel(BaseChatModel):
         current_trace = self._trace_payload(payload)
         reported = False
         # Carried so a failure can name the model that refused the request and the window it was measured against.
-        state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,
-                                 "context_window": self.context_window()}
+        state: dict[str, Any] = {
+            "saw_tool_call": False,
+            "model": self.model,
+            "context_window": self.context_window(),
+        }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream("POST", RESPONSES_URL, json=payload, headers=headers) as response:
+            async with client.stream(
+                "POST", RESPONSES_URL, json=payload, headers=headers
+            ) as response:
                 if response.status_code >= 400:
                     body = (await response.aread()).decode("utf-8", "replace")
                     raise self._http_error(response.status_code, body)
@@ -425,7 +473,9 @@ class ChatCodexModel(BaseChatModel):
                         # Attached to the chunk carrying usage, so the diagnosis travels with the figure it explains.
                         if chunk.message.usage_metadata and not reported:
                             reported = True
-                            chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(current_trace)
+                            chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(
+                                current_trace
+                            )
                         yield chunk
 
     @staticmethod
@@ -469,13 +519,18 @@ class ChatCodexModel(BaseChatModel):
         payload = self._build_payload(messages, stream=True, **kwargs)
         headers = request_headers(tokens, self.session_id)
         # Carried so a failure can name the model that refused the request and the window it was measured against.
-        state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,
-                                 "context_window": self.context_window()}
+        state: dict[str, Any] = {
+            "saw_tool_call": False,
+            "model": self.model,
+            "context_window": self.context_window(),
+        }
         aggregate: Optional[ChatGenerationChunk] = None
         with httpx.Client(timeout=self.timeout) as client:
             with client.stream("POST", RESPONSES_URL, json=payload, headers=headers) as response:
                 if response.status_code >= 400:
-                    raise self._http_error(response.status_code, response.read().decode("utf-8", "replace"))
+                    raise self._http_error(
+                        response.status_code, response.read().decode("utf-8", "replace")
+                    )
                 capture_usage_headers(response.headers)
                 for line in response.iter_lines():
                     chunk = self._line_to_chunk(line, state)

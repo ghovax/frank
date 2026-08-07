@@ -59,7 +59,15 @@ function renderPageToCanvas(
 
 function PdfStatus({ kind }: { kind: "loading" | "error" }) {
   return (
-    <Flex position="absolute" inset={0} align="center" justify="center" direction="column" gap={2} color="fg.subtle">
+    <Flex
+      position="absolute"
+      inset={0}
+      align="center"
+      justify="center"
+      direction="column"
+      gap={2}
+      color="fg.subtle"
+    >
       {kind === "loading" ? (
         <>
           <Spinner size="sm" borderWidth="2px" />
@@ -78,7 +86,10 @@ function PdfStatus({ kind }: { kind: "loading" | "error" }) {
 // The first page of a PDF, rendered small — used as the hover thumbnail.
 export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [renderState, setRenderState] = useState<{ url: string; status: "loading" | "ready" | "error" }>(() => ({
+  const [renderState, setRenderState] = useState<{
+    url: string;
+    status: "loading" | "ready" | "error";
+  }>(() => ({
     url,
     status: "loading",
   }));
@@ -98,12 +109,20 @@ export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number
     });
     return () => {
       cancelled = true;
-      document?.destroy().catch((caught) => expected("a document being torn down cannot fail usefully", caught));
+      document
+        ?.destroy()
+        .catch((caught) => expected("a document being torn down cannot fail usefully", caught));
     };
   }, [url, width]);
 
   return (
-    <Box position="relative" minH="120px" minW={`${width}px`} display="flex" justifyContent="center">
+    <Box
+      position="relative"
+      minH="120px"
+      minW={`${width}px`}
+      display="flex"
+      justifyContent="center"
+    >
       <Canvas ref={canvasRef} display={status === "ready" ? "block" : "none"} borderRadius="md" />
       {status !== "ready" && <PdfStatus kind={status === "error" ? "error" : "loading"} />}
     </Box>
@@ -156,7 +175,9 @@ function PdfPageView({
       setAspect(baseViewport.height / baseViewport.width);
       renderTask = renderPageToCanvas(page, canvasRef.current, width);
       await renderTask?.promise;
-    })().catch((caught) => swallowed({ component: "pdf-view", operation: "render a page" }, caught));
+    })().catch((caught) =>
+      swallowed({ component: "pdf-view", operation: "render a page" }, caught),
+    );
     // Cancel an in-flight render before the next width re-runs this, so two never touch one canvas.
     return () => {
       cancelled = true;
@@ -198,7 +219,11 @@ export function PdfDocumentView({ url }: { url: string }) {
     (async () => {
       opened = await openDocument(url);
       if (cancelled) {
-        opened.destroy().catch((caught) => expected("a document abandoned mid-open cannot fail usefully", caught));
+        opened
+          .destroy()
+          .catch((caught) =>
+            expected("a document abandoned mid-open cannot fail usefully", caught),
+          );
         return;
       }
       setDocumentState({ url, document: opened, status: "ready" });
@@ -207,7 +232,9 @@ export function PdfDocumentView({ url }: { url: string }) {
     });
     return () => {
       cancelled = true;
-      opened?.destroy().catch((caught) => expected("a document being torn down cannot fail usefully", caught));
+      opened
+        ?.destroy()
+        .catch((caught) => expected("a document being torn down cannot fail usefully", caught));
     };
   }, [url]);
 
@@ -235,7 +262,15 @@ export function PdfDocumentView({ url }: { url: string }) {
   }, [document]);
 
   return (
-    <Box ref={containerRef} position="relative" w="100%" h="100%" overflowY="auto" bg="bg.subtle" py={3}>
+    <Box
+      ref={containerRef}
+      position="relative"
+      w="100%"
+      h="100%"
+      overflowY="auto"
+      bg="bg.subtle"
+      py={3}
+    >
       {status === "ready" && document && pageWidth > 0 && (
         <Flex direction="column" gap={3} align="center">
           {Array.from({ length: document.numPages }, (_, index) => (

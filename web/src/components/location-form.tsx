@@ -1,10 +1,27 @@
 "use client";
 
-import { Alert, Box, Button, Flex, IconButton, Input, Skeleton, Spinner, Text } from "@chakra-ui/react";
+import {
+  Alert,
+  Box,
+  Button,
+  Flex,
+  IconButton,
+  Input,
+  Skeleton,
+  Spinner,
+  Text,
+} from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LuFolder, LuFolderOpen, LuPlus, LuServer, LuTrash2 } from "react-icons/lu";
 import { useTranslations } from "next-intl";
-import { browseWorkingDirectory, fetchHomeDirectory, fetchHostHomeDirectory, type LocationInput, type PermissionMode, type SshHost } from "@/lib/api";
+import {
+  browseWorkingDirectory,
+  fetchHomeDirectory,
+  fetchHostHomeDirectory,
+  type LocationInput,
+  type PermissionMode,
+  type SshHost,
+} from "@/lib/api";
 import { PermissionModeControl } from "./session-controls";
 import { SimpleSelect, type SelectOption } from "./ui/simple-select";
 import { swallowed } from "@/lib/swallowed";
@@ -37,9 +54,12 @@ export function locationConflict(
       const first = normalized[outerIndex];
       const second = normalized[innerIndex];
       if (first.machine !== second.machine || !first.path || !second.path) continue;
-      if (first.path === second.path) return { key: "conflictSameDirectory", values: { directory: first.raw } };
-      if (second.path.startsWith(`${first.path}/`)) return { key: "conflictNested", values: { inner: second.raw, outer: first.raw } };
-      if (first.path.startsWith(`${second.path}/`)) return { key: "conflictNested", values: { inner: first.raw, outer: second.raw } };
+      if (first.path === second.path)
+        return { key: "conflictSameDirectory", values: { directory: first.raw } };
+      if (second.path.startsWith(`${first.path}/`))
+        return { key: "conflictNested", values: { inner: second.raw, outer: first.raw } };
+      if (first.path.startsWith(`${second.path}/`))
+        return { key: "conflictNested", values: { inner: first.raw, outer: second.raw } };
     }
   }
   return null;
@@ -63,10 +83,11 @@ export function LocationForm({
   const set = (patch: Partial<LocationInput>) => onChange({ ...value, ...patch });
 
   const hostItems = useMemo<SelectOption[]>(
-    () => hosts.map((host) => ({
-      value: host.alias,
-      label: `${host.alias} (${host.user ? `${host.user}@` : ""}${host.hostname}:${host.port})`,
-    })),
+    () =>
+      hosts.map((host) => ({
+        value: host.alias,
+        label: `${host.alias} (${host.user ? `${host.user}@` : ""}${host.hostname}:${host.port})`,
+      })),
     [hosts],
   );
 
@@ -101,12 +122,23 @@ export function LocationForm({
     setHomeUnresolved(false);
     setResolvingHome(true);
     (async () => {
-      const home = machine === "local"
-        ? (await fetchHomeDirectory().catch((caught) => {
-            swallowed({ component: "environment-form", operation: "read this machine's home directory" }, caught);
-            return { path: "" };
-          })).path
-        : alias ? await fetchHostHomeDirectory(alias) : "";
+      const home =
+        machine === "local"
+          ? (
+              await fetchHomeDirectory().catch((caught) => {
+                swallowed(
+                  {
+                    component: "environment-form",
+                    operation: "read this machine's home directory",
+                  },
+                  caught,
+                );
+                return { path: "" };
+              })
+            ).path
+          : alias
+            ? await fetchHostHomeDirectory(alias)
+            : "";
       if (cancelled) return;
       setResolvingHome(false);
       // A remote whose home could not be read says so rather than leaving an empty box.
@@ -147,12 +179,20 @@ export function LocationForm({
           variant={value.kind === "remote" ? "subtle" : "outline"}
           colorPalette={value.kind === "remote" ? "blue" : undefined}
           // Switching to remote selects the first host at once, with the effect below only backfilling.
-          onClick={() => set({ kind: "remote", host_alias: value.host_alias || hosts[0]?.alias || "" })}
+          onClick={() =>
+            set({ kind: "remote", host_alias: value.host_alias || hosts[0]?.alias || "" })
+          }
         >
           <LuServer size={13} /> {translation("remote")}
         </Button>
         {onRemove && (
-          <IconButton aria-label={translation("removeLocation")} variant="ghost" colorPalette="red" flexShrink={0} onClick={onRemove}>
+          <IconButton
+            aria-label={translation("removeLocation")}
+            variant="ghost"
+            colorPalette="red"
+            flexShrink={0}
+            onClick={onRemove}
+          >
             <LuTrash2 size={13} />
           </IconButton>
         )}
@@ -169,7 +209,11 @@ export function LocationForm({
               </Alert.Content>
             </Alert.Root>
           ) : (
-            <SimpleSelect items={hostItems} value={value.host_alias ?? ""} onValueChange={(next) => set({ host_alias: next })} />
+            <SimpleSelect
+              items={hostItems}
+              value={value.host_alias ?? ""}
+              onValueChange={(next) => set({ host_alias: next })}
+            />
           )}
         </Flex>
       )}
@@ -184,7 +228,9 @@ export function LocationForm({
             flex={1}
             value={value.base_directory}
             onChange={(event) => set({ base_directory: event.target.value })}
-            placeholder={value.kind === "remote" ? "/srv/payments-service" : "/Users/you/code/payments-service"}
+            placeholder={
+              value.kind === "remote" ? "/srv/payments-service" : "/Users/you/code/payments-service"
+            }
           />
           {value.kind === "local" && (
             <Button variant="outline" flexShrink={0} onClick={pickFolder}>
@@ -209,7 +255,9 @@ export function LocationForm({
           <PermissionModeControl
             layout="field"
             value={(value.permission_mode as PermissionMode) ?? "ask"}
-            onChange={(next) => { if (next) set({ permission_mode: next }); }}
+            onChange={(next) => {
+              if (next) set({ permission_mode: next });
+            }}
           />
         </Flex>
       )}
@@ -238,7 +286,12 @@ export function LocationEditorList({
   const translation = useTranslations("LocationForm");
   if (loading) {
     return (
-      <Flex data-layout="location-editor-loading" direction="column" gap={3} aria-label={translation("loadingLocations")}>
+      <Flex
+        data-layout="location-editor-loading"
+        direction="column"
+        gap={3}
+        aria-label={translation("loadingLocations")}
+      >
         <Box borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
           <Flex direction="column" gap={3}>
             <Flex gap={2}>

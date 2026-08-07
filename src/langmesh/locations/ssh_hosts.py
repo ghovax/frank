@@ -105,7 +105,9 @@ def resolve_host(alias: str, *, timeout: float = 5.0) -> SshHost | None:
             port = int(value)
         elif key == "identityfile" and value:
             identity_files.append(os.path.expanduser(value))
-    return SshHost(alias=alias, hostname=hostname, user=user, port=port, identity_files=tuple(identity_files))
+    return SshHost(
+        alias=alias, hostname=hostname, user=user, port=port, identity_files=tuple(identity_files)
+    )
 
 
 def list_ssh_hosts(config_path: Path = DEFAULT_SSH_CONFIG_PATH) -> list[SshHost]:

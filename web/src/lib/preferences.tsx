@@ -26,12 +26,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Set by the teardown below, so a read landing after this provider is gone is dropped.
     let cancelled = false;
-    const read = () => fetchPreferences()
-      .then((stored) => { if (!cancelled) setPreferences(stored); })
-      .catch((caught) => {
-        if (!cancelled) setPreferences(DEFAULT_INTERFACE_PREFERENCES);
-        swallowed({ component: "preferences", operation: "read the interface preferences" }, caught);
-      });
+    const read = () =>
+      fetchPreferences()
+        .then((stored) => {
+          if (!cancelled) setPreferences(stored);
+        })
+        .catch((caught) => {
+          if (!cancelled) setPreferences(DEFAULT_INTERFACE_PREFERENCES);
+          swallowed(
+            { component: "preferences", operation: "read the interface preferences" },
+            caught,
+          );
+        });
     void read();
     // Another client changed one. The daemon says so; this rereads rather than guessing what.
     const unsubscribe = subscribeEvents((event) => {
@@ -48,7 +54,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setPreferences((current) => (current ? { ...current, ...changes } : current));
     void savePreferences(changes)
       .then(setPreferences)
-      .catch((caught) => swallowed({ component: "preferences", operation: "save an interface preference" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "preferences", operation: "save an interface preference" }, caught),
+      );
   }, []);
 
   if (preferences === null) return null;

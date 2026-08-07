@@ -63,13 +63,17 @@ class MCPClientManager:
                     if connection is None:
                         connection = _StatefulStdioSession(name, configuration)
                         self._stdio_sessions[name] = connection
-                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
+                    await asyncio.wait_for(
+                        connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect)
+                    )
                 elif configuration.transport == "streamable_http":
                     connection = self._streamable_sessions.get(name)
                     if connection is None:
                         connection = _StatefulStreamableHTTPSession(name, configuration)
                         self._streamable_sessions[name] = connection
-                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
+                    await asyncio.wait_for(
+                        connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect)
+                    )
             except (Exception, asyncio.TimeoutError):
                 logger.warning("MCP server %r failed to start; skipping it", name, exc_info=True)
                 self._stdio_sessions.pop(name, None)
@@ -104,18 +108,20 @@ class MCPClientManager:
                 logger.warning("MCP server tools unavailable", extra=log_fields(error, server=name))
                 result["servers"].append({"name": name, "tools": [], "error": str(error)})
                 continue
-            result["servers"].append({
-                "name": name,
-                "tools": [
-                    {
-                        "name": tool.name,
-                        "title": tool.title,
-                        "description": tool.description,
-                        "input_schema": tool.inputSchema,
-                    }
-                    for tool in tools_result.tools
-                ],
-            })
+            result["servers"].append(
+                {
+                    "name": name,
+                    "tools": [
+                        {
+                            "name": tool.name,
+                            "title": tool.title,
+                            "description": tool.description,
+                            "input_schema": tool.inputSchema,
+                        }
+                        for tool in tools_result.tools
+                    ],
+                }
+            )
         return result
 
     async def call_tool(
@@ -170,22 +176,26 @@ class MCPClientManager:
             except Exception as error:  # noqa: BLE001
                 if server:
                     raise
-                logger.warning("MCP server resources unavailable", extra=log_fields(error, server=name))
+                logger.warning(
+                    "MCP server resources unavailable", extra=log_fields(error, server=name)
+                )
                 result["servers"].append({"name": name, "resources": [], "error": str(error)})
                 continue
-            result["servers"].append({
-                "name": name,
-                "resources": [
-                    {
-                        "uri": str(resource.uri),
-                        "name": resource.name,
-                        "title": resource.title,
-                        "description": resource.description,
-                        "mime_type": resource.mimeType,
-                    }
-                    for resource in resources_result.resources
-                ],
-            })
+            result["servers"].append(
+                {
+                    "name": name,
+                    "resources": [
+                        {
+                            "uri": str(resource.uri),
+                            "name": resource.name,
+                            "title": resource.title,
+                            "description": resource.description,
+                            "mime_type": resource.mimeType,
+                        }
+                        for resource in resources_result.resources
+                    ],
+                }
+            )
         return result
 
     async def read_resource(self, server: str, uri: str) -> dict[str, Any]:
@@ -226,7 +236,9 @@ class MCPClientManager:
                 async with connection.session(event_callback) as session:
                     yield session
             else:
-                async with _stateless_stdio_session(server_name, configuration, event_callback) as session:
+                async with _stateless_stdio_session(
+                    server_name, configuration, event_callback
+                ) as session:
                     yield session
             return
         if configuration.transport == "streamable_http":
@@ -240,10 +252,14 @@ class MCPClientManager:
                 async with connection.session(event_callback) as session:
                     yield session
             else:
-                async with _stateless_streamable_http_session(server_name, configuration, event_callback) as session:
+                async with _stateless_streamable_http_session(
+                    server_name, configuration, event_callback
+                ) as session:
                     yield session
             return
-        raise ValueError(f"Unsupported MCP transport for '{server_name}': {configuration.transport}")
+        raise ValueError(
+            f"Unsupported MCP transport for '{server_name}': {configuration.transport}"
+        )
 
 
 class _StatefulStdioSession:
@@ -258,9 +274,13 @@ class _StatefulStdioSession:
         self._pending_events: list[dict[str, Any]] = []
 
     @asynccontextmanager
-    async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
+    async def session(
+        self, event_callback: MCPEventCallback | None = None
+    ) -> AsyncIterator[ClientSession]:
         # Bounded like the startup connect, so an endpoint that never completes its handshake cannot hold the caller.
-        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
+        session = await asyncio.wait_for(
+            self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect)
+        )
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)
@@ -333,9 +353,13 @@ class _StatefulStreamableHTTPSession:
         self._pending_events: list[dict[str, Any]] = []
 
     @asynccontextmanager
-    async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
+    async def session(
+        self, event_callback: MCPEventCallback | None = None
+    ) -> AsyncIterator[ClientSession]:
         # Bounded like the startup connect, so an endpoint that never completes its handshake cannot hold the caller.
-        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
+        session = await asyncio.wait_for(
+            self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect)
+        )
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)
@@ -351,8 +375,14 @@ class _StatefulStreamableHTTPSession:
             if self._session is not None:
                 return self._session
             try:
-                http_client = await self._exit_stack.enter_async_context(_http_client(self._configuration))
-                read_stream, write_stream, _get_session_id = await self._exit_stack.enter_async_context(
+                http_client = await self._exit_stack.enter_async_context(
+                    _http_client(self._configuration)
+                )
+                (
+                    read_stream,
+                    write_stream,
+                    _get_session_id,
+                ) = await self._exit_stack.enter_async_context(
                     streamable_http_client(
                         self._configuration.url,
                         http_client=http_client,
@@ -459,6 +489,7 @@ def _message_handler(server_name: str, event_callback: MCPEventCallback | None):
         event = _event_from_mcp_message(server_name, message)
         if event is not None and event_callback is not None:
             await _emit_callback(event_callback, event)
+
     return handle
 
 
@@ -471,14 +502,17 @@ def _progress_callback(
         return None
 
     async def progress(progress: float, total: float | None, message: str | None) -> None:
-        await _emit_callback(event_callback, {
-            "event": "progress",
-            "server": server,
-            "tool": tool_name,
-            "progress": progress,
-            "total": total,
-            "message": message,
-        })
+        await _emit_callback(
+            event_callback,
+            {
+                "event": "progress",
+                "server": server,
+                "tool": tool_name,
+                "progress": progress,
+                "total": total,
+                "message": message,
+            },
+        )
 
     return progress
 

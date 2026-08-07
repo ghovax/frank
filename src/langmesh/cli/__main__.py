@@ -65,8 +65,12 @@ def _command_send(arguments: argparse.Namespace) -> int:
         return 1
     if arguments.wait:
         # Waiting on this turn rather than on the session going quiet, so a compaction ending does not answer for it.
-        return _follow(arguments.session, until_idle=True, frames=False,
-                       turn_id=str(result.get("turn_id") or ""))
+        return _follow(
+            arguments.session,
+            until_idle=True,
+            frames=False,
+            turn_id=str(result.get("turn_id") or ""),
+        )
     _emit(result)
     return 0
 
@@ -142,12 +146,21 @@ def _command_tree(arguments: argparse.Namespace) -> int:
 
 
 def _command_allow(arguments: argparse.Namespace) -> int:
-    _emit(call("session.respond", id=arguments.session, request_id=arguments.request, decision="allow_once"))
+    _emit(
+        call(
+            "session.respond",
+            id=arguments.session,
+            request_id=arguments.request,
+            decision="allow_once",
+        )
+    )
     return 0
 
 
 def _command_deny(arguments: argparse.Namespace) -> int:
-    _emit(call("session.respond", id=arguments.session, request_id=arguments.request, decision="deny"))
+    _emit(
+        call("session.respond", id=arguments.session, request_id=arguments.request, decision="deny")
+    )
     return 0
 
 
@@ -341,7 +354,11 @@ def _command_run(arguments: argparse.Namespace) -> int:
             answer = ""
             async for event in session.stream(prompt):
                 if arguments.json:
-                    _emit(event.to_dict() if hasattr(event, "to_dict") else {"event": type(event).__name__})
+                    _emit(
+                        event.to_dict()
+                        if hasattr(event, "to_dict")
+                        else {"event": type(event).__name__}
+                    )
                     continue
                 if isinstance(event, TextChunk):
                     sys.stdout.write(event.text)
@@ -371,7 +388,12 @@ def _command_auth(arguments: argparse.Namespace) -> int:
     """Sign in to a provider that uses an account rather than an API key, so a headless install can reach one too."""
     import asyncio
 
-    from langmesh.base.credentials import ChatGPTAuthError, ChatGPTLoginFlow, clear_tokens, load_tokens
+    from langmesh.base.credentials import (
+        ChatGPTAuthError,
+        ChatGPTLoginFlow,
+        clear_tokens,
+        load_tokens,
+    )
 
     if arguments.action == "status":
         tokens = load_tokens()
@@ -392,8 +414,10 @@ def _command_auth(arguments: argparse.Namespace) -> int:
             await flow.start()
         except OSError as error:
             # Port 1455 is the redirect target the consent screen sends the browser to, so it cannot be chosen.
-            _note(f"langmesh: could not listen for the sign-in callback ({error}). "
-                  "Another LangMesh or Codex sign-in may be in progress.")
+            _note(
+                f"langmesh: could not listen for the sign-in callback ({error}). "
+                "Another LangMesh or Codex sign-in may be in progress."
+            )
             return 1
         _note("langmesh: open this in a browser to sign in:")
         print(flow.authorize_url)
@@ -449,7 +473,7 @@ def _local_timezone() -> str:
     if localtime.is_symlink():
         parts = localtime.resolve().parts
         if "zoneinfo" in parts:
-            return "/".join(parts[parts.index("zoneinfo") + 1:]) or "UTC"
+            return "/".join(parts[parts.index("zoneinfo") + 1 :]) or "UTC"
     return "UTC"
 
 
@@ -523,15 +547,32 @@ def build_parser() -> argparse.ArgumentParser:
     add = subparsers.add_parser
 
     create = add("create", help="create a session (the only place its configuration is set)")
-    create.add_argument("-a", "--agent", required=True,
-                        help="agent profile to run; required, because nothing can guess it for you")
+    create.add_argument(
+        "-a",
+        "--agent",
+        required=True,
+        help="agent profile to run; required, because nothing can guess it for you",
+    )
     create.add_argument("-C", "--directory", help="working directory")
-    create.add_argument("-m", "--mode", choices=["ask", "automatic"],
-                        help="the permission mode this session starts under; it can be changed later, and the change reaches the turn in flight")
-    create.add_argument("-w", "--workspace", help="workspace the session belongs to — the set of locations it may act in")
-    create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
-    create.add_argument("--read-only", action="store_true",
-                        help="give the session a confinement with nowhere writable, so the operating system refuses every write")
+    create.add_argument(
+        "-m",
+        "--mode",
+        choices=["ask", "automatic"],
+        help="the permission mode this session starts under; it can be changed later, and the change reaches the turn in flight",
+    )
+    create.add_argument(
+        "-w",
+        "--workspace",
+        help="workspace the session belongs to — the set of locations it may act in",
+    )
+    create.add_argument(
+        "-P", "--parent", help="parent session; the child is clamped to no looser a mode"
+    )
+    create.add_argument(
+        "--read-only",
+        action="store_true",
+        help="give the session a confinement with nowhere writable, so the operating system refuses every write",
+    )
     create.add_argument("-t", "--title", help="a human label for the session list")
     create.set_defaults(handler=_command_create)
 
@@ -540,30 +581,45 @@ def build_parser() -> argparse.ArgumentParser:
 
     schedule_create = schedule_actions.add_parser("create", help="write down a recurring prompt")
     schedule_create.add_argument("name", help="how you will recognise it in the list")
-    schedule_create.add_argument("--cron", required=True,
-                                 help='when to run, as cron — e.g. "0 9 * * MON-FRI"')
+    schedule_create.add_argument(
+        "--cron", required=True, help='when to run, as cron — e.g. "0 9 * * MON-FRI"'
+    )
     schedule_create.add_argument("--prompt", required=True, help="what to ask, each time it fires")
     schedule_create.add_argument("-a", "--agent", required=True, help="agent profile to run")
-    schedule_create.add_argument("-w", "--workspace", required=True,
-                                 help="workspace id, or a path inside one")
-    schedule_create.add_argument("-m", "--mode", required=True,
-                                 choices=["ask", "automatic"],
-                                 help="permission mode; required, because nobody is watching when "
-                                      "this runs and an unstated mode is one nobody chose")
-    schedule_create.add_argument("--timezone", default=_local_timezone(),
-                                 help="IANA timezone the cron line is read in (default: this machine's)")
+    schedule_create.add_argument(
+        "-w", "--workspace", required=True, help="workspace id, or a path inside one"
+    )
+    schedule_create.add_argument(
+        "-m",
+        "--mode",
+        required=True,
+        choices=["ask", "automatic"],
+        help="permission mode; required, because nobody is watching when "
+        "this runs and an unstated mode is one nobody chose",
+    )
+    schedule_create.add_argument(
+        "--timezone",
+        default=_local_timezone(),
+        help="IANA timezone the cron line is read in (default: this machine's)",
+    )
     schedule_create.add_argument("-C", "--directory", help="working directory for the session")
     schedule_create.set_defaults(handler=_command_schedule_create)
 
-    schedule_list = schedule_actions.add_parser("list", help="every schedule, and when each next fires")
-    schedule_list.add_argument("-w", "--workspace", help="only this workspace (id or a path inside one)")
+    schedule_list = schedule_actions.add_parser(
+        "list", help="every schedule, and when each next fires"
+    )
+    schedule_list.add_argument(
+        "-w", "--workspace", help="only this workspace (id or a path inside one)"
+    )
     schedule_list.set_defaults(handler=_command_schedule_list)
 
     schedule_show = schedule_actions.add_parser("show", help="one schedule, including its last run")
     schedule_show.add_argument("schedule")
     schedule_show.set_defaults(handler=_command_schedule_show)
 
-    schedule_pause = schedule_actions.add_parser("pause", help="stop it firing, without deleting it")
+    schedule_pause = schedule_actions.add_parser(
+        "pause", help="stop it firing, without deleting it"
+    )
     schedule_pause.add_argument("schedule")
     schedule_pause.set_defaults(handler=_command_schedule_pause)
 
@@ -576,14 +632,17 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_delete.set_defaults(handler=_command_schedule_delete)
 
     schedule_run = schedule_actions.add_parser(
-        "run", help="fire it now, without moving its next window — for trying it out")
+        "run", help="fire it now, without moving its next window — for trying it out"
+    )
     schedule_run.add_argument("schedule")
     schedule_run.set_defaults(handler=_command_schedule_run)
 
     send = add("send", help="send a message to a session")
     send.add_argument("session")
     send.add_argument("message", help="the message, or - to read stdin")
-    send.add_argument("-w", "--wait", action="store_true", help="follow until the session goes idle")
+    send.add_argument(
+        "-w", "--wait", action="store_true", help="follow until the session goes idle"
+    )
     send.set_defaults(handler=_command_send)
 
     get = add("get", help="show a session")
@@ -631,7 +690,9 @@ def build_parser() -> argparse.ArgumentParser:
     configure.add_argument("value", nargs="?", help="the new value; omit to read it")
     configure.add_argument("-u", "--unset", action="store_true", help="remove the setting instead")
     configure.add_argument(
-        "-a", "--all", action="store_true",
+        "-a",
+        "--all",
+        action="store_true",
         help="list every setting the schema defines, with what it is for and what it ships at",
     )
     configure.set_defaults(handler=_command_configure)
@@ -641,33 +702,49 @@ def build_parser() -> argparse.ArgumentParser:
     remote.add_argument("message", nargs="?", help="the message, or - to read stdin")
     remote.set_defaults(handler=_command_remote)
 
-    serve = add("serve", help="make LangMesh available: the control plane and the browser interface")
-    serve.add_argument("-p", "--port", type=int, default=8824, help="port to listen on (default 8824)")
+    serve = add(
+        "serve", help="make LangMesh available: the control plane and the browser interface"
+    )
     serve.add_argument(
-        "--host", default="127.0.0.1",
+        "-p", "--port", type=int, default=8824, help="port to listen on (default 8824)"
+    )
+    serve.add_argument(
+        "--host",
+        default="127.0.0.1",
         help="address to bind (default 127.0.0.1; this surface drives the daemon, so keep it local)",
     )
     serve.add_argument(
-        "--open", dest="open_browser", action="store_true",
+        "--open",
+        dest="open_browser",
+        action="store_true",
         help="also open a browser at the served address (off by default: serving is not a "
-             "reason to take over the screen, and this may not be the machine you are looking at)",
+        "reason to take over the screen, and this may not be the machine you are looking at)",
     )
     serve.set_defaults(handler=_command_serve)
 
     reach = add("reach", help="make LangMesh reachable from a phone, over your tailnet")
     reach.add_argument(
-        "action", choices=["serve", "pair", "rotate"], nargs="?", default="serve",
+        "action",
+        choices=["serve", "pair", "rotate"],
+        nargs="?",
+        default="serve",
         help="serve the endpoint (default), print a pairing code for it, or mint a new token",
     )
     reach.add_argument(
-        "-p", "--port", type=int, default=8825,
+        "-p",
+        "--port",
+        type=int,
+        default=8825,
         help="the loopback port Tailscale proxies to (default 8825). Nothing listens on a "
-             "network interface; only change this if something else already has the port",
+        "network interface; only change this if something else already has the port",
     )
     reach.add_argument(
-        "--interface", nargs="?", const="http://127.0.0.1:3000", default="",
+        "--interface",
+        nargs="?",
+        const="http://127.0.0.1:3000",
+        default="",
         help="serve the interface from a running dev server instead of the built export, so a "
-             "change reaches the phone without `bun run build`. Defaults to Next's own port",
+        "change reaches the phone without `bun run build`. Defaults to Next's own port",
     )
     reach.set_defaults(handler=_command_reach)
 
@@ -676,17 +753,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = add("run", help="run one turn and print the answer, without a daemon")
     run.add_argument("prompt", nargs="?", help="what to ask, or - to read stdin")
-    run.add_argument("-a", "--agent", default="general-assistant", help="which agent profile to run")
+    run.add_argument(
+        "-a", "--agent", default="general-assistant", help="which agent profile to run"
+    )
     run.add_argument("-C", "--directory", default=".", help="where the agent works (default: here)")
     run.add_argument(
-        "--permission-mode", default="",
+        "--permission-mode",
+        default="",
         help="who answers when a call asks to reach past its confinement: ask, or automatic",
     )
     run.add_argument(
-        "--allow", action="store_true",
+        "--allow",
+        action="store_true",
         help="answer every permission gate with yes, for unattended use",
     )
-    run.add_argument("--json", action="store_true", help="print every turn event as JSON instead of prose")
+    run.add_argument(
+        "--json", action="store_true", help="print every turn event as JSON instead of prose"
+    )
     run.set_defaults(handler=_command_run)
 
     auth = add("auth", help="sign in to a model provider that uses an account rather than a key")
@@ -695,10 +778,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     daemon = add("daemon", help="inspect a running daemon (start one with `langmesh serve`)")
     daemon.add_argument(
-        "action", choices=["status", "stop", "restart", "endpoint"],
-        nargs="?", default="status",
+        "action",
+        choices=["status", "stop", "restart", "endpoint"],
+        nargs="?",
+        default="status",
     )
-    daemon.add_argument("-s", "--start", action="store_true", help="start the daemon if it is not running")
+    daemon.add_argument(
+        "-s", "--start", action="store_true", help="start the daemon if it is not running"
+    )
     daemon.set_defaults(handler=_command_daemon)
 
     return parser
@@ -707,8 +794,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     # Prose on stderr with nothing in front of it, forced because a library may already have configured logging.
     logging.basicConfig(
-        level=logging.WARNING, format="%(message)s",
-        handlers=[logging.StreamHandler(sys.stderr)], force=True,
+        level=logging.WARNING,
+        format="%(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
+        force=True,
     )
     logging.getLogger("langmesh").setLevel(logging.INFO)
     parser = build_parser()

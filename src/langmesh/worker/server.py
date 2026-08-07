@@ -112,7 +112,11 @@ async def _set_locations(session, params: dict) -> dict:
 
 async def _set_permission_mode(session, params: dict) -> dict:
     """The person changed this session's approval policy while it runs, making it true for the turn in flight."""
-    return {"permission_mode": await session.set_permission_mode(str(params.get("permission_mode") or ""))}
+    return {
+        "permission_mode": await session.set_permission_mode(
+            str(params.get("permission_mode") or "")
+        )
+    }
 
 
 async def _reset(session, _params: dict) -> dict:

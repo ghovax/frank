@@ -15,9 +15,7 @@ _token_counter: Any = None
 _call_counter: Any = None
 
 #: A tracer bound for one task, winning over the process-wide one: two sessions may report elsewhere.
-_bound_tracer: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "langmesh_tracer", default=None
-)
+_bound_tracer: contextvars.ContextVar[Any] = contextvars.ContextVar("langmesh_tracer", default=None)
 
 
 def set_tracer(tracer: Any) -> contextvars.Token:
@@ -64,14 +62,24 @@ def configure(
     from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
     resource = Resource.create({"service.name": service_name})
-    provider = TracerProvider(resource=resource, sampler=ParentBased(TraceIdRatioBased(max(0.0, min(1.0, sample_ratio)))))
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, headers=headers or None)))
+    provider = TracerProvider(
+        resource=resource, sampler=ParentBased(TraceIdRatioBased(max(0.0, min(1.0, sample_ratio))))
+    )
+    provider.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, headers=headers or None))
+    )
     _tracer = provider.get_tracer("langmesh")
 
-    reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=_metrics_endpoint(endpoint), headers=headers or None))
+    reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint=_metrics_endpoint(endpoint), headers=headers or None)
+    )
     meter = MeterProvider(resource=resource, metric_readers=[reader]).get_meter("langmesh")
-    _token_counter = meter.create_counter("gen_ai.client.token.usage", unit="{token}", description="LLM tokens used")
-    _call_counter = meter.create_counter("gen_ai.client.operation.count", unit="{call}", description="LLM model calls")
+    _token_counter = meter.create_counter(
+        "gen_ai.client.token.usage", unit="{token}", description="LLM tokens used"
+    )
+    _call_counter = meter.create_counter(
+        "gen_ai.client.operation.count", unit="{call}", description="LLM model calls"
+    )
     logger.info("telemetry enabled, exporting traces and metrics to %s", endpoint)
 
 
@@ -83,8 +91,12 @@ def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
     """Record token counters and a model-call count for a completed model call."""
     if _token_counter is None:
         return
-    _token_counter.add(max(0, input_tokens), {"gen_ai.request.model": model, "gen_ai.token.type": "input"})
-    _token_counter.add(max(0, output_tokens), {"gen_ai.request.model": model, "gen_ai.token.type": "output"})
+    _token_counter.add(
+        max(0, input_tokens), {"gen_ai.request.model": model, "gen_ai.token.type": "input"}
+    )
+    _token_counter.add(
+        max(0, output_tokens), {"gen_ai.request.model": model, "gen_ai.token.type": "output"}
+    )
     _call_counter.add(1, {"gen_ai.request.model": model})
 
 
@@ -104,12 +116,16 @@ def end_span(active_span: Any, attributes: Optional[dict[str, Any]] = None) -> N
 
 
 @contextmanager
-def span(name: str, attributes: Optional[dict[str, Any]] = None, parent_context: Any = None) -> Iterator[Any]:
+def span(
+    name: str, attributes: Optional[dict[str, Any]] = None, parent_context: Any = None
+) -> Iterator[Any]:
     """Open a span. Spans opened in the same task nest automatically."""
     if _tracer is None:
         yield None
         return
-    with _tracer.start_as_current_span(name, context=parent_context, attributes=attributes or {}) as active_span:
+    with _tracer.start_as_current_span(
+        name, context=parent_context, attributes=attributes or {}
+    ) as active_span:
         yield active_span
 
 

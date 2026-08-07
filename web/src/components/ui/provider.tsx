@@ -1,12 +1,15 @@
-"use client"
+"use client";
 
-import { ChakraProvider, ClientOnly, createSystem, defaultConfig, defineConfig } from "@chakra-ui/react"
 import {
-  ColorModeProvider,
-  type ColorModeProviderProps,
-} from "./color-mode"
-import { LocaleProvider } from "@/lib/i18n/locale-provider"
-import { PreferencesProvider } from "@/lib/preferences"
+  ChakraProvider,
+  ClientOnly,
+  createSystem,
+  defaultConfig,
+  defineConfig,
+} from "@chakra-ui/react";
+import { ColorModeProvider, type ColorModeProviderProps } from "./color-mode";
+import { LocaleProvider } from "@/lib/i18n/locale-provider";
+import { PreferencesProvider } from "@/lib/preferences";
 
 // The app's design language as theme-level defaults, so call sites pass a size only to deviate.
 const config = defineConfig({
@@ -52,7 +55,17 @@ const config = defineConfig({
         },
       },
       dialog: {
-        slots: ["backdrop", "positioner", "content", "title", "description", "header", "body", "footer", "closeTrigger"],
+        slots: [
+          "backdrop",
+          "positioner",
+          "content",
+          "title",
+          "description",
+          "header",
+          "body",
+          "footer",
+          "closeTrigger",
+        ],
         base: {
           // A dialog is a card on a wide screen and a screen on a narrow one.
           positioner: {
@@ -88,7 +101,23 @@ const config = defineConfig({
       },
       // One dropdown row for the whole app, since menus and selects read the same to a user.
       menu: {
-        slots: ["arrow", "arrowTip", "content", "contextTrigger", "indicator", "item", "itemGroup", "itemGroupLabel", "itemIndicator", "itemText", "positioner", "separator", "trigger", "triggerItem", "itemCommand"],
+        slots: [
+          "arrow",
+          "arrowTip",
+          "content",
+          "contextTrigger",
+          "indicator",
+          "item",
+          "itemGroup",
+          "itemGroupLabel",
+          "itemIndicator",
+          "itemText",
+          "positioner",
+          "separator",
+          "trigger",
+          "triggerItem",
+          "itemCommand",
+        ],
         variants: {
           size: {
             sm: {
@@ -99,7 +128,24 @@ const config = defineConfig({
         },
       },
       select: {
-        slots: ["label", "positioner", "trigger", "indicator", "clearTrigger", "item", "itemText", "itemIndicator", "itemGroup", "itemGroupLabel", "list", "content", "root", "control", "valueText", "indicatorGroup"],
+        slots: [
+          "label",
+          "positioner",
+          "trigger",
+          "indicator",
+          "clearTrigger",
+          "item",
+          "itemText",
+          "itemIndicator",
+          "itemGroup",
+          "itemGroupLabel",
+          "list",
+          "content",
+          "root",
+          "control",
+          "valueText",
+          "indicatorGroup",
+        ],
         variants: {
           size: {
             xs: {
@@ -111,9 +157,9 @@ const config = defineConfig({
       },
     },
   },
-})
+});
 
-const system = createSystem(defaultConfig, config)
+const system = createSystem(defaultConfig, config);
 
 export function Provider(props: ColorModeProviderProps) {
   return (
@@ -127,5 +173,5 @@ export function Provider(props: ColorModeProviderProps) {
         </PreferencesProvider>
       </ChakraProvider>
     </ClientOnly>
-  )
+  );
 }

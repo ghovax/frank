@@ -12,7 +12,8 @@ export interface ErrorFields {
 /** What was thrown, as fields for a log or a span. Never empty: something was thrown. */
 export function errorFields(thrown: unknown): ErrorFields {
   const serialized = serializeError(thrown) as Record<string, unknown>;
-  const name = typeof serialized.name === "string" && serialized.name ? serialized.name : "NonError";
+  const name =
+    typeof serialized.name === "string" && serialized.name ? serialized.name : "NonError";
   const stack = typeof serialized.stack === "string" ? serialized.stack : "";
   return { name, message: errorMessage(thrown), stack };
 }

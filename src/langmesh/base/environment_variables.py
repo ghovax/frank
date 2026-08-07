@@ -1,4 +1,5 @@
 """Every environment variable LangMesh defines or reads, named once so a typo fails at import."""
+
 from __future__ import annotations
 
 # An optional override for the outbound proxy, falling back to the standard variables below.
@@ -16,11 +17,11 @@ HTTPS_PROXY = "HTTPS_PROXY"
 ALL_PROXY = "ALL_PROXY"
 
 # Third-party integration keys, user-provided; each enables its tool or provider when present.
-EXA_API_KEY = "EXA_API_KEY"              # web search (search_web)
-JINA_API_KEY = "JINA_API_KEY"            # a fetch_url rendering fallback
+EXA_API_KEY = "EXA_API_KEY"  # web search (search_web)
+JINA_API_KEY = "JINA_API_KEY"  # a fetch_url rendering fallback
 FIRECRAWL_API_KEY = "FIRECRAWL_API_KEY"  # a fetch_url rendering fallback
 FIRECRAWL_API_URL = "FIRECRAWL_API_URL"  # self-hosted Firecrawl endpoint override
-COMPOSIO_API_KEY = "COMPOSIO_API_KEY"    # hosted MCP integrations
+COMPOSIO_API_KEY = "COMPOSIO_API_KEY"  # hosted MCP integrations
 
 # Standard OS variables, consulted read-only for the system/user snapshot shown in the prompt.
 SHELL = "SHELL"

@@ -62,7 +62,12 @@ export const SANDBOX_ENFORCE: ChoiceSet<SandboxEnforceValue> = {
   titleNamespace: "SettingsDialog",
   titleKey: "filesystemProtection",
   choices: [
-    { value: "required", labelKey: "sandboxRestricted", glyph: "box", palette: "green" },
+    {
+      value: "required",
+      labelKey: "sandboxRestricted",
+      glyph: "box",
+      palette: "green",
+    },
     { value: "off", labelKey: "sandboxGlobal", glyph: "globe", palette: "red" },
   ],
 };
@@ -80,9 +85,26 @@ export const WORKTREE_STRATEGIES: ChoiceSet<WorktreeStrategyValue> = {
   titleNamespace: "SettingsDialog",
   titleKey: "gitWorktree",
   choices: [
-    { value: "none", labelKey: "worktreeNoneLabel", descriptionKey: "worktreeNoneDescription", glyph: "folder" },
-    { value: "branch", labelKey: "worktreeBranchLabel", descriptionKey: "worktreeBranchDescription", glyph: "git-branch", palette: "blue" },
-    { value: "worktree", labelKey: "worktreeCopyLabel", descriptionKey: "worktreeCopyDescription", glyph: "copy", palette: "blue" },
+    {
+      value: "none",
+      labelKey: "worktreeNoneLabel",
+      descriptionKey: "worktreeNoneDescription",
+      glyph: "folder",
+    },
+    {
+      value: "branch",
+      labelKey: "worktreeBranchLabel",
+      descriptionKey: "worktreeBranchDescription",
+      glyph: "git-branch",
+      palette: "blue",
+    },
+    {
+      value: "worktree",
+      labelKey: "worktreeCopyLabel",
+      descriptionKey: "worktreeCopyDescription",
+      glyph: "copy",
+      palette: "blue",
+    },
   ],
 };
 
@@ -91,7 +113,12 @@ export const COMPACTION: ChoiceSet<BooleanValue> = {
   titleNamespace: "SettingsDialog",
   titleKey: "compaction",
   choices: [
-    { value: "on", labelKey: "compactionAutomatic", glyph: "zap", palette: "blue" },
+    {
+      value: "on",
+      labelKey: "compactionAutomatic",
+      glyph: "zap",
+      palette: "blue",
+    },
     { value: "off", labelKey: "compactionManual", glyph: "circle-slash" },
   ],
 };
@@ -102,7 +129,12 @@ export const USER_CONTEXT: ChoiceSet<BooleanValue> = {
   titleKey: "userContext",
   hintKey: "userContextHint",
   choices: [
-    { value: "on", labelKey: "userContextOn", glyph: "user-search", palette: "blue" },
+    {
+      value: "on",
+      labelKey: "userContextOn",
+      glyph: "user-search",
+      palette: "blue",
+    },
     { value: "off", labelKey: "userContextOff", glyph: "user-round-x" },
   ],
 };
@@ -113,7 +145,12 @@ export const COMPUTER_CONTROL: ChoiceSet<BooleanValue> = {
   titleKey: "computerControl",
   hintKey: "computerControlHint",
   choices: [
-    { value: "on", labelKey: "computerControlOn", glyph: "mouse-pointer-click", palette: "blue" },
+    {
+      value: "on",
+      labelKey: "computerControlOn",
+      glyph: "mouse-pointer-click",
+      palette: "blue",
+    },
     { value: "off", labelKey: "computerControlOff", glyph: "circle-slash" },
   ],
 };
@@ -138,7 +175,9 @@ export interface Choice<Value extends string = string> {
   palette?: string;
 }
 
-export function resolveChoices<Value extends string>(set: ChoiceSet<Value>): Choice<Value>[] {
+export function resolveChoices<Value extends string>(
+  set: ChoiceSet<Value>,
+): Choice<Value>[] {
   const say = labels(set.namespace);
   return set.choices.map((choice) => ({
     value: choice.value,
@@ -150,7 +189,13 @@ export function resolveChoices<Value extends string>(set: ChoiceSet<Value>): Cho
 }
 
 /** What a setting is called, and the sentence under it. */
-export function resolveHeading(set: ChoiceSet<string>): { title: string; hint: string } {
+export function resolveHeading(set: ChoiceSet<string>): {
+  title: string;
+  hint: string;
+} {
   const say = labels(set.titleNamespace);
-  return { title: say(set.titleKey), hint: set.hintKey ? say(set.hintKey) : "" };
+  return {
+    title: say(set.titleKey),
+    hint: set.hintKey ? say(set.hintKey) : "",
+  };
 }

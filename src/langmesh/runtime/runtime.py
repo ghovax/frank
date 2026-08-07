@@ -144,15 +144,17 @@ def build_chat_model(
     )
     # The catalogue's window travels with the model, since LiteLLM knows nothing of a gateway's models.
     catalogued = find_model(model_identifier)
-    return ChatLiteLLMModel.model_validate({
-        "model": resolved["model"],
-        "api_key": SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
-        "api_base": resolved["api_base"] or None,
-        "session_id": session_id,
-        "context_length": catalogued.context_length if catalogued else 0,
-        "temperature": 0,
-        "reasoning_effort": agent_configuration.reasoning_effort,
-    })
+    return ChatLiteLLMModel.model_validate(
+        {
+            "model": resolved["model"],
+            "api_key": SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
+            "api_base": resolved["api_base"] or None,
+            "session_id": session_id,
+            "context_length": catalogued.context_length if catalogued else 0,
+            "temperature": 0,
+            "reasoning_effort": agent_configuration.reasoning_effort,
+        }
+    )
 
 
 def _build_tools(
@@ -165,18 +167,23 @@ def _build_tools(
     permission_mode: PermissionMode = PermissionMode.ASK,
 ) -> list[BaseTool]:
     tools = _all_available_tools(
-        agent_configuration, global_configuration, working_directory,
-        can_reach_peers=can_reach_peers, extra_tools=extra_tools,
+        agent_configuration,
+        global_configuration,
+        working_directory,
+        can_reach_peers=can_reach_peers,
+        extra_tools=extra_tools,
         permission_mode=permission_mode,
     )
     # A profile's allow-list narrows our tools and never the caller's, which it was written long before.
     supplied = {tool.name for tool in extra_tools}
     allowed = _live_allow_list(
-        agent_configuration.tools_enabled, {tool.name for tool in tools} - supplied,
+        agent_configuration.tools_enabled,
+        {tool.name for tool in tools} - supplied,
     )
     # `disabled` applies to ours and the caller's alike: switching a supplied tool off means it.
     return [
-        tool for tool in tools
+        tool
+        for tool in tools
         if agent_configuration.tools.is_enabled(tool.name)
         and (tool.name in supplied or not allowed or tool.name in allowed)
     ]
@@ -188,7 +195,9 @@ def _live_allow_list(configured: list[str], existing: set[str]) -> set[str]:
     return live
 
 
-def _installed_agent_names(global_configuration: Configuration, working_directory: str) -> list[str]:
+def _installed_agent_names(
+    global_configuration: Configuration, working_directory: str
+) -> list[str]:
     """The profiles a peer could be created with, read at build time so a bad name is unrepresentable."""
     from langmesh.base.configuration import list_agents
 
@@ -231,12 +240,14 @@ def _all_available_tools(
     if global_configuration.computer_control.enabled:
         available.append(control_screen_tool)
     if global_configuration.mcp.enabled_servers():
-        available.extend([
-            list_mcp_tools_tool,
-            call_mcp_tool_tool,
-            list_mcp_resources_tool,
-            read_mcp_resource_tool,
-        ])
+        available.extend(
+            [
+                list_mcp_tools_tool,
+                call_mcp_tool_tool,
+                list_mcp_resources_tool,
+                read_mcp_resource_tool,
+            ]
+        )
     # Peer sessions: offered only with a profile to run and a control plane to reach.
     if can_reach_peers:
         available.extend(
@@ -313,7 +324,8 @@ def _build_tool_context(
 
         api_url = global_configuration.firecrawl.effective_api_url
         firecrawl_client = (
-            AsyncFirecrawl(api_key=firecrawl_key, api_url=api_url) if api_url
+            AsyncFirecrawl(api_key=firecrawl_key, api_url=api_url)
+            if api_url
             else AsyncFirecrawl(api_key=firecrawl_key)
         )
 
@@ -380,10 +392,14 @@ class TaskManager:
             task_id = update.get("task_id", "")
             status = update.get("status", "")
             if status not in self.STATUSES:
-                complaints.append(f"{status!r} is not a status; use one of {', '.join(self.STATUSES)}.")
+                complaints.append(
+                    f"{status!r} is not a status; use one of {', '.join(self.STATUSES)}."
+                )
                 continue
             if task_id not in known:
-                complaints.append(f"There is no task {task_id!r}. Current ids: {', '.join(sorted(known)) or 'none'}.")
+                complaints.append(
+                    f"There is no task {task_id!r}. Current ids: {', '.join(sorted(known)) or 'none'}."
+                )
                 continue
             for task in self._tasks:
                 if task.identifier == task_id:
@@ -513,16 +529,23 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         if not effective_model and model is None:
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and "
-                "`model` in its profile, pass `model_identifier=\"provider/model\"` to "
+                '`model` in its profile, pass `model_identifier="provider/model"` to '
                 "`langmesh.Session`, or hand the runtime a `model=` of your own."
             )
         # A profile pinned to an unkeyed provider fails on its first call, which is the honest outcome.
         self._effective_model_identifier = effective_model
 
         # A caller's own model wins, since accepting `BaseChatModel` is the whole of the model seam.
-        self._llm = model if model is not None else build_chat_model(
-            effective_model, global_configuration, agent_configuration, self._working_directory,
-            session_id,
+        self._llm = (
+            model
+            if model is not None
+            else build_chat_model(
+                effective_model,
+                global_configuration,
+                agent_configuration,
+                self._working_directory,
+                session_id,
+            )
         )
 
         self._file_lease_manager = file_lease_manager
@@ -535,20 +558,32 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             permission_mode, agent_configuration.permission_policy
         )
         self._tools = _build_tools(
-            agent_configuration, global_configuration, self._working_directory,
-            can_reach_peers=session_access is not None, extra_tools=tools,
+            agent_configuration,
+            global_configuration,
+            self._working_directory,
+            can_reach_peers=session_access is not None,
+            extra_tools=tools,
             permission_mode=self._permission_mode,
         )
         # Tools are bound natively, so the provider sees each real schema and can emit several calls at once.
         self._tool_schemas: dict[str, Any] = {tool.name: tool.args_schema for tool in self._tools}
         self._bound_model = self._llm.bind_tools(self._tools)
         # The evaluator gates against the same narrowed allow-list the tool set was built from.
-        self._permissions = permissions if permissions is not None else PermissionEvaluator(
-            agent_configuration.model_copy(update={
-                "tools_enabled": sorted(
-                    _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in self._tools})
-                ),
-            })
+        self._permissions = (
+            permissions
+            if permissions is not None
+            else PermissionEvaluator(
+                agent_configuration.model_copy(
+                    update={
+                        "tools_enabled": sorted(
+                            _live_allow_list(
+                                agent_configuration.tools_enabled,
+                                {tool.name for tool in self._tools},
+                            )
+                        ),
+                    }
+                )
+            )
         )
         self._background = BackgroundJobs(
             session_id=session_id,
@@ -652,17 +687,21 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         entries = locations or []
         if not entries:
             # None supplied: synthesize one local location, so the single-location default still applies.
-            entries = [{
-                "name": "local",
-                "kind": "local",
-                "base_directory": self._working_directory,
-                "permission_mode": str(permission_mode_default),
-            }]
+            entries = [
+                {
+                    "name": "local",
+                    "kind": "local",
+                    "base_directory": self._working_directory,
+                    "permission_mode": str(permission_mode_default),
+                }
+            ]
         for entry in entries:
             kind = entry.get("kind", "local")
             base_directory = str(entry.get("base_directory") or self._working_directory)
             host_alias = str(entry.get("host_alias") or "")
-            address = LocationAddress(kind=kind, base_directory=base_directory, host_alias=host_alias)
+            address = LocationAddress(
+                kind=kind, base_directory=base_directory, host_alias=host_alias
+            )
             uri = str(entry.get("uri") or location_uri_for(address))
             resolved = ResolvedLocation(
                 uri=uri,
@@ -670,7 +709,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 kind=kind,
                 base_directory=base_directory,
                 executor=(executors or {}).get(uri) or executor_for(address),
-                permission_mode=PermissionMode.coerce(entry.get("permission_mode"), permission_mode_default),
+                permission_mode=PermissionMode.coerce(
+                    entry.get("permission_mode"), permission_mode_default
+                ),
             )
             self._locations[uri] = resolved
             self._locations_by_name[resolved.name] = resolved
@@ -681,7 +722,10 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             if len(self._locations) == 1:
                 return next(iter(self._locations.values()))
             # Default to local, so an omission is never executed on a remote host.
-            local = next((location for location in self._locations.values() if location.kind == "local"), None)
+            local = next(
+                (location for location in self._locations.values() if location.kind == "local"),
+                None,
+            )
             if local is not None:
                 return local
             # Every location is remote, so require an explicit choice rather than picking one.
@@ -699,7 +743,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
     def _call_policy(self, location: ResolvedLocation | None) -> CallExecutionPolicy:
         """One call's execution policy, as a value, so concurrent calls to different locations cannot cross."""
         mode = (
-            self._permission_mode if location is None
+            self._permission_mode
+            if location is None
             else PermissionMode.more_restrictive(self._permission_mode, location.permission_mode)
         )
         working_directory = (
@@ -707,10 +752,16 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             if location is None or location.is_remote
             else location.base_directory
         )
-        return CallExecutionPolicy(location=location, working_directory=working_directory, mode=mode)
+        return CallExecutionPolicy(
+            location=location, working_directory=working_directory, mode=mode
+        )
 
     def _canonical_working_directory(self, working_directory: str | None = None) -> str:
-        return str(Path(working_directory or self._working_directory or Path.home()).expanduser().resolve(strict=False))
+        return str(
+            Path(working_directory or self._working_directory or Path.home())
+            .expanduser()
+            .resolve(strict=False)
+        )
 
     async def _acquire_filesystem_lease(
         self, *, scope: str, path: str, description: str, working_directory: str | None = None
@@ -736,7 +787,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
     def _peer_conversation_snapshot(self) -> list[dict[str, Any]]:
         """Serialize the usable conversation prefix inherited by a newly created peer."""
         inherited_messages = self._conversation
-        if inherited_messages and isinstance(inherited_messages[-1], AIMessage) and inherited_messages[-1].tool_calls:
+        if (
+            inherited_messages
+            and isinstance(inherited_messages[-1], AIMessage)
+            and inherited_messages[-1].tool_calls
+        ):
             inherited_messages = inherited_messages[:-1]
         return messages_to_dict(inherited_messages)
 
@@ -771,11 +826,17 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             background_job_id=identifier,
         )
         status, code = _model_result_status(capped_result, ok=True, backgrounded=False)
-        self._conversation.append(self._reminder_message(
-            _model_visible_tool_result(
-                capped_result, metadata, status, code, kind="background_result",
-            ),
-        ))
+        self._conversation.append(
+            self._reminder_message(
+                _model_visible_tool_result(
+                    capped_result,
+                    metadata,
+                    status,
+                    code,
+                    kind="background_result",
+                ),
+            )
+        )
 
     @property
     def token_usage(self) -> dict[str, int]:
@@ -809,7 +870,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         context_window = model.context_window() if model is not None else 0
         self._latest_context_tokens = input_tokens + output_tokens
         self._context_window = context_window
-        return Usage(input_tokens=input_tokens,
+        return Usage(
+            input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cache_read_tokens=cache_read,
@@ -864,7 +926,6 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             aborted = True
         return self._background.cancel_by_tool_call(tool_call_identifier) or aborted
 
-
     def background_snapshots(self) -> list[dict[str, Any]]:
         return self._background.active_snapshots()
 
@@ -889,7 +950,6 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
     def _has_queued_steering(self) -> bool:
         return not self._steering_messages.empty()
 
-
     @property
     def configured_permission_mode(self) -> Optional[PermissionMode]:
         """The ceiling the agent's card declares, or ``None`` where it declares none — which is most cards."""
@@ -897,7 +957,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
     def set_permission_mode(self, mode: PermissionMode) -> PermissionMode:
         """Change the policy mid-life and answer with what took, reaching the very next tool call."""
-        resolved = PermissionMode.more_restrictive(mode, self._agent_configuration.permission_policy)
+        resolved = PermissionMode.more_restrictive(
+            mode, self._agent_configuration.permission_policy
+        )
         if resolved is self._permission_mode:
             return resolved
         self._permission_mode = resolved
@@ -952,7 +1014,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         """Count one harness-opened turn against the goal's allowance."""
         if self._goal is None:
             return
-        self.write_goal(self._goal.model_copy(update={"continuations": self._goal.continuations + 1}))
+        self.write_goal(
+            self._goal.model_copy(update={"continuations": self._goal.continuations + 1})
+        )
 
     def restore_goal_allowance(self) -> None:
         """A person spoke, so the allowance restarts and a parked goal resumes. A blocked one is left alone."""
@@ -978,7 +1042,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._session_dirty = False
 
     def _record_event(self, event_type: str, data: dict) -> None:
-        record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}
+        record = {
+            "type": event_type,
+            "timestamp": _utc_timestamp(datetime.now(timezone.utc)),
+            **data,
+        }
         self._execution_history.append(record)
         self._observe(event_type, data)
 
@@ -1015,7 +1083,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 completion.result,
                 code=f"{completion.kind}_result_truncated",
             )
-            duration_milliseconds = int((completion.completed_at - completion.started_at).total_seconds() * 1000)
+            duration_milliseconds = int(
+                (completion.completed_at - completion.started_at).total_seconds() * 1000
+            )
             background_metadata = _tool_timing_metadata(
                 tool_name=completion.kind,
                 tool_call_identifier=completion.tool_call_identifier,
@@ -1026,20 +1096,30 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             )
             # Append-only: the placeholder stays and the result lands as a new user-role reminder, keeping the prefix.
             background_status, background_code = _model_result_status(
-                capped_result, ok=True, backgrounded=False,
+                capped_result,
+                ok=True,
+                backgrounded=False,
             )
-            self._conversation.append(self._reminder_message(
-                _model_visible_tool_result(
-                    capped_result, background_metadata, background_status, background_code,
-                    kind="background_result",
-                ),
-            ))
-            events.append(ToolResult(id=completion.tool_call_identifier,
-                name=completion.kind,
-                result=_maybe_json(capped_result),
-                status=background_status,
-                job_id=completion.identifier,
-            ))
+            self._conversation.append(
+                self._reminder_message(
+                    _model_visible_tool_result(
+                        capped_result,
+                        background_metadata,
+                        background_status,
+                        background_code,
+                        kind="background_result",
+                    ),
+                )
+            )
+            events.append(
+                ToolResult(
+                    id=completion.tool_call_identifier,
+                    name=completion.kind,
+                    result=_maybe_json(capped_result),
+                    status=background_status,
+                    job_id=completion.identifier,
+                )
+            )
             completion_event_data: dict[str, Any] = {"job_id": completion.identifier}
             if background_include_result(completion.kind):
                 completion_event_data["result"] = capped_result

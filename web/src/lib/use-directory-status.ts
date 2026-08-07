@@ -73,9 +73,16 @@ function fromValidation(path: string, result: DirectoryValidation): DirectorySta
   };
 }
 
-export function useDirectoryStatus(workingDirectory?: string): { status: DirectoryStatus; directoryValid: boolean } {
+export function useDirectoryStatus(workingDirectory?: string): {
+  status: DirectoryStatus;
+  directoryValid: boolean;
+} {
   const directory = (workingDirectory ?? "").trim();
-  const [status, setStatus] = useState<DirectoryStatus>({ path: directory, checking: !!directory, ...EMPTY_GIT });
+  const [status, setStatus] = useState<DirectoryStatus>({
+    path: directory,
+    checking: !!directory,
+    ...EMPTY_GIT,
+  });
 
   useEffect(() => {
     let cancelled = false;

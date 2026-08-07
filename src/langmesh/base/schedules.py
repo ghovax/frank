@@ -38,7 +38,8 @@ def validate(cron: str, zone: str, permission_mode: str) -> None:
         # Never defaulted: a schedule runs unwatched, so its author decides the mode rather than inherits it.
         raise ScheduleError(
             "A schedule must state its permission mode explicitly (one of: "
-            + ", ".join(PERMISSION_MODES) + "), because it runs with nobody watching."
+            + ", ".join(PERMISSION_MODES)
+            + "), because it runs with nobody watching."
         )
 
 

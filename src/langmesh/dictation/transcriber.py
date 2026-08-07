@@ -32,9 +32,9 @@ STARTUP_MISSING_PACKAGE = "missing_package"
 STARTUP_LOAD_FAILED = "load_failed"
 
 
-
-
-def _worker_main(request_queue, response_queue, model_identifier: str, parent_process_identifier: int) -> None:
+def _worker_main(
+    request_queue, response_queue, model_identifier: str, parent_process_identifier: int
+) -> None:
     """Load the model once, then answer transcription requests until told to stop."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     # Spawned, so nothing about the daemon's logging is inherited; configured here against the same file.
@@ -43,7 +43,10 @@ def _worker_main(request_queue, response_queue, model_identifier: str, parent_pr
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr), logging.FileHandler(log_file_path("langmeshd"))],
+        handlers=[
+            logging.StreamHandler(sys.stderr),
+            logging.FileHandler(log_file_path("langmeshd")),
+        ],
     )
 
     def exit_with_parent() -> None:
@@ -69,11 +72,15 @@ def _worker_main(request_queue, response_queue, model_identifier: str, parent_pr
             logger.warning("could not materialise the dictation model eagerly", exc_info=True)
         response_queue.put(("ready", "", ""))
     except ModuleNotFoundError as error:
-        logger.exception("dictation worker could not import its dependencies", extra={"model": model_identifier})
+        logger.exception(
+            "dictation worker could not import its dependencies", extra={"model": model_identifier}
+        )
         response_queue.put(("startup_failed", STARTUP_MISSING_PACKAGE, summary(error)))
         return
     except BaseException as error:  # noqa: BLE001 — every startup failure is reported, never raised into the void
-        logger.exception("dictation worker could not load the model", extra={"model": model_identifier})
+        logger.exception(
+            "dictation worker could not load the model", extra={"model": model_identifier}
+        )
         response_queue.put(("startup_failed", STARTUP_LOAD_FAILED, summary(error)))
         return
 
@@ -92,13 +99,16 @@ def _worker_main(request_queue, response_queue, model_identifier: str, parent_pr
                 text = transcribe(samples)
             except Exception as error:  # noqa: BLE001 — a fouled stream is recoverable in place, once
                 logger.warning(
-                    "dictation stream fouled, resetting and retrying once: %s", summary(error),
+                    "dictation stream fouled, resetting and retrying once: %s",
+                    summary(error),
                 )
                 mlx.core.set_default_stream(mlx.core.new_stream(mlx.core.gpu))
                 text = transcribe(samples)
             response_queue.put(("text", request_identifier, text))
         except BaseException as error:  # noqa: BLE001 — the caller is owed an answer, including a bad one
-            logger.exception("dictation transcription failed", extra={"request": request_identifier})
+            logger.exception(
+                "dictation transcription failed", extra={"request": request_identifier}
+            )
             response_queue.put(("failed", request_identifier, summary(error)))
         finally:
             try:
@@ -143,7 +153,9 @@ class SpeechTranscriber:
         """`idle`, `loading`, `ready`, or `failed` — what the microphone button should show."""
         with self._state_lock:
             # A worker that died between transcriptions leaves the state stale, so the process is what wins.
-            if self._state == STATE_READY and not (self._process is not None and self._process.is_alive()):
+            if self._state == STATE_READY and not (
+                self._process is not None and self._process.is_alive()
+            ):
                 self._state = STATE_IDLE
             return self._state
 
@@ -166,7 +178,9 @@ class SpeechTranscriber:
             self._state = STATE_LOADING
             self._failure = ""
             self._settled.clear()
-        self._loader = threading.Thread(target=self._load, name="langmesh-dictation-loader", daemon=True)
+        self._loader = threading.Thread(
+            target=self._load, name="langmesh-dictation-loader", daemon=True
+        )
         self._loader.start()
 
     def _load(self) -> None:
@@ -211,7 +225,8 @@ class SpeechTranscriber:
                     # The exit status, because it separates a worker that could not load the model from one that never ran.
                     logger.error(
                         "the dictation worker exited before reporting (status %s); it may not "
-                        "have started at all", status,
+                        "have started at all",
+                        status,
                     )
                     raise DictationUnavailable(
                         f"The dictation model could not be started (worker exited: {status}). "
@@ -299,7 +314,9 @@ class SpeechTranscriber:
                 # Whatever went wrong, this worker is not to be trusted with the retry, though the audio is.
                 logger.warning(
                     "dictation attempt %d of %d failed (%s), replacing the worker",
-                    attempt + 1, attempts, last_failure,
+                    attempt + 1,
+                    attempts,
+                    last_failure,
                 )
                 self._stop_process()
                 self._set_state(STATE_IDLE)

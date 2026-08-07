@@ -62,7 +62,9 @@ def assert_public_host(host: str, *, allow_private: bool = False) -> None:
             )
 
 
-def assert_public_url(url: str, *, allow_private: bool = False, schemes: frozenset[str] = frozenset({"http", "https"})) -> None:
+def assert_public_url(
+    url: str, *, allow_private: bool = False, schemes: frozenset[str] = frozenset({"http", "https"})
+) -> None:
     """Raise unless `url` is an http URL whose host resolves to public addresses."""
     parsed = urlparse(url)
     if parsed.scheme not in schemes:

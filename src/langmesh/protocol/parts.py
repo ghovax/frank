@@ -32,7 +32,7 @@ from langmesh.protocol.metadata import (
 
 def _input_response_payload(message) -> Optional[dict]:
     """The input-required answer this message carries, or ``None``."""
-    for part in (message.parts or []):
+    for part in message.parts or []:
         root = getattr(part, "root", part)
         payload = part_payload(root.data) if isinstance(root, DataPart) else {}
         if payload.get(PART_KIND) == INPUT_RESPONSE_KIND:
@@ -43,7 +43,7 @@ def _input_response_payload(message) -> Optional[dict]:
 async def _ingest_incoming_file_parts(message) -> list[dict]:
     """Materialize every inbound file part into the upload store, so a peer's file arrives like a local attachment."""
     attachments: list[dict] = []
-    for part in (message.parts or []):
+    for part in message.parts or []:
         root = getattr(part, "root", part)
         if isinstance(root, FilePart):
             attachment = await ingest_file_part(part, uploads_directory().parent)
@@ -55,7 +55,7 @@ async def _ingest_incoming_file_parts(message) -> list[dict]:
 def _structured_data_payloads(message) -> list[dict]:
     """Return the DataPart payloads carried by the user turn."""
     payloads: list[dict] = []
-    for part in (message.parts or []):
+    for part in message.parts or []:
         root = getattr(part, "root", part)
         if isinstance(root, DataPart):
             data = part_payload(root.data)
@@ -131,11 +131,15 @@ def _image_content_block(attachment: dict, inline_image_bytes: int) -> Optional[
     encoded = base64.b64encode(raw).decode("ascii")
     return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
 
+
 # Each agent profile is served as its own A2A agent under this prefix.
 
 
 def compose_turn_input(
-    user_text: str, structured_payloads: list[dict], model_identifier: str, inline_image_bytes: int,
+    user_text: str,
+    structured_payloads: list[dict],
+    model_identifier: str,
+    inline_image_bytes: int,
 ) -> tuple[object, int]:
     """What the model reads for a turn carrying attachments, and how many images were left out."""
     # The metadata always rides along as text, so the model can act on the files whether or not it can see them.
@@ -145,7 +149,11 @@ def compose_turn_input(
         return text_payload, 0
     if not _model_supports_vision(model_identifier):
         return text_payload, len(images)
-    blocks = [block for image in images if (block := _image_content_block(image, inline_image_bytes)) is not None]
+    blocks = [
+        block
+        for image in images
+        if (block := _image_content_block(image, inline_image_bytes)) is not None
+    ]
     if not blocks:
         return text_payload, 0
     return [{"type": "text", "text": text_payload}, *blocks], 0
@@ -157,10 +165,12 @@ def attachment_payload(attachments: list[dict]) -> dict:
 
 
 def _text_part(text: str, block_identifier: str) -> Part:
-    return Part(root=TextPart(
-        text=text,
-        metadata=content_block_metadata(block_identifier),
-    ))
+    return Part(
+        root=TextPart(
+            text=text,
+            metadata=content_block_metadata(block_identifier),
+        )
+    )
 
 
 def _event_part(event: _EventBase) -> Part:
@@ -175,29 +185,35 @@ def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:
         "tool_call_id": acknowledgement_identifier,
     }
     return (
-        _event_part(ToolCallEvent(
-            tool_name="work_habits",
-            tool_call_id=acknowledgement_identifier,
-            arguments={"explanation": "Loading your work habits"},
-        )),
-        _event_part(ToolResultEvent(
-            tool_name="work_habits",
-            tool_call_id=acknowledgement_identifier,
-            status=ToolStatus.OK,
-            display=None,
-            metadata=ToolMetadata(**metadata),
-        )),
+        _event_part(
+            ToolCallEvent(
+                tool_name="work_habits",
+                tool_call_id=acknowledgement_identifier,
+                arguments={"explanation": "Loading your work habits"},
+            )
+        ),
+        _event_part(
+            ToolResultEvent(
+                tool_name="work_habits",
+                tool_call_id=acknowledgement_identifier,
+                status=ToolStatus.OK,
+                display=None,
+                metadata=ToolMetadata(**metadata),
+            )
+        ),
     )
 
 
 def _tool_result_part(tool_name: str, tool_call_id: str, result: object, status: str) -> Part:
     """The unified tool-result wire event, whose `display` is the result the interface renders."""
     record = result if isinstance(result, dict) else {}
-    return _event_part(ToolResultEvent(
-        tool_name=tool_name,
-        tool_call_id=tool_call_id,
-        status=ToolStatus(status),
-        code=record.get("code"),
-        display=result,
-        metadata=ToolMetadata(tool_name=tool_name, tool_call_id=tool_call_id),
-    ))
+    return _event_part(
+        ToolResultEvent(
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            status=ToolStatus(status),
+            code=record.get("code"),
+            display=result,
+            metadata=ToolMetadata(tool_name=tool_name, tool_call_id=tool_call_id),
+        )
+    )

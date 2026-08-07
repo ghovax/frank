@@ -138,17 +138,20 @@ def _catalog() -> list[ModelDefinition]:
                         sdk_package,
                     )
                     continue
-            models.setdefault(identifier, ModelDefinition(
-                identifier=identifier,
-                name=name,
-                provider=local_id,
-                attachment=bool(model_info.get("attachment")),
-                vision="image" in input_modalities,
-                input_modalities=input_modalities,
-                context_length=int((model_info.get("limit") or {}).get("context") or 0),
-                release_date=str(model_info.get("release_date") or "").strip(),
-                litellm_prefix=litellm_prefix,
-            ))
+            models.setdefault(
+                identifier,
+                ModelDefinition(
+                    identifier=identifier,
+                    name=name,
+                    provider=local_id,
+                    attachment=bool(model_info.get("attachment")),
+                    vision="image" in input_modalities,
+                    input_modalities=input_modalities,
+                    context_length=int((model_info.get("limit") or {}).get("context") or 0),
+                    release_date=str(model_info.get("release_date") or "").strip(),
+                    litellm_prefix=litellm_prefix,
+                ),
+            )
     return list(models.values())
 
 
@@ -175,16 +178,18 @@ def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
         suffix = model.identifier.split("/", 1)[1]
         if not _codex_eligible(suffix):
             continue
-        chatgpt.append(ModelDefinition(
-            identifier=f"chatgpt/{suffix}",
-            name=model.name,
-            provider="chatgpt",
-            attachment=model.attachment,
-            vision=model.vision,
-            input_modalities=model.input_modalities,
-            context_length=model.context_length,
-            release_date=model.release_date,
-        ))
+        chatgpt.append(
+            ModelDefinition(
+                identifier=f"chatgpt/{suffix}",
+                name=model.name,
+                provider="chatgpt",
+                attachment=model.attachment,
+                vision=model.vision,
+                input_modalities=model.input_modalities,
+                context_length=model.context_length,
+                release_date=model.release_date,
+            )
+        )
     return chatgpt
 
 
@@ -260,7 +265,9 @@ def resolve_litellm(
         raise ValueError(f"Unknown provider in model id: {model_identifier!r}")
     catalog_model = find_model(model_identifier)
     # The catalogue's prefix is an override set only for multi-protocol gateways, so an empty one means the provider's own.
-    litellm_prefix = (catalog_model.litellm_prefix if catalog_model else "") or definition.litellm_prefix
+    litellm_prefix = (
+        catalog_model.litellm_prefix if catalog_model else ""
+    ) or definition.litellm_prefix
     provider_base_url = (
         resolve_base_url(provider_identifier, configured_bases)
         if definition.uses_custom_base_url or definition.openai_compatible
@@ -271,6 +278,7 @@ def resolve_litellm(
         "api_key": resolve_api_key(provider_identifier, configured_keys),
         "api_base": (
             _gateway_api_base(provider_base_url, litellm_prefix)
-            if definition.uses_custom_base_url else provider_base_url
+            if definition.uses_custom_base_url
+            else provider_base_url
         ),
     }

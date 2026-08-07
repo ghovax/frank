@@ -1,4 +1,5 @@
 """The shared spine both automation surfaces are built on, so the model faces one vocabulary over two substrates."""
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -48,13 +49,23 @@ def _anchor_offset(content: str, anchor: Any, *, past: bool, occurrence: int) ->
         return max(0, min(anchor, len(content)))
     index = find_occurrence(content, anchor, occurrence)
     if index < 0:
-        raise ToolFailure({"ok": False, "error": f"The text {anchor!r} is not in the field, so there is nothing to point at."})
+        raise ToolFailure(
+            {
+                "ok": False,
+                "error": f"The text {anchor!r} is not in the field, so there is nothing to point at.",
+            }
+        )
     return index + (len(anchor) if past else 0)
 
 
 def resolve_range(
-    content: str, *, text: Optional[str] = None, anchor_from: Any = None,
-    anchor_to: Any = None, select_all: bool = False, occurrence: int = 1,
+    content: str,
+    *,
+    text: Optional[str] = None,
+    anchor_from: Any = None,
+    anchor_to: Any = None,
+    select_all: bool = False,
+    occurrence: int = 1,
 ) -> tuple[int, int]:
     """Turn a selection request into a start and length: by substring, by a from-to pair, or all of it."""
     if select_all:
@@ -64,7 +75,12 @@ def resolve_range(
             raise ToolFailure({"ok": False, "error": "select needs non-empty text to look for."})
         index = find_occurrence(content, text, occurrence)
         if index < 0:
-            raise ToolFailure({"ok": False, "error": f"The text {text!r} is not in the field, so there is nothing to select."})
+            raise ToolFailure(
+                {
+                    "ok": False,
+                    "error": f"The text {text!r} is not in the field, so there is nothing to select.",
+                }
+            )
         return index, len(text)
     if anchor_from is not None and anchor_to is not None:
         start = _anchor_offset(content, anchor_from, past=False, occurrence=occurrence)
@@ -99,8 +115,14 @@ def appeared_between(before: Glance, after: Glance) -> frozenset[str]:
 
 
 def resolve_caret(
-    content: str, *, before: Optional[str] = None, after: Optional[str] = None,
-    at_offset: Optional[int] = None, to_start: bool = False, to_end: bool = False, occurrence: int = 1,
+    content: str,
+    *,
+    before: Optional[str] = None,
+    after: Optional[str] = None,
+    at_offset: Optional[int] = None,
+    to_start: bool = False,
+    to_end: bool = False,
+    occurrence: int = 1,
 ) -> int:
     """Turn a caret request into one offset: the start, the end, an explicit position, or around an occurrence."""
     if to_start:
@@ -113,12 +135,15 @@ def resolve_caret(
         return _anchor_offset(content, before, past=False, occurrence=occurrence)
     if after is not None:
         return _anchor_offset(content, after, past=True, occurrence=occurrence)
-    raise ToolFailure({"ok": False, "error": "caret needs one of: before, after, at_offset, start, or end."})
+    raise ToolFailure(
+        {"ok": False, "error": "caret needs one of: before, after, at_offset, start, or end."}
+    )
 
 
 @dataclass
 class Element:
     """One element in the single vocabulary a surface produces and retrieval ranks."""
+
     role: str
     name: str = ""
     value: Any = None
@@ -230,14 +255,17 @@ class Surface:
     def signatures(self) -> dict[str, str]:
         """Every primitive this surface implements, with the shape it is called in, read off the code rather than restated."""
         found = {
-            name[len("_primitive_"):]: self.spoken_signature(name[len("_primitive_"):], getattr(self, name))
-            for name in dir(self) if name.startswith("_primitive_")
+            name[len("_primitive_") :]: self.spoken_signature(
+                name[len("_primitive_") :], getattr(self, name)
+            )
+            for name in dir(self)
+            if name.startswith("_primitive_")
         }
         return dict(sorted({**self.PROVIDED_SIGNATURES, **found}.items()))
 
     def primitives(self) -> tuple[str, ...]:
         """Every primitive this surface implements, discovered from the methods rather than declared in a list."""
-        found = {name[len("_primitive_"):] for name in dir(self) if name.startswith("_primitive_")}
+        found = {name[len("_primitive_") :] for name in dir(self) if name.startswith("_primitive_")}
         return tuple(sorted(self.RETRIEVAL_PRIMITIVES + tuple(sorted(found))))
 
     def glance(self, target: str) -> Glance:
@@ -249,7 +277,7 @@ class Surface:
         rendered = []
         for index, parameter in enumerate(inspect.signature(handler).parameters.values()):
             if index == 0 or parameter.kind is inspect.Parameter.VAR_KEYWORD:
-                continue                       # the bound state, and the **_ catch-all
+                continue  # the bound state, and the **_ catch-all
             if parameter.default is inspect.Parameter.empty:
                 rendered.append(parameter.name)
             else:
@@ -257,15 +285,22 @@ class Surface:
         # Spelled the way it is called, since the script binds `screen` and a bare name would not resolve.
         return f"screen.{name}({', '.join(rendered)})"
 
-    def call_primitive(self, name: str, handler: Callable, bound: Any, arguments: list, keywords: dict) -> dict:
+    def call_primitive(
+        self, name: str, handler: Callable, bound: Any, arguments: list, keywords: dict
+    ) -> dict:
         """Call one primitive, turning a wrong call into words rather than a Python exception."""
         try:
             inspect.signature(handler).bind(bound, *arguments, **keywords)
         except TypeError as mismatch:
-            return {"ok": False, "error": self.message(
-                "wrong_arguments", primitive=name, detail=str(mismatch),
-                signature=self.spoken_signature(name, handler),
-            )}
+            return {
+                "ok": False,
+                "error": self.message(
+                    "wrong_arguments",
+                    primitive=name,
+                    detail=str(mismatch),
+                    signature=self.spoken_signature(name, handler),
+                ),
+            }
         return handler(bound, *arguments, **keywords)
 
     def perform(self, target: str, operation: str, arguments: list, keywords: dict) -> dict:

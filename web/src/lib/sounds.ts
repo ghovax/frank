@@ -1,4 +1,3 @@
-
 "use client";
 
 import { expected } from "@/lib/swallowed";
@@ -34,7 +33,9 @@ function audioContext(): AudioContext | null {
   }
   // Autoplay policy refuses this until the page is interacted with, and the result is silence, not a fault.
   if (context.state === "suspended") {
-    void context.resume().catch((caught) => expected("a suspended audio context may refuse to resume", caught));
+    void context
+      .resume()
+      .catch((caught) => expected("a suspended audio context may refuse to resume", caught));
   }
   return context;
 }

@@ -17,8 +17,13 @@ def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
             name=name,
             card_url=configuration.card_url,
             auth=RemoteAgentAuth(
-                kind=auth.type, token=auth.token, header=auth.header, scheme_prefix=auth.scheme_prefix,
-                token_url=auth.token_url, client_id=auth.client_id, client_secret=auth.client_secret,
+                kind=auth.type,
+                token=auth.token,
+                header=auth.header,
+                scheme_prefix=auth.scheme_prefix,
+                token_url=auth.token_url,
+                client_id=auth.client_id,
+                client_secret=auth.client_secret,
                 scopes=list(auth.scopes),
             ),
             card_ttl_seconds=configuration.card_ttl_seconds,
@@ -42,4 +47,3 @@ async def _reload_remote_agents() -> None:
             await state.remote_agent_manager.reconcile(configurations)
         await state.reset_runtimes()
         state.broadcaster.publish({"type": "remote_agents_changed"})
-

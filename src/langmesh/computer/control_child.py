@@ -1,4 +1,5 @@
 """The child process that runs a `control_screen` script, holding no LangMesh code and no surface state."""
+
 from __future__ import annotations
 
 import ast
@@ -12,8 +13,18 @@ from typing import Any
 from langmesh.base.errors import summary
 
 # The primitives a script may call, sent by the parent because only it knows which surface is answering.
-_FALLBACK_PRIMITIVES = ("find_one", "find_many", "click", "type", "press", "scroll", "drag",
-                        "select", "caret", "read")
+_FALLBACK_PRIMITIVES = (
+    "find_one",
+    "find_many",
+    "click",
+    "type",
+    "press",
+    "scroll",
+    "drag",
+    "select",
+    "caret",
+    "read",
+)
 
 # The request and reply pipes to the parent, opened in `main` so importing this module has no side effect.
 _request: Any = None
@@ -39,8 +50,9 @@ class _PreloadsBundledLibraries:
             import glob
 
             # `*.dylib` and `lib*.so`, where the prefix is what separates a shared library from an extension module.
-            libraries = (sorted(glob.glob(os.path.join(directory, "*.dylib")))
-                         + sorted(glob.glob(os.path.join(directory, "lib*.so"))))
+            libraries = sorted(glob.glob(os.path.join(directory, "*.dylib"))) + sorted(
+                glob.glob(os.path.join(directory, "lib*.so"))
+            )
             for library in libraries:
                 # Quietly, because a library this package never reaches for is not a problem, and the import will say if it is.
                 try:
@@ -88,7 +100,9 @@ def _script_namespace(
 
     # `langmesh.screen` loaded from its file, so the package's `__init__` never drags the whole runtime in.
     screen_module = _load_screen_module(package_root)
-    screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
+    screen_module.install_bridge(
+        lambda name, arguments, keywords: _perform(name, arguments, keywords)
+    )
     screen_module.screen.target = target
     # The workflow directories and any script package a skill carries, in precedence order.
     for root in reversed(list(workspace or ())):
@@ -124,7 +138,9 @@ def _call(name: str, arguments: tuple, keywords: dict) -> Any:
     line = _reply.readline()
     if not line:
         raise RuntimeError("control_screen: the parent closed the connection.")
-    reply = json.loads(line)  # the parent always wraps: {"value": …} on success, {"error": …} on failure
+    reply = json.loads(
+        line
+    )  # the parent always wraps: {"value": …} on success, {"error": …} on failure
     if "error" in reply:
         raise RuntimeError(reply["error"])
     return reply.get("value")
@@ -144,7 +160,9 @@ def _run(script: str, namespace: dict[str, Any]) -> Any:
         final_expression = tree.body.pop().value
         if tree.body:
             exec(compile(tree, "<control_screen>", "exec"), namespace)  # noqa: S102 (that is the point)
-        final_value = eval(compile(ast.Expression(final_expression), "<control_screen>", "eval"), namespace)  # noqa: S307
+        final_value = eval(
+            compile(ast.Expression(final_expression), "<control_screen>", "eval"), namespace
+        )  # noqa: S307
     else:
         exec(compile(tree, "<control_screen>", "exec"), namespace)  # noqa: S102
     return final_value
@@ -172,17 +190,22 @@ def main() -> None:
     try:
         # Building the namespace is inside the guard, because it imports and rewrites `sys.path` and can fail.
         allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
-        namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
-                                                      configuration.get("import_roots", []),
-                                                      configuration.get("dependency_roots", []),
-                                                      configuration.get("library_roots", []))
+        namespace: dict[str, Any] = _script_namespace(
+            allowed,
+            configuration.get("target", ""),
+            configuration.get("import_roots", []),
+            configuration.get("dependency_roots", []),
+            configuration.get("library_roots", []),
+        )
         with redirect_stdout(captured):
             result["value"] = _run(script, namespace)
     except SyntaxError as error:
         # The interpreter's own rendering, verbatim, since the line and the caret are what make a syntax error legible.
         result = {
-            "ok": False, "error_code": "syntax_error",
-            "detail": error.msg or "", "line": error.lineno or 0,
+            "ok": False,
+            "error_code": "syntax_error",
+            "detail": error.msg or "",
+            "line": error.lineno or 0,
             "rendered": "".join(traceback.format_exception_only(type(error), error)).strip(),
         }
     except NameError as error:
@@ -201,10 +224,12 @@ def main() -> None:
         # Compact, like every payload a model reads, spelled out here because this file is launched by path.
         sys.stdout.write(json.dumps(result, default=str, ensure_ascii=False, separators=(",", ":")))
     except Exception:
-        sys.stdout.write(json.dumps(
-            {"ok": False, "error": "control_screen: the result was not serialisable."},
-            separators=(",", ":"),
-        ))
+        sys.stdout.write(
+            json.dumps(
+                {"ok": False, "error": "control_screen: the result was not serialisable."},
+                separators=(",", ":"),
+            )
+        )
     sys.stdout.flush()
 
 

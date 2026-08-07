@@ -15,4 +15,9 @@ export type SettingRowDef = {
 export type SettingsPageSection = { title?: string; rows: SettingRowDef[]; block?: ReactNode };
 
 /** One entry in the panel's left rail, and everything under it. */
-export type SettingsPage = { id: string; label: string; icon: ReactNode; sections: SettingsPageSection[] };
+export type SettingsPage = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  sections: SettingsPageSection[];
+};

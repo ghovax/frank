@@ -67,8 +67,11 @@ def _libraries_under(root: str) -> tuple[str, ...]:
 
 def library_roots(project_directory: str = "") -> list[str]:
     """Where to look for shared libraries a skill's dependencies bring with them."""
-    return [directory for root in dependency_roots(project_directory)
-            for directory in _libraries_under(root)]
+    return [
+        directory
+        for root in dependency_roots(project_directory)
+        for directory in _libraries_under(root)
+    ]
 
 
 def _skill_script_roots(agent_roots: list[Path]) -> list[str]:
@@ -84,14 +87,18 @@ def _skill_script_roots(agent_roots: list[Path]) -> list[str]:
     return found
 
 
-def _summarise(function: ast.FunctionDef | ast.AsyncFunctionDef, module: str, scope: str) -> Optional[dict[str, Any]]:
+def _summarise(
+    function: ast.FunctionDef | ast.AsyncFunctionDef, module: str, scope: str
+) -> Optional[dict[str, Any]]:
     """One callable as the model reads it, recognised as a workflow by its first parameter being `screen`."""
     parameters = [argument.arg for argument in function.args.args]
     if not parameters or parameters[0] != "screen" or function.name.startswith("_"):
         return None
     rendered = [ast.unparse(argument) for argument in function.args.args[1:]]
-    for offset, default in enumerate(function.args.defaults[-len(rendered):] if rendered else []):
-        rendered[len(rendered) - len(function.args.defaults or []) + offset] += f"={ast.unparse(default)}"
+    for offset, default in enumerate(function.args.defaults[-len(rendered) :] if rendered else []):
+        rendered[len(rendered) - len(function.args.defaults or []) + offset] += (
+            f"={ast.unparse(default)}"
+        )
     documentation = ast.get_docstring(function) or ""
     entry: dict[str, Any] = {
         "import": f"from {PACKAGE}.{module} import {function.name}",
@@ -117,15 +124,25 @@ def available(project_directory: str = "") -> list[dict[str, Any]]:
                 continue
             if path.stem in seen:
                 # The project already defines this module name, so this one is unreachable, and it is said aloud.
-                listed.append({"import": f"{PACKAGE}.{path.stem}", "scope": scope,
-                               "error": "unreachable: the project defines this module name too"})
+                listed.append(
+                    {
+                        "import": f"{PACKAGE}.{path.stem}",
+                        "scope": scope,
+                        "error": "unreachable: the project defines this module name too",
+                    }
+                )
                 continue
             seen.add(path.stem)
             try:
                 tree = ast.parse(path.read_text())
             except (OSError, SyntaxError) as error:
-                listed.append({"import": f"{PACKAGE}.{path.stem}", "scope": scope,
-                               "error": f"could not be read: {error}"})
+                listed.append(
+                    {
+                        "import": f"{PACKAGE}.{path.stem}",
+                        "scope": scope,
+                        "error": f"could not be read: {error}",
+                    }
+                )
                 continue
             for node in tree.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

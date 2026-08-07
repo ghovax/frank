@@ -43,9 +43,13 @@ async def create_schedule(request: ScheduleCreateRequest):
     try:
         return await asyncio.to_thread(
             _schedules.create,
-            workspace_id=request.workspace_id, name=request.name, cron=request.cron,
-            prompt=request.prompt, agent=request.agent,
-            permission_mode=request.permission_mode, timezone_name=request.timezone,
+            workspace_id=request.workspace_id,
+            name=request.name,
+            cron=request.cron,
+            prompt=request.prompt,
+            agent=request.agent,
+            permission_mode=request.permission_mode,
+            timezone_name=request.timezone,
             working_directory=request.working_directory,
         )
     except _schedules.ScheduleError as error:

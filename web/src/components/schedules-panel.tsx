@@ -33,7 +33,13 @@ function PermissionModePill({ mode }: { mode: string }) {
   );
 }
 
-export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; agents: AgentSummary[] }) {
+export function SchedulesPanel({
+  workspaceId,
+  agents,
+}: {
+  workspaceId: string;
+  agents: AgentSummary[];
+}) {
   const translation = useTranslations("SchedulesPanel");
   const relative = useRelative();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -82,7 +88,12 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
       await setScheduleEnabled(schedule.id, !schedule.enabled);
       await reload();
     } catch (error) {
-      toaster.create({ type: "error", title: translation("updateError"), description: errorMessage(error), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("updateError"),
+        description: errorMessage(error),
+        closable: true,
+      });
     } finally {
       setBusy("");
     }
@@ -94,7 +105,12 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
       await deleteSchedule(schedule.id);
       await reload();
     } catch (error) {
-      toaster.create({ type: "error", title: translation("deleteError"), description: errorMessage(error), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("deleteError"),
+        description: errorMessage(error),
+        closable: true,
+      });
     } finally {
       setBusy("");
     }
@@ -112,7 +128,12 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
       });
       await reload();
     } catch (error) {
-      toaster.create({ type: "error", title: translation("runFailed"), description: errorMessage(error), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("runFailed"),
+        description: errorMessage(error),
+        closable: true,
+      });
     } finally {
       setBusy("");
     }
@@ -124,17 +145,32 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
     return relative(schedule.next_firing) || "—";
   }
 
-  if (failed) return <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>;
+  if (failed)
+    return (
+      <Text fontSize="sm" color="red.fg">
+        {translation("loadError")}
+      </Text>
+    );
 
   return (
     <Flex direction="column" gap={3} w="100%">
       {schedules.length === 0 && !adding ? (
-        <Text fontSize="xs" color="fg.muted">{translation("empty")}</Text>
+        <Text fontSize="xs" color="fg.muted">
+          {translation("empty")}
+        </Text>
       ) : null}
 
       {schedules.map((schedule) => (
-        <Flex key={schedule.id} align="center" justify="space-between" gap={3}
-              borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
+        <Flex
+          key={schedule.id}
+          align="center"
+          justify="space-between"
+          gap={3}
+          borderWidth="1px"
+          borderColor="border"
+          borderRadius="md"
+          p={3}
+        >
           <Flex direction="column" gap={1} minW={0}>
             <Flex align="center" gap={2}>
               <Pill colorPalette={schedule.enabled ? "teal" : "gray"}>{schedule.cron}</Pill>
@@ -142,28 +178,46 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
               {/* Read off the same choice set the picker is built from, rather than colouring a raw string. */}
               <PermissionModePill mode={schedule.permission_mode} />
             </Flex>
-            <Text fontSize="xs" color="fg.muted" truncate>{schedule.prompt}</Text>
+            <Text fontSize="xs" color="fg.muted" truncate>
+              {schedule.prompt}
+            </Text>
             <Flex gap={3} fontSize="xs" color="fg.muted" minW={0} wrap="wrap">
-              <Text truncate>{translation("next")} {nextFiring(schedule)}</Text>
+              <Text truncate>
+                {translation("next")} {nextFiring(schedule)}
+              </Text>
               <Text truncate>{schedule.timezone}</Text>
               <Text truncate>{schedule.agent}</Text>
             </Flex>
             {schedule.last_error ? (
-              <Text fontSize="xs" color="red.fg" truncate>{schedule.last_error}</Text>
+              <Text fontSize="xs" color="red.fg" truncate>
+                {schedule.last_error}
+              </Text>
             ) : null}
           </Flex>
           <Flex align="center" gap={1}>
-            <IconButton aria-label={translation("runNow")} variant="ghost"
-                        loading={busy === schedule.id + "run"} onClick={() => void handleRun(schedule)}>
+            <IconButton
+              aria-label={translation("runNow")}
+              variant="ghost"
+              loading={busy === schedule.id + "run"}
+              onClick={() => void handleRun(schedule)}
+            >
               <LuPlay size={13} />
             </IconButton>
-            <IconButton aria-label={schedule.enabled ? translation("pause") : translation("resume")}
-                        variant="ghost" loading={busy === schedule.id + "toggle"}
-                        onClick={() => void handleToggle(schedule)}>
+            <IconButton
+              aria-label={schedule.enabled ? translation("pause") : translation("resume")}
+              variant="ghost"
+              loading={busy === schedule.id + "toggle"}
+              onClick={() => void handleToggle(schedule)}
+            >
               {schedule.enabled ? <LuPause size={13} /> : <LuPlay size={13} />}
             </IconButton>
-            <IconButton aria-label={translation("delete")} variant="ghost" colorPalette="red"
-                        loading={busy === schedule.id + "delete"} onClick={() => void handleDelete(schedule)}>
+            <IconButton
+              aria-label={translation("delete")}
+              variant="ghost"
+              colorPalette="red"
+              loading={busy === schedule.id + "delete"}
+              onClick={() => void handleDelete(schedule)}
+            >
               <LuTrash2 size={13} />
             </IconButton>
           </Flex>

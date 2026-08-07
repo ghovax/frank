@@ -166,7 +166,9 @@ async def _session_create(params: dict) -> dict:
         raise RpcError("A conversation can only be inherited from a parent session.")
     if inherited_conversation and state.turn_store is None:
         raise RpcError(
-            "The conversation store is unavailable.", status_code=503, code="store_unavailable",
+            "The conversation store is unavailable.",
+            status_code=503,
+            code="store_unavailable",
         )
 
     configured = getattr(getattr(state.global_configuration, "agent", None), "permission_mode", "")
@@ -231,7 +233,9 @@ async def _session_create(params: dict) -> dict:
             record.permission_mode,
             record.workspace_id,
         )
-        state.registry.mark(record.id, runtime_working_directory=workspace.runtime_working_directory)
+        state.registry.mark(
+            record.id, runtime_working_directory=workspace.runtime_working_directory
+        )
     except Exception:  # noqa: BLE001 — a workspace that cannot be prepared is not a fatal
         logger.exception("could not prepare a workspace for session %s", record.id)
         state.registry.mark(record.id, runtime_working_directory=record.working_directory)
@@ -260,7 +264,11 @@ async def _session_list(params: dict) -> dict:
     parent = str(params.get("parent") or "")
     if parent:
         records = [record for record in records if record.parent == parent]
-    return {"sessions": [_public(record) for record in sorted(records, key=lambda entry: entry.created_at)]}
+    return {
+        "sessions": [
+            _public(record) for record in sorted(records, key=lambda entry: entry.created_at)
+        ]
+    }
 
 
 async def _waiting_on(session_id: str) -> str:
@@ -308,7 +316,9 @@ async def _session_tree(params: dict) -> dict:
 async def _session_end(params: dict) -> dict:
     assert state.lifecycle is not None
     record = _session(_require(params, "id"))
-    reaped = await state.lifecycle.reap(record.id, reason=str(params.get("reason") or "killed by request"))
+    reaped = await state.lifecycle.reap(
+        record.id, reason=str(params.get("reason") or "killed by request")
+    )
     return {"killed": record.id, "reaped": reaped}
 
 
@@ -316,10 +326,16 @@ async def _tell_session_permission_mode(record: SessionRecord) -> None:
     """Push a mode into a hosted session. A sleeping one needs none: its next executor reads the record."""
     if record.asleep or not record.is_live:
         return
-    with contextlib.suppress(Exception):  # a session mid-teardown simply reads it when it is next built
-        await state.relay_to_session(record, "session/permission-mode", {
-            "permission_mode": record.permission_mode,
-        })
+    with contextlib.suppress(
+        Exception
+    ):  # a session mid-teardown simply reads it when it is next built
+        await state.relay_to_session(
+            record,
+            "session/permission-mode",
+            {
+                "permission_mode": record.permission_mode,
+            },
+        )
 
 
 async def _session_permission_mode(params: dict) -> dict:
@@ -427,7 +443,9 @@ async def _session_history(params: dict) -> dict:
         if not turns:
             _assert_session_known(session_id)
         return {
-            "turns": [turn.model_dump(by_alias=True, exclude_none=True, mode="json") for turn in turns],
+            "turns": [
+                turn.model_dump(by_alias=True, exclude_none=True, mode="json") for turn in turns
+            ],
             "next_before_row_id": None,
             "has_more": False,
         }
@@ -443,7 +461,8 @@ async def _session_history(params: dict) -> dict:
     return {
         "turns": [
             turn.model_dump(by_alias=True, exclude_none=True, mode="json")
-            if hasattr(turn, "model_dump") else turn
+            if hasattr(turn, "model_dump")
+            else turn
             for turn in turns
         ],
         "next_before_row_id": page.get("next_before_row_id"),
@@ -456,7 +475,9 @@ async def _turn_get(params: dict) -> dict:
     turn = await state.turn_store.get(_require(params, "turn_id"))
     if turn is None:
         raise RpcError("No such turn.", status_code=404, code="no_such_turn")
-    return {"turn": turn.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})}
+    return {
+        "turn": turn.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})
+    }
 
 
 async def _remote_list(_params: dict) -> dict:
@@ -465,16 +486,20 @@ async def _remote_list(_params: dict) -> dict:
     manager = state.remote_agent_manager
     agents = []
     for name, configuration in state.global_configuration.remote_agents.agents.items():
-        health = manager.health(name) if manager is not None else {"health": "unconfigured", "error": ""}
+        health = (
+            manager.health(name) if manager is not None else {"health": "unconfigured", "error": ""}
+        )
         card = manager.card(name) if manager is not None else None
-        agents.append({
-            "name": name,
-            "card_url": configuration.card_url,
-            "enabled": configuration.enabled,
-            "health": health["health"],
-            "error": health["error"],
-            "description": (card.description if card is not None else "") or "",
-        })
+        agents.append(
+            {
+                "name": name,
+                "card_url": configuration.card_url,
+                "enabled": configuration.enabled,
+                "health": health["health"],
+                "error": health["error"],
+                "description": (card.description if card is not None else "") or "",
+            }
+        )
     return {"agents": sorted(agents, key=lambda entry: entry["name"])}
 
 
@@ -500,7 +525,9 @@ async def _remote_send(params: dict) -> dict:
     except LookupError as error:
         raise RpcError(str(error), status_code=404, code="no_such_remote_agent") from error
     except Exception as error:  # noqa: BLE001 — an unreachable peer is an answer, not a crash
-        raise RpcError(f"{name} could not be reached: {error}", status_code=502, code="remote_unreachable") from error
+        raise RpcError(
+            f"{name} could not be reached: {error}", status_code=502, code="remote_unreachable"
+        ) from error
     return {"name": name, "text": "".join(collected)}
 
 
@@ -608,7 +635,8 @@ async def _schedule_enable(params: dict) -> dict:
 
     try:
         return await asyncio.to_thread(
-            schedules.set_enabled, _require(params, "id"), bool(params.get("enabled", True)))
+            schedules.set_enabled, _require(params, "id"), bool(params.get("enabled", True))
+        )
     except schedules.ScheduleError as error:
         raise RpcError(str(error), status_code=404, code="no_such_schedule") from None
 
@@ -636,7 +664,9 @@ async def _schedule_run(params: dict) -> dict:
     try:
         record = database_session.get(ScheduleRecord, schedule_id)
         if record is None:
-            raise RpcError(f"No schedule {schedule_id!r}.", status_code=404, code="no_such_schedule")
+            raise RpcError(
+                f"No schedule {schedule_id!r}.", status_code=404, code="no_such_schedule"
+            )
         database_session.expunge(record)
     finally:
         database_session.close()
@@ -675,10 +705,18 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
 
 
 #: What a session may ask on its own behalf: a capability for its work, not a second daemon token.
-_SESSION_CALLER_METHODS = frozenset({
-    "session.create", "session.send", "session.get", "session.tree",
-    "session.end", "session.history", "remote.list", "remote.send",
-})
+_SESSION_CALLER_METHODS = frozenset(
+    {
+        "session.create",
+        "session.send",
+        "session.get",
+        "session.tree",
+        "session.end",
+        "session.history",
+        "remote.list",
+        "remote.send",
+    }
+)
 
 
 def _refuse_session_caller(caller: str, method: str, params: dict) -> Optional[RpcError]:
@@ -697,7 +735,9 @@ def _refuse_session_caller(caller: str, method: str, params: dict) -> Optional[R
         if own is not None and own.parent and own.parent == target:
             return None
     return RpcError(
-        f"Session {target!r} is not yours.", status_code=403, code="forbidden",
+        f"Session {target!r} is not yours.",
+        status_code=403,
+        code="forbidden",
     )
 
 
@@ -760,26 +800,39 @@ async def rpc(request: Request) -> JSONResponse:
     try:
         payload = await request.json()
     except Exception:
-        return JSONResponse({"error": {"code": "invalid_json", "message": "Body must be JSON."}}, status_code=400)
+        return JSONResponse(
+            {"error": {"code": "invalid_json", "message": "Body must be JSON."}}, status_code=400
+        )
     method = str(payload.get("method") or "")
     params = payload.get("params") or {}
     if not isinstance(params, dict):
-        return JSONResponse({"error": {"code": "invalid_request", "message": "params must be an object."}}, status_code=400)
+        return JSONResponse(
+            {"error": {"code": "invalid_request", "message": "params must be an object."}},
+            status_code=400,
+        )
     handler = METHODS.get(method)
     if handler is None:
-        return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
+        return JSONResponse(
+            {"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}},
+            status_code=404,
+        )
     # Who is calling, per the kernel and the token, never the body: a caller cannot name itself.
     params.pop("calling_session", None)
     caller = getattr(request.state, "calling_session", "")
     if caller:
         refusal = _refuse_session_caller(caller, method, params)
         if refusal is not None:
-            return JSONResponse({"error": {"code": refusal.code, "message": refusal.message}}, status_code=refusal.status_code)
+            return JSONResponse(
+                {"error": {"code": refusal.code, "message": refusal.message}},
+                status_code=refusal.status_code,
+            )
         params = {**params, "calling_session": caller}
     try:
         return JSONResponse({"result": await handler(params)})
     except RpcError as error:
-        return JSONResponse({"error": {"code": error.code, "message": error.message}}, status_code=error.status_code)
+        return JSONResponse(
+            {"error": {"code": error.code, "message": error.message}}, status_code=error.status_code
+        )
     except Exception as error:  # noqa: BLE001 — one bad call must not take the daemon down
         logger.exception("control-plane call %s failed", method)
         return JSONResponse(
@@ -809,16 +862,19 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                 session_id, limit=active_tuning().amount(Tunable.attach_snapshot_rows)
             )
             yield {
-                "data": compact({
-                    "kind": "snapshot",
-                    "turns": [
-                        turn.model_dump(by_alias=True, exclude_none=True, mode="json")
-                        if hasattr(turn, "model_dump") else turn
-                        for turn in (page.get("turns") or [])
-                    ],
-                    "has_more": bool(page.get("has_more")),
-                    "next_before_row_id": page.get("next_before_row_id"),
-                })
+                "data": compact(
+                    {
+                        "kind": "snapshot",
+                        "turns": [
+                            turn.model_dump(by_alias=True, exclude_none=True, mode="json")
+                            if hasattr(turn, "model_dump")
+                            else turn
+                            for turn in (page.get("turns") or [])
+                        ],
+                        "has_more": bool(page.get("has_more")),
+                        "next_before_row_id": page.get("next_before_row_id"),
+                    }
+                )
             }
             while True:
                 if await request.is_disconnected():
@@ -834,14 +890,22 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                     break
                 if "turn" in event:
                     # A turn started or ended — distinct from `done`, which is the session itself ending.
-                    yield {"data": compact({
-                        "kind": "turn",
-                        "seq": event.get("seq", 0),
-                        "running": bool((event.get("turn") or {}).get("running")),
-                    })}
+                    yield {
+                        "data": compact(
+                            {
+                                "kind": "turn",
+                                "seq": event.get("seq", 0),
+                                "running": bool((event.get("turn") or {}).get("running")),
+                            }
+                        )
+                    }
                     continue
                 # One part, not one message: the bus carries parts as the model emits them.
-                yield {"data": compact({"kind": "live", "seq": event.get("seq", 0), "part": event.get("part")})}
+                yield {
+                    "data": compact(
+                        {"kind": "live", "seq": event.get("seq", 0), "part": event.get("part")}
+                    )
+                }
         finally:
             state.event_bus.unsubscribe(session_id, subscription)
 

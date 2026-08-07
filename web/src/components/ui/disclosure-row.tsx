@@ -179,7 +179,12 @@ export function DisclosureRow({
             gap={0.5}
             flexShrink={0}
             {...(actionsOverlay
-              ? { position: "absolute" as const, right: 0, top: "50%", transform: "translateY(-50%)" }
+              ? {
+                  position: "absolute" as const,
+                  right: 0,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                }
               : {})}
             // Centred here, or an inline-flex button inside a block box sits on the text baseline and rides low.
             css={{ "& > *": { display: "flex", alignItems: "center" } }}

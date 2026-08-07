@@ -119,7 +119,9 @@ class SqliteSessionStore:
                 return True
             except Exception:  # noqa: BLE001
                 database_session.rollback()
-                logger.exception("could not claim the work-habits acknowledgement for %s", session_id)
+                logger.exception(
+                    "could not claim the work-habits acknowledgement for %s", session_id
+                )
                 return False
             finally:
                 database_session.close()
@@ -130,7 +132,8 @@ class SqliteSessionStore:
             database_session = self._session_factory()
             try:
                 database_session.query(SessionRow).update(
-                    {SessionRow.work_habits_acknowledged_at: ""}, synchronize_session=False,
+                    {SessionRow.work_habits_acknowledged_at: ""},
+                    synchronize_session=False,
                 )
                 database_session.commit()
             except Exception:  # noqa: BLE001

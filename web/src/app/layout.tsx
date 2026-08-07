@@ -51,7 +51,7 @@ const monoFont = localFont({
 export const metadata: Metadata = {
   title: "LangMesh",
   description: "LangMesh GUI",
-// The favicon comes from the file conventions, so the browser tab matches the app icon.
+  // The favicon comes from the file conventions, so the browser tab matches the app icon.
 };
 
 /** `viewport-fit=cover` is what makes `env(safe-area-inset-*)` report anything but zero. */
@@ -74,7 +74,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${sansFont.className} ${sansFont.variable} ${displayFont.variable} ${monoFont.variable}`} suppressHydrationWarning>
+      <body
+        className={`${sansFont.className} ${sansFont.variable} ${displayFont.variable} ${monoFont.variable}`}
+        suppressHydrationWarning
+      >
         <Provider>
           <DesktopChrome />
           {children}

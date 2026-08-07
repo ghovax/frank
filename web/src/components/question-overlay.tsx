@@ -38,7 +38,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
       }
       return {
         ...previous,
-        [index]: active.includes(label) ? active.filter((value) => value !== label) : [...active, label],
+        [index]: active.includes(label)
+          ? active.filter((value) => value !== label)
+          : [...active, label],
       };
     });
     // Auto-advance for single-choice questions, which is navigation convenience rather than auto-submit.
@@ -60,7 +62,10 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   }
 
   function submit() {
-    onQuestion(question.requestId, items.map((_, index) => answerFor(index)));
+    onQuestion(
+      question.requestId,
+      items.map((_, index) => answerFor(index)),
+    );
   }
 
   function skipCurrent() {
@@ -73,7 +78,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
       // Last question skipped — submit with everything gathered so far.
       onQuestion(
         question.requestId,
-        items.map((_, index) => (index === current ? (items[index].multiple ? [] : "") : answerFor(index)))
+        items.map((_, index) =>
+          index === current ? (items[index].multiple ? [] : "") : answerFor(index),
+        ),
       );
     }
   }
@@ -93,140 +100,147 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   });
 
   return (
-        <Box
-          ref={boxRef}
-          w="full"
-          mb={2}
-          p={3}
-          borderRadius="md"
-          border="1px solid"
-          borderColor="border"
-          bg="bg.panel"
-          boxShadow="panel"
-          maxH="50vh"
-          overflowY="auto"
-        >
-          <Flex align="center" justify="space-between" gap={2}>
-            <Text textStyle="panelTitle" color="fg">
-              {translation("questionProgress", { current: current + 1, total })}
-            </Text>
-            <Flex align="center" gap={1}>
-              {onDismiss && (
-                <IconButton
-                  aria-label={translation("dismissLabel")}
-                  title={translation("dismissTitle")}
-                  variant="ghost"
-                  color="fg.subtle"
-                  onClick={() => onDismiss(question.requestId)}
+    <Box
+      ref={boxRef}
+      w="full"
+      mb={2}
+      p={3}
+      borderRadius="md"
+      border="1px solid"
+      borderColor="border"
+      bg="bg.panel"
+      boxShadow="panel"
+      maxH="50vh"
+      overflowY="auto"
+    >
+      <Flex align="center" justify="space-between" gap={2}>
+        <Text textStyle="panelTitle" color="fg">
+          {translation("questionProgress", { current: current + 1, total })}
+        </Text>
+        <Flex align="center" gap={1}>
+          {onDismiss && (
+            <IconButton
+              aria-label={translation("dismissLabel")}
+              title={translation("dismissTitle")}
+              variant="ghost"
+              color="fg.subtle"
+              onClick={() => onDismiss(question.requestId)}
+            >
+              <LuX size={13} />
+            </IconButton>
+          )}
+        </Flex>
+      </Flex>
+
+      <Flex direction="column" gap={2.5}>
+        <MarkdownContent content={item.question} fontSize="sm" />
+
+        {hasOptions && (
+          <Flex direction="column" gap={1.5}>
+            {item.options!.map((option) => {
+              const isSelected = !text && !isSkipped && active.includes(option.label);
+              return (
+                <Button
+                  key={option.label}
+                  variant="outline"
+                  w="full"
+                  h="auto"
+                  gap={2.5}
+                  px={2.5}
+                  py={1.5}
+                  justifyContent="flex-start"
+                  borderColor={isSelected ? "blue.solid" : "border"}
+                  bg={isSelected ? "blue.subtle" : "bg"}
+                  textAlign="left"
+                  whiteSpace="normal"
+                  transition="all 120ms"
+                  _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
+                  onClick={() => {
+                    if (!text) toggle(current, option.label, multiple);
+                  }}
                 >
-                  <LuX size={13} />
-                </IconButton>
-              )}
-            </Flex>
-          </Flex>
-
-          <Flex direction="column" gap={2.5}>
-            <MarkdownContent content={item.question} fontSize="sm" />
-
-            {hasOptions && (
-              <Flex direction="column" gap={1.5}>
-                {item.options!.map((option) => {
-                  const isSelected = !text && !isSkipped && active.includes(option.label);
-                  return (
-                    <Button
-                      key={option.label}
-                      variant="outline"
-                      w="full"
-                      h="auto"
-                      gap={2.5}
-                      px={2.5}
-                      py={1.5}
-                      justifyContent="flex-start"
-                      borderColor={isSelected ? "blue.solid" : "border"}
-                      bg={isSelected ? "blue.subtle" : "bg"}
-                      textAlign="left"
-                      whiteSpace="normal"
-                      transition="all 120ms"
-                      _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
-                      onClick={() => { if (!text) toggle(current, option.label, multiple); }}
-                    >
-                      <Box
-                        w={4} h={4} flexShrink={0}
-                        borderRadius={multiple ? "sm" : "full"}
-                        border="1px solid"
-                        borderColor={isSelected ? "blue.solid" : "border"}
-                        bg={isSelected ? "blue.solid" : "transparent"}
-                        display="flex" alignItems="center" justifyContent="center"
-                      >
-                        {isSelected && (
-                          <LuCheck size={10} color="white" strokeWidth={3} />
-                        )}
+                  <Box
+                    w={4}
+                    h={4}
+                    flexShrink={0}
+                    borderRadius={multiple ? "sm" : "full"}
+                    border="1px solid"
+                    borderColor={isSelected ? "blue.solid" : "border"}
+                    bg={isSelected ? "blue.solid" : "transparent"}
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                  >
+                    {isSelected && <LuCheck size={10} color="white" strokeWidth={3} />}
+                  </Box>
+                  <Flex direction="column" minW={0} flex={1}>
+                    <MarkdownContent content={option.label} fontSize="sm" />
+                    {option.description && (
+                      <Box color="fg.muted">
+                        <MarkdownContent content={option.description} fontSize="xs" />
                       </Box>
-                      <Flex direction="column" minW={0} flex={1}>
-                        <MarkdownContent content={option.label} fontSize="sm" />
-                        {option.description && (
-                          <Box color="fg.muted">
-                            <MarkdownContent content={option.description} fontSize="xs" />
-                          </Box>
-                        )}
-                      </Flex>
-                    </Button>
-                  );
-                })}
-              </Flex>
-            )}
-
-            {customEnabled && (
-              <Input
-                placeholder={translation("customPlaceholder")}
-                value={text}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value) setSkipped((previous) => (previous[current] ? { ...previous, [current]: false } : previous));
-                  setCustom((previous) => ({ ...previous, [current]: value }));
-                }}
-              />
-            )}
-
-            {isSkipped && (
-              <Text fontSize="xs" color="fg.subtle">
-                {translation("skippedNote")}
-              </Text>
-            )}
+                    )}
+                  </Flex>
+                </Button>
+              );
+            })}
           </Flex>
+        )}
 
-          <Flex justify="space-between" align="center" mt={3} gap={2}>
-            <Flex align="center" gap={1}>
-              {total > 1 && (
-                <Button
-                  variant="subtle"
-                  colorPalette="gray"
-                  disabled={current === 0}
-                  onClick={() => setCurrent((previous) => previous - 1)}
-                >
-                  <LuChevronLeft size={12} />
-                  {translation("back")}
-                </Button>
-              )}
-              {total > 1 && current < total - 1 && (
-                <Button
-                  variant="subtle"
-                  colorPalette="gray"
-                  onClick={() => setCurrent((previous) => previous + 1)}
-                >
-                  <LuChevronRight size={12} />
-                  {translation("next")}
-                </Button>
-              )}
-              <Button variant="subtle" colorPalette="red" onClick={skipCurrent}>
-                <LuSkipForward size={12} />
-                {translation("skip")}
-              </Button>
-            </Flex>
-            <Button colorPalette="green" variant="solid" onClick={submit} disabled={!allAnswered}>
-              {translation("submit")}
+        {customEnabled && (
+          <Input
+            placeholder={translation("customPlaceholder")}
+            value={text}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value)
+                setSkipped((previous) =>
+                  previous[current] ? { ...previous, [current]: false } : previous,
+                );
+              setCustom((previous) => ({ ...previous, [current]: value }));
+            }}
+          />
+        )}
+
+        {isSkipped && (
+          <Text fontSize="xs" color="fg.subtle">
+            {translation("skippedNote")}
+          </Text>
+        )}
+      </Flex>
+
+      <Flex justify="space-between" align="center" mt={3} gap={2}>
+        <Flex align="center" gap={1}>
+          {total > 1 && (
+            <Button
+              variant="subtle"
+              colorPalette="gray"
+              disabled={current === 0}
+              onClick={() => setCurrent((previous) => previous - 1)}
+            >
+              <LuChevronLeft size={12} />
+              {translation("back")}
             </Button>
-          </Flex>
-        </Box>
+          )}
+          {total > 1 && current < total - 1 && (
+            <Button
+              variant="subtle"
+              colorPalette="gray"
+              onClick={() => setCurrent((previous) => previous + 1)}
+            >
+              <LuChevronRight size={12} />
+              {translation("next")}
+            </Button>
+          )}
+          <Button variant="subtle" colorPalette="red" onClick={skipCurrent}>
+            <LuSkipForward size={12} />
+            {translation("skip")}
+          </Button>
+        </Flex>
+        <Button colorPalette="green" variant="solid" onClick={submit} disabled={!allAnswered}>
+          {translation("submit")}
+        </Button>
+      </Flex>
+    </Box>
   );
 }

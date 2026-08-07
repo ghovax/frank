@@ -48,7 +48,14 @@ def _parse_skill(path: Path) -> Skill:
         description = ""
         enabled = True
         body = content.strip()
-    return Skill(name=identifier, title=title, description=description, enabled=enabled, body=body, path=str(path.resolve()))
+    return Skill(
+        name=identifier,
+        title=title,
+        description=description,
+        enabled=enabled,
+        body=body,
+        path=str(path.resolve()),
+    )
 
 
 def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path]:

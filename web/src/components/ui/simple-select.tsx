@@ -23,7 +23,10 @@ export function SimpleSelect({
     <Select.Root
       collection={collection}
       value={value ? [value] : []}
-      onValueChange={(details) => { const next = details.value[0]; if (next) onValueChange(next); }}
+      onValueChange={(details) => {
+        const next = details.value[0];
+        if (next) onValueChange(next);
+      }}
       size="xs"
     >
       <Select.Control>

@@ -33,11 +33,15 @@ class FileLease:
 
 
 class FileLeaseManager:
-    def __init__(self, lock_directory: Path | None = None, on_change: Callable[[], None] | None = None):
+    def __init__(
+        self, lock_directory: Path | None = None, on_change: Callable[[], None] | None = None
+    ):
         self._condition = threading.Condition()
         self._leases: dict[str, FileLease] = {}
         self._lock_handles: dict[str, list] = {}
-        self._lock_directory = lock_directory or (Path(tempfile.gettempdir()) / "langmesh-file-leases")
+        self._lock_directory = lock_directory or (
+            Path(tempfile.gettempdir()) / "langmesh-file-leases"
+        )
         self._lock_directory.mkdir(parents=True, exist_ok=True)
         self._on_change = on_change
 
@@ -143,7 +147,9 @@ class FileLeaseManager:
                             owner_session_id=conflict.owner_session_id,
                             path=conflict.path,
                         )
-                    raise FileLeaseConflict("Filesystem is busy in another backend process. Try again shortly.")
+                    raise FileLeaseConflict(
+                        "Filesystem is busy in another backend process. Try again shortly."
+                    )
                 self._condition.wait(timeout=min(0.1, remaining))
 
     def _first_conflict(self, candidate: FileLease) -> FileLease | None:

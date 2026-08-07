@@ -1,4 +1,5 @@
 """Reads and drives running apps through the macOS accessibility tree, the accurate way to see and act on their interface."""
+
 from __future__ import annotations
 
 import threading
@@ -19,13 +20,21 @@ from langmesh.base.tuning import Tunable, active_tuning
 def _resolve_symbols_before_any_thread_exists() -> None:
     """Touch every AX symbol once at import, on one thread, because pyobjc's lazy attribute lookup is not thread-safe."""
     for symbol in (
-        "AXUIElementCreateApplication", "AXUIElementCreateSystemWide",
-        "AXUIElementCopyAttributeValue", "AXUIElementCopyAttributeValues",
-        "AXUIElementCopyMultipleAttributeValues", "AXUIElementCopyAttributeNames",
-        "AXUIElementSetAttributeValue", "AXUIElementIsAttributeSettable",
-        "AXUIElementPerformAction", "AXUIElementCopyActionNames",
-        "AXUIElementSetMessagingTimeout", "AXUIElementGetPid",
-        "AXIsProcessTrusted", "AXIsProcessTrustedWithOptions", "AXValueGetValue",
+        "AXUIElementCreateApplication",
+        "AXUIElementCreateSystemWide",
+        "AXUIElementCopyAttributeValue",
+        "AXUIElementCopyAttributeValues",
+        "AXUIElementCopyMultipleAttributeValues",
+        "AXUIElementCopyAttributeNames",
+        "AXUIElementSetAttributeValue",
+        "AXUIElementIsAttributeSettable",
+        "AXUIElementPerformAction",
+        "AXUIElementCopyActionNames",
+        "AXUIElementSetMessagingTimeout",
+        "AXUIElementGetPid",
+        "AXIsProcessTrusted",
+        "AXIsProcessTrustedWithOptions",
+        "AXValueGetValue",
     ):
         with suppress(AttributeError, KeyError):
             getattr(AS, symbol)
@@ -66,25 +75,67 @@ NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
 
 # One batched read pulls all of these per node, including the frame and whatever the app reports as on screen.
 BATCH_ATTRIBUTES = [
-    ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, ROLE_DESCRIPTION, PLACEHOLDER, VALUE, ENABLED, SELECTED,
-    FRAME, POSITION, SIZE, VISIBLE_CHILDREN, VISIBLE_ROWS, CHILDREN,
+    ROLE,
+    SUBROLE,
+    TITLE,
+    DESCRIPTION,
+    HELP,
+    ROLE_DESCRIPTION,
+    PLACEHOLDER,
+    VALUE,
+    ENABLED,
+    SELECTED,
+    FRAME,
+    POSITION,
+    SIZE,
+    VISIBLE_CHILDREN,
+    VISIBLE_ROWS,
+    CHILDREN,
 ]
 
 # Pure containers, never included on their own but always descended through to reach the controls inside.
-STRUCTURAL_ROLES = frozenset({
-    "AXGroup", "AXSplitGroup", "AXScrollArea", "AXLayoutArea", "AXLayoutItem",
-    "AXUnknown", "AXToolbar", "AXTabGroup", "AXList", "AXOutline", "AXTable",
-    "AXWebArea", "AXBrowser", "AXBox", "AXGenericElement", "AXScrollBar",
-    "AXSplitter", "AXGrowArea", "AXRow", "AXCell", "AXColumn", "AXOutlineRow",
-    "AXApplication", "AXWindow",
-})
+STRUCTURAL_ROLES = frozenset(
+    {
+        "AXGroup",
+        "AXSplitGroup",
+        "AXScrollArea",
+        "AXLayoutArea",
+        "AXLayoutItem",
+        "AXUnknown",
+        "AXToolbar",
+        "AXTabGroup",
+        "AXList",
+        "AXOutline",
+        "AXTable",
+        "AXWebArea",
+        "AXBrowser",
+        "AXBox",
+        "AXGenericElement",
+        "AXScrollBar",
+        "AXSplitter",
+        "AXGrowArea",
+        "AXRow",
+        "AXCell",
+        "AXColumn",
+        "AXOutlineRow",
+        "AXApplication",
+        "AXWindow",
+    }
+)
 
 # Text nodes are included when they have content and never descended into; decorative nodes only when named.
 TEXT_ROLES = frozenset({"AXStaticText", "AXHeading", "AXText"})
-DECORATIVE_ROLES = frozenset({
-    "AXImage", "AXProgressIndicator", "AXBusyIndicator", "AXValueIndicator",
-    "AXRelevanceIndicator", "AXRulerMarker", "AXRuler",
-})
+DECORATIVE_ROLES = frozenset(
+    {
+        "AXImage",
+        "AXProgressIndicator",
+        "AXBusyIndicator",
+        "AXValueIndicator",
+        "AXRelevanceIndicator",
+        "AXRulerMarker",
+        "AXRuler",
+    }
+)
 
 # AXValue geometry types (symbol names have drifted across SDKs, so resolve once).
 POINT_TYPE = getattr(AS, "kAXValueCGPointType", getattr(AS, "kAXValueTypeCGPoint", 1))
@@ -99,6 +150,7 @@ RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange
 @dataclass
 class Element:
     """One included node, holding the raw attribute values plus the handle and geometry needed to act on it."""
+
     role: str
     subrole: str
     title: str
@@ -204,8 +256,10 @@ def rectangle(frame: Any) -> Optional[dict[str, int]]:
     if frame is None or Quartz.CGRectIsEmpty(frame):
         return None
     return {
-        "x": round(Quartz.CGRectGetMinX(frame)), "y": round(Quartz.CGRectGetMinY(frame)),
-        "width": round(Quartz.CGRectGetWidth(frame)), "height": round(Quartz.CGRectGetHeight(frame)),
+        "x": round(Quartz.CGRectGetMinX(frame)),
+        "y": round(Quartz.CGRectGetMinY(frame)),
+        "width": round(Quartz.CGRectGetWidth(frame)),
+        "height": round(Quartz.CGRectGetHeight(frame)),
     }
 
 
@@ -231,17 +285,24 @@ def _pids_showing_a_window() -> set[int]:
     import Quartz
 
     try:
-        windows = Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
-            Quartz.kCGNullWindowID,
-        ) or []
+        windows = (
+            Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+                Quartz.kCGNullWindowID,
+            )
+            or []
+        )
     except Exception:  # noqa: BLE001 — a preference must never be the thing that fails
         return set()
     showing = set()
     for window in windows:
         bounds = window.get("kCGWindowBounds") or {}
         # Layer 0 and a real size: a document window, not a menu-bar strip or an overlay.
-        if window.get("kCGWindowLayer") == 0 and int(bounds.get("Width", 0)) > 200 and int(bounds.get("Height", 0)) > 200:
+        if (
+            window.get("kCGWindowLayer") == 0
+            and int(bounds.get("Width", 0)) > 200
+            and int(bounds.get("Height", 0)) > 200
+        ):
             showing.add(window.get("kCGWindowOwnerPID"))
     return showing
 
@@ -257,7 +318,8 @@ def find_app_pid(name: str) -> Optional[int]:
     ] or [
         app.processIdentifier()
         for app in running_apps
-        if needle in _string(app.localizedName()).lower() or needle in _string(app.bundleIdentifier()).lower()
+        if needle in _string(app.localizedName()).lower()
+        or needle in _string(app.bundleIdentifier()).lower()
     ]
     if not matches:
         return None
@@ -306,11 +368,14 @@ def _window_id_of(window: Any) -> Optional[int]:
                     import objc
 
                     bundle = objc.loadBundle(
-                        "ApplicationServices", {},
+                        "ApplicationServices",
+                        {},
                         bundle_path="/System/Library/Frameworks/ApplicationServices.framework",
                     )
                     loaded: dict[str, Any] = {}
-                    objc.loadBundleFunctions(bundle, loaded, [("_AXUIElementGetWindow", _WINDOW_ID_SIGNATURE)])
+                    objc.loadBundleFunctions(
+                        bundle, loaded, [("_AXUIElementGetWindow", _WINDOW_ID_SIGNATURE)]
+                    )
                     _window_id_function = loaded.get("_AXUIElementGetWindow", False)
                 except Exception:  # noqa: BLE001 — no bridge means no ids, never a crash
                     _window_id_function = False
@@ -332,13 +397,15 @@ class WindowRecord:
     minimized: bool
     document: str = ""
     main: bool = False
-    bounds: tuple[int, int, int, int] = (0, 0, 0, 0)   # x, y, width, height
+    bounds: tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, width, height
 
 
 def application_root(pid: int) -> Any:
     """An application's accessibility root, with its messaging timeout set and its rich tree asked for."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging))
+    AS.AXUIElementSetMessagingTimeout(
+        root, active_tuning().duration(Tunable.accessibility_messaging)
+    )
     enable_rich_accessibility(root)
     return root
 
@@ -356,16 +423,22 @@ def windows_of(pid: int) -> list[WindowRecord]:
         bounds = (0, 0, 0, 0)
         if rectangle is not None:
             with suppress(Exception):
-                bounds = (int(rectangle.origin.x), int(rectangle.origin.y),
-                          int(rectangle.size.width), int(rectangle.size.height))
-        records.append(WindowRecord(
-            window_id=window_id,
-            title=_string(_single(window, TITLE)) or _string(_single(window, VALUE)),
-            minimized=bool(_single(window, "AXMinimized")),
-            document=_string(_single(window, "AXDocument")),
-            main=bool(_single(window, "AXMain")),
-            bounds=bounds,
-        ))
+                bounds = (
+                    int(rectangle.origin.x),
+                    int(rectangle.origin.y),
+                    int(rectangle.size.width),
+                    int(rectangle.size.height),
+                )
+        records.append(
+            WindowRecord(
+                window_id=window_id,
+                title=_string(_single(window, TITLE)) or _string(_single(window, VALUE)),
+                minimized=bool(_single(window, "AXMinimized")),
+                document=_string(_single(window, "AXDocument")),
+                main=bool(_single(window, "AXMain")),
+                bounds=bounds,
+            )
+        )
     return records
 
 
@@ -373,11 +446,13 @@ def _published_windows(root: Any) -> list[Any]:
     """Every window an application exposes, however it chooses to expose them, since `AXWindows` is not always offered."""
     candidates: list[Any] = list(_single(root, WINDOWS) or [])
     candidates.extend(
-        child for child in (_single(root, CHILDREN) or [])
+        child
+        for child in (_single(root, CHILDREN) or [])
         if _string(_single(child, ROLE)) == "AXWindow"
     )
     candidates.extend(
-        window for window in (_single(root, MAIN_WINDOW), _single(root, FOCUSED_WINDOW))
+        window
+        for window in (_single(root, MAIN_WINDOW), _single(root, FOCUSED_WINDOW))
         if window is not None
     )
     return candidates
@@ -406,11 +481,31 @@ _MENU_MODIFIER_BITS = ((1, "shift"), (2, "option"), (4, "control"))
 
 # The virtual key codes macOS uses for menu items that have no character (function keys, arrows).
 _MENU_VIRTUAL_KEYS = {
-    0x7A: "f1", 0x78: "f2", 0x63: "f3", 0x76: "f4", 0x60: "f5", 0x61: "f6",
-    0x62: "f7", 0x64: "f8", 0x65: "f9", 0x6D: "f10", 0x67: "f11", 0x6F: "f12",
-    0x7B: "left", 0x7C: "right", 0x7D: "down", 0x7E: "up",
-    0x24: "return", 0x30: "tab", 0x33: "delete", 0x35: "escape", 0x31: "space",
-    0x73: "home", 0x77: "end", 0x74: "pageup", 0x79: "pagedown",
+    0x7A: "f1",
+    0x78: "f2",
+    0x63: "f3",
+    0x76: "f4",
+    0x60: "f5",
+    0x61: "f6",
+    0x62: "f7",
+    0x64: "f8",
+    0x65: "f9",
+    0x6D: "f10",
+    0x67: "f11",
+    0x6F: "f12",
+    0x7B: "left",
+    0x7C: "right",
+    0x7D: "down",
+    0x7E: "up",
+    0x24: "return",
+    0x30: "tab",
+    0x33: "delete",
+    0x35: "escape",
+    0x31: "space",
+    0x73: "home",
+    0x77: "end",
+    0x74: "pageup",
+    0x79: "pagedown",
 }
 
 
@@ -428,7 +523,7 @@ def _menu_chord(item: Any) -> str:
     raw = _single(item, MENU_ITEM_MODIFIERS)
     bits = int(raw) if raw is not None else 0
     modifiers = [name for bit, name in _MENU_MODIFIER_BITS if bits & bit]
-    if not bits & 8:      # the inverted Command bit: unset means Command *is* held
+    if not bits & 8:  # the inverted Command bit: unset means Command *is* held
         modifiers.insert(0, "cmd")
     return "+".join([*modifiers, character])
 
@@ -484,7 +579,9 @@ def enable_rich_accessibility(root: Any) -> None:
 def prime_accessibility(pid: int) -> None:
     """Switch on an app's rich tree ahead of a read, so the read meets a built tree rather than racing its construction."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging))
+    AS.AXUIElementSetMessagingTimeout(
+        root, active_tuning().duration(Tunable.accessibility_messaging)
+    )
     enable_rich_accessibility(root)
 
 
@@ -497,7 +594,9 @@ class _Prewarmer:
     def start(self) -> None:
         with self._lock:
             if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(target=self._run, name="langmesh-accessibility-prewarm", daemon=True)
+                self._thread = threading.Thread(
+                    target=self._run, name="langmesh-accessibility-prewarm", daemon=True
+                )
                 self._thread.start()
 
     def _run(self) -> None:
@@ -529,7 +628,11 @@ def _window_roots(root: Any, window: str) -> list[Any]:
     if window and window != "focused":
         # Anything else is a window title or a substring of one, so the model can pick a window by name.
         needle = window.strip().lower()
-        matched = [window for window in (_single(root, WINDOWS) or []) if needle in _string(_single(window, TITLE)).lower()]
+        matched = [
+            window
+            for window in (_single(root, WINDOWS) or [])
+            if needle in _string(_single(window, TITLE)).lower()
+        ]
         if matched:
             return matched
     focused = _single(root, FOCUSED_WINDOW) or _single(root, MAIN_WINDOW)
@@ -591,8 +694,7 @@ def _make_element(
 def _push_children(stack: list, children: list[Any], depth: int, path: tuple[int, ...]) -> None:
     """Push a node's children so the stack yields them in document order, tagged with depth and child-index path."""
     stack.extend(
-        (children[index], depth + 1, path + (index,))
-        for index in range(len(children) - 1, -1, -1)
+        (children[index], depth + 1, path + (index,)) for index in range(len(children) - 1, -1, -1)
     )
 
 
@@ -616,11 +718,18 @@ def _collect(
                 if pending is None:
                     continue
                 pending_children = _child_nodes(pending)
-                elements.append(_make_element(
-                    pending_node, pending, _string(pending.get(ROLE)), _frame_of(pending),
-                    pending_depth, pending_path,
-                    as_region=True, child_count=len(pending_children) or 1,
-                ))
+                elements.append(
+                    _make_element(
+                        pending_node,
+                        pending,
+                        _string(pending.get(ROLE)),
+                        _frame_of(pending),
+                        pending_depth,
+                        pending_path,
+                        as_region=True,
+                        child_count=len(pending_children) or 1,
+                    )
+                )
             break
         node, depth, path = stack.pop()
         if node in seen:
@@ -687,8 +796,11 @@ def snapshot_app(
     else:
         seeds = [(node, 0, (index,)) for index, node in enumerate(roots) if node is not None]
 
-    budget = budget_seconds if budget_seconds is not None else active_tuning().duration(
-        Tunable.accessibility_walk_budget)
+    budget = (
+        budget_seconds
+        if budget_seconds is not None
+        else active_tuning().duration(Tunable.accessibility_walk_budget)
+    )
     elements, visited, exhausted = _collect(seeds, window_rect, budget)
     return Snapshot(
         pid=pid,
@@ -759,4 +871,3 @@ def set_selected_text(element: Any, text: str) -> bool:
     if not attribute_settable(element, SELECTED_TEXT):
         return False
     return AS.AXUIElementSetAttributeValue(element, SELECTED_TEXT, text) == 0
-

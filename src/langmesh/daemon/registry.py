@@ -19,10 +19,10 @@ LIVE = "live"
 ENDED = "ended"
 
 # What it is doing right now, derived on read rather than stored, since a stored "working" survives the kill that ended it.
-WORKING = "working"   # a turn is in flight
-WAITING = "waiting"   # parked on a human decision
-IDLE = "idle"         # has a worker, doing nothing
-ASLEEP = "asleep"     # has no worker; the next message forks one
+WORKING = "working"  # a turn is in flight
+WAITING = "waiting"  # parked on a human decision
+IDLE = "idle"  # has a worker, doing nothing
+ASLEEP = "asleep"  # has no worker; the next message forks one
 STARTING = "starting"  # forked, not yet accepting connections
 ENDED_ACTIVITY = "ended"
 
@@ -264,7 +264,12 @@ class SessionRegistry:
         return record
 
     def end(
-        self, session_id: str, *, outcome: str = EXITED, reason: str = "", updated_at: str = "",
+        self,
+        session_id: str,
+        *,
+        outcome: str = EXITED,
+        reason: str = "",
+        updated_at: str = "",
     ) -> Optional[SessionRecord]:
         """Mark a session finished. The one transition out of `live`, in one place."""
         return self.mark(

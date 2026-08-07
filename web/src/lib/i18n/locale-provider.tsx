@@ -25,9 +25,12 @@ export function LocaleProvider({ children }: React.PropsWithChildren) {
     document.documentElement.lang = locale;
   }, [locale]);
 
-  const setLocale = React.useCallback((next: Locale) => {
-    updatePreferences({ locale: next });
-  }, [updatePreferences]);
+  const setLocale = React.useCallback(
+    (next: Locale) => {
+      updatePreferences({ locale: next });
+    },
+    [updatePreferences],
+  );
 
   const value = React.useMemo(() => ({ locale, setLocale }), [locale, setLocale]);
 
@@ -38,7 +41,12 @@ export function LocaleProvider({ children }: React.PropsWithChildren) {
 
   return (
     <LocaleContext.Provider value={value}>
-      <NextIntlClientProvider locale={locale} messages={MESSAGES[locale]} timeZone={timeZone} now={now}>
+      <NextIntlClientProvider
+        locale={locale}
+        messages={MESSAGES[locale]}
+        timeZone={timeZone}
+        now={now}
+      >
         {children}
       </NextIntlClientProvider>
     </LocaleContext.Provider>

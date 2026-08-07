@@ -49,9 +49,11 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
 
     # Its own failure ahead of every status test, because it is the one the harness caused.
     overflow = error if isinstance(error, ContextWindowExceeded) else None
-    if (overflow is not None
-            or isinstance(error, litellm_exceptions.ContextWindowExceededError)
-            or provider_code in CONTEXT_OVERFLOW_CODES):
+    if (
+        overflow is not None
+        or isinstance(error, litellm_exceptions.ContextWindowExceededError)
+        or provider_code in CONTEXT_OVERFLOW_CODES
+    ):
         window = getattr(overflow, "context_window", 0) or 0
         model = getattr(overflow, "model", "") or ""
         tokens = getattr(overflow, "tokens", None)
@@ -98,14 +100,21 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
             "title": "Provider credentials need attention",
             "message": "The selected provider rejected the configured credentials. Check the API key or choose another model.",
         }
-    if isinstance(error, (litellm_exceptions.ServiceUnavailableError, litellm_exceptions.InternalServerError)) or status_code in {500, 502, 503, 504}:
+    if isinstance(
+        error, (litellm_exceptions.ServiceUnavailableError, litellm_exceptions.InternalServerError)
+    ) or status_code in {500, 502, 503, 504}:
         return {
             **fields,
             "code": "provider_unavailable",
             "title": "Model temporarily unavailable",
             "message": "The agent's model provider is temporarily unavailable. Try again in a moment or configure a different model for this agent.",
         }
-    if isinstance(error, (litellm_exceptions.APIConnectionError, litellm_exceptions.Timeout, TimeoutError)) or status_code == 408:
+    if (
+        isinstance(
+            error, (litellm_exceptions.APIConnectionError, litellm_exceptions.Timeout, TimeoutError)
+        )
+        or status_code == 408
+    ):
         return {
             **fields,
             "code": "connection_failed",

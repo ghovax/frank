@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 
 class ToolStatus(str, Enum):
     RUNNING = "running"  # accepted / in flight (a backgrounded command, a live search)
-    OK = "ok"            # finished successfully
-    ERROR = "error"      # failed, denied, or cancelled (see `code` for which)
+    OK = "ok"  # finished successfully
+    ERROR = "error"  # failed, denied, or cancelled (see `code` for which)
 
 
 def tool_status_from_result(result: Any) -> ToolStatus:
@@ -40,6 +40,7 @@ class ToolMetadata(BaseModel):
 
 
 # Every streamed event is a payload of the shape `{kind, ...}`, carrying no tree position of its own.
+
 
 class _EventBase(BaseModel):
     """Base of the wire-event union. Every event contributes its own `kind` literal."""
@@ -227,24 +228,47 @@ class ErrorEvent(_EventBase):
 # The discriminated union of everything that can appear on the wire.
 WireEvent = Annotated[
     Union[
-        TextEvent, ThinkingEvent, ThinkingDoneEvent, ToolCallEvent, ToolResultEvent,
-        McpEvent, StatusEvent, DoneEvent, CompactionEvent,
-        SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent,
-        WarningEvent, ErrorEvent,
+        TextEvent,
+        ThinkingEvent,
+        ThinkingDoneEvent,
+        ToolCallEvent,
+        ToolResultEvent,
+        McpEvent,
+        StatusEvent,
+        DoneEvent,
+        CompactionEvent,
+        SteeringEvent,
+        TokenUsageEvent,
+        PermissionRequestEvent,
+        QuestionEvent,
+        WarningEvent,
+        ErrorEvent,
     ],
     Field(discriminator="kind"),
 ]
 
 # Every wire-event model, for codegen and for runtime validation dispatch.
 WIRE_EVENT_MODELS: tuple[type[_EventBase], ...] = (
-    TextEvent, ThinkingEvent, ThinkingDoneEvent, ToolCallEvent, ToolResultEvent,
-    McpEvent, StatusEvent, DoneEvent, CompactionEvent,
-    SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent,
-    WarningEvent, ErrorEvent,
+    TextEvent,
+    ThinkingEvent,
+    ThinkingDoneEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+    McpEvent,
+    StatusEvent,
+    DoneEvent,
+    CompactionEvent,
+    SteeringEvent,
+    TokenUsageEvent,
+    PermissionRequestEvent,
+    QuestionEvent,
+    WarningEvent,
+    ErrorEvent,
 )
 
 
 # One canonical shape for everything the harness injects into the model's conversation.
+
 
 class ModelToolResult(BaseModel):
     """The one-line JSON header prepended to every tool result the model reads."""
@@ -278,5 +302,7 @@ class TurnContext(BaseModel):
 
 
 MODEL_ENVELOPE_MODELS: tuple[type[BaseModel], ...] = (
-    ModelToolResult, TurnContext, ToolMetadata,
+    ModelToolResult,
+    TurnContext,
+    ToolMetadata,
 )

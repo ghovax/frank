@@ -33,25 +33,44 @@ function ToolLocationBadge({ arguments: args }: { arguments?: Record<string, unk
 export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
   const translation = useTranslations("ToolCard");
   if (status === "completed" || status === "done") return null;
-  const labelKey = status === "input_required" ? "inputRequired" : status === "failed" ? "failed" : "running";
+  const labelKey =
+    status === "input_required" ? "inputRequired" : status === "failed" ? "failed" : "running";
   return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{translation(labelKey)}</Pill>;
 }
 
 // Always-visible markers: a write badge when the call can change something, and an access badge when it reaches out.
-export function ToolAccessBadges({ name, arguments: toolArguments }: { name?: string; arguments?: Record<string, unknown> }) {
+export function ToolAccessBadges({
+  name,
+  arguments: toolArguments,
+}: {
+  name?: string;
+  arguments?: Record<string, unknown>;
+}) {
   const translation = useTranslations("ToolCard");
   if (!toolArguments) return null;
   const readOnly = !callMayMutate(name ?? "", toolArguments);
   const access = requestedAccess(toolArguments);
   const badges: ReactNode[] = [];
-  if (!readOnly) badges.push(<Pill key="write" colorPalette="orange">{translation("write")}</Pill>);
-  if (access.any) badges.push(<Pill key="access" colorPalette="purple">{translation("accessRequested")}</Pill>);
+  if (!readOnly)
+    badges.push(
+      <Pill key="write" colorPalette="orange">
+        {translation("write")}
+      </Pill>,
+    );
+  if (access.any)
+    badges.push(
+      <Pill key="access" colorPalette="purple">
+        {translation("accessRequested")}
+      </Pill>,
+    );
   if (badges.length === 0) return null;
   return <>{badges}</>;
 }
 
 // The location to badge on a collapsed heading, surfaced when the batch touched exactly one remote place.
-export function collapsedHeadingLocation(argumentsList: (Record<string, unknown> | undefined)[]): Record<string, unknown> | undefined {
+export function collapsedHeadingLocation(
+  argumentsList: (Record<string, unknown> | undefined)[],
+): Record<string, unknown> | undefined {
   const remotes = new Map<string, Record<string, unknown>>();
   for (const args of argumentsList) {
     const location = args?.location;
@@ -70,7 +89,12 @@ function isToolErrorResult(content: string | null): boolean {
   if (!content) return false;
   try {
     const parsed = JSON.parse(content);
-    return !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as Record<string, unknown>).code === "tool_error";
+    return (
+      !!parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      (parsed as Record<string, unknown>).code === "tool_error"
+    );
   } catch {
     // Not JSON — the plain text is what gets shown, which is the point of trying.
     return false;
@@ -78,7 +102,11 @@ function isToolErrorResult(content: string | null): boolean {
 }
 
 // Whether the result view will render anything inline, mirroring its own null paths so no empty rail is drawn.
-function resultRendersInside(name: string, content: string, status: ToolEventStatus | undefined): boolean {
+function resultRendersInside(
+  name: string,
+  content: string,
+  status: ToolEventStatus | undefined,
+): boolean {
   if (name === "list_mcp_tools" || name === "list_mcp_resources") return false;
   let parsed: unknown;
   try {
@@ -108,20 +136,29 @@ export function toolCallDetail(
   status?: ToolEventStatus,
 ): ToolCallDetail {
   // The explanation is the line's label and the location a trailing badge, so neither is body content.
-  const showArguments = !!args && Object.keys(args).some((key) => key !== "explanation" && key !== "location");
-  const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
+  const showArguments =
+    !!args && Object.keys(args).some((key) => key !== "explanation" && key !== "location");
+  const resultContent =
+    result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A tool_error is surfaced on the line itself and leaves nothing for the body.
   const showResult =
-    resultContent != null && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent, status);
+    resultContent != null &&
+    !isToolErrorResult(resultContent) &&
+    resultRendersInside(name, resultContent, status);
   // The task list is the model's own bookkeeping, so its line never expands regardless of its arguments.
   const isInternalPlanning = name === "set_tasks" || name === "update_tasks";
-  return { showArguments, showResult, collapsible: !isInternalPlanning && (showArguments || showResult) };
+  return {
+    showArguments,
+    showResult,
+    collapsible: !isInternalPlanning && (showArguments || showResult),
+  };
 }
 
 // What a tool line expands into: the call's arguments, then its result.
 export function ToolCallDetail({ name, arguments: toolArguments, result, status }: ToolEvent) {
   const { showArguments, showResult } = toolCallDetail(name, toolArguments, result, status);
-  const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
+  const resultContent =
+    result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   return (
     // The gap matches the field list's own spacing, so the call's last field and the result's first read as one list.
     <Flex direction="column" gap={2} align="stretch">
@@ -135,7 +172,13 @@ export function ToolCallDetail({ name, arguments: toolArguments, result, status 
 }
 
 // A tool call is a line of activity rather than a card, with its structured detail hanging off a hairline rail.
-export function ToolCall({ name, arguments: toolArguments, result, status, actions }: ToolCallProps) {
+export function ToolCall({
+  name,
+  arguments: toolArguments,
+  result,
+  status,
+  actions,
+}: ToolCallProps) {
   const translation = useTranslations("ToolCall");
   // One decision shared with every other tool-line surface: what, if anything, this line expands into.
   const { collapsible } = toolCallDetail(name, toolArguments, result, status);
@@ -148,7 +191,11 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
       // Input-required tints the whole line; otherwise it settles muted and brightens on open or hover.
       tone={status === "input_required" ? "attention" : "muted"}
       maxH="480px"
-      icon={<Box color={iconColor} display="flex" alignItems="center"><Icon /></Box>}
+      icon={
+        <Box color={iconColor} display="flex" alignItems="center">
+          <Icon />
+        </Box>
+      }
       title={
         <DisclosureLabel shimmer={status === "running"}>
           <ToolCallLabel name={name} args={toolArguments} />
@@ -158,8 +205,15 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
         <>
           <ToolLocationBadge arguments={toolArguments} />
           <ToolAccessBadges name={name} arguments={toolArguments} />
-          {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
-          {background ? <Pill colorPalette={STATUS_PALETTE.background}>{translation("background")}</Pill> : null}
+          {status === "running" ||
+          status === "completed" ||
+          status === "failed" ||
+          status === "input_required" ? (
+            <ToolStatusBadge status={status} />
+          ) : null}
+          {background ? (
+            <Pill colorPalette={STATUS_PALETTE.background}>{translation("background")}</Pill>
+          ) : null}
         </>
       }
       actions={actions}

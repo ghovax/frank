@@ -43,7 +43,9 @@ def preferences_payload() -> dict[str, Any]:
 
 def update_preferences(changes: dict[str, Any]) -> dict[str, Any]:
     """Apply a partial update and answer with the whole of what is now stored."""
-    known = {name: value for name, value in changes.items() if name in DEFAULTS and value is not None}
+    known = {
+        name: value for name, value in changes.items() if name in DEFAULTS and value is not None
+    }
     if "color_mode" in known and known["color_mode"] not in COLOR_MODES:
         raise ValueError(f"Unknown colour mode {known['color_mode']!r}.")
     assert state.session_factory is not None

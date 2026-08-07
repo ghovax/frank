@@ -76,9 +76,11 @@ class _ContextState:
     inherited_snapshot_id: str = ""
     inherited_message_count: int = 0
 
+
 @dataclass(frozen=True)
 class _Ingested:
     """The parsed request: the turn's inputs and mode flags, threaded into the phase that follows."""
+
     message: Message
     user_text: str
     metadata: dict
@@ -98,12 +100,15 @@ class _Ingested:
     @property
     def from_outside(self) -> bool:
         """Whether somebody outside this session asked for this turn, rather than the session sending it to itself."""
-        return not (self.autonomous or self.compaction or self.report_reminder or self.goal_continuation)
+        return not (
+            self.autonomous or self.compaction or self.report_reminder or self.goal_continuation
+        )
 
 
 @dataclass(frozen=True)
 class _Resolved:
     """The materialized task and the resume decision, produced by ``_resolve_task``."""
+
     ingested: _Ingested
     task: Task
     updater: TaskUpdater
@@ -115,6 +120,7 @@ class _Resolved:
 @dataclass(frozen=True)
 class _Prepared:
     """The stood-up runtime and event sink, produced by ``_prepare_runtime``."""
+
     resolved: _Resolved
     runtime: AgentRuntime
     sink: _TurnEventSink
@@ -123,6 +129,7 @@ class _Prepared:
 @dataclass(frozen=True)
 class _ComposedTurn:
     """The model-facing input for this segment, produced by ``_compose_turn_input``."""
+
     prepared: _Prepared
     turn_input: Any
     as_system_note: bool
@@ -186,7 +193,9 @@ class _TurnRunner:
     # Collaborators shared across the phases below.
 
     async def _emit(self, part: Part, *, publish_stream_event: bool = True) -> None:
-        await self._updater.update_status(TaskState.working, self._updater.new_agent_message([part]))
+        await self._updater.update_status(
+            TaskState.working, self._updater.new_agent_message([part])
+        )
         if self._executor._on_stream_event is not None and publish_stream_event:
             self._executor._on_stream_event(self._task.context_id, part)
 
@@ -197,7 +206,10 @@ class _TurnRunner:
             return serialized, ""
         boundary = state.inherited_message_count
         prefix = serialized[:boundary]
-        if len(prefix) == boundary and conversation_snapshot_id(prefix) == state.inherited_snapshot_id:
+        if (
+            len(prefix) == boundary
+            and conversation_snapshot_id(prefix) == state.inherited_snapshot_id
+        ):
             return serialized[boundary:], state.inherited_snapshot_id
         state.inherited_snapshot_id = ""
         state.inherited_message_count = 0
@@ -210,8 +222,11 @@ class _TurnRunner:
             session_state = self._runtime.dirty_session_snapshot()
             messages, inherited_snapshot_id = self._checkpoint_messages(self._runtime.conversation)
             await self._executor._turn_store.save_turn_state(
-                self._task.context_id, self._task.id,
-                messages, session_state, inherited_snapshot_id,
+                self._task.context_id,
+                self._task.id,
+                messages,
+                session_state,
+                inherited_snapshot_id,
             )
             if session_state is not None:
                 self._runtime.clear_session_dirty()
@@ -247,11 +262,15 @@ class _TurnRunner:
         self._structured_payloads = _structured_data_payloads(message)
         ingested_attachments = await _ingest_incoming_file_parts(message)
         if ingested_attachments:
-            self._structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
+            self._structured_payloads.append(
+                {PART_KIND: "attachments", "attachments": ingested_attachments}
+            )
         self._metadata = turn_metadata(message)
         # Dated on arrival and written back onto the message, since this is the one door every message comes through.
         if not self._metadata.get(Metadata.RECEIVED_AT):
-            self._metadata[Metadata.RECEIVED_AT] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            self._metadata[Metadata.RECEIVED_AT] = datetime.now(timezone.utc).isoformat(
+                timespec="milliseconds"
+            )
             message.metadata = {**(message.metadata or {}), METADATA_KEY: self._metadata}
         self._requested_working_directory = str(self._metadata.get(Metadata.WORKING_DIRECTORY, ""))
         self._requested_worktree_strategy = str(self._metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
@@ -303,7 +322,9 @@ class _TurnRunner:
             if ready is None:
                 await self._updater.update_status(
                     TaskState.input_required,
-                    self._updater.new_agent_message([_event_part(StatusEvent(code="input_required"))]),
+                    self._updater.new_agent_message(
+                        [_event_part(StatusEvent(code="input_required"))]
+                    ),
                     final=True,
                 )
                 return self._DONE
@@ -340,7 +361,11 @@ class _TurnRunner:
                     await self._emit(acknowledgement_part)
             except Exception as exception:
                 logger.exception("work-habits acknowledgement failed")
-                await self._updater.failed(self._updater.new_agent_message([_event_part(ErrorEvent(**_safe_turn_error(exception)))]))
+                await self._updater.failed(
+                    self._updater.new_agent_message(
+                        [_event_part(ErrorEvent(**_safe_turn_error(exception)))]
+                    )
+                )
                 return self._DONE
         return None
 
@@ -355,10 +380,13 @@ class _TurnRunner:
         task, ingested = resolved.task, resolved.ingested
         self._turn_kind = (
             # The reminder is harness-initiated like a wake, and differs only in having nothing to deliver.
-            TurnKind.AUTONOMOUS if ingested.autonomous or ingested.report_reminder or ingested.goal_continuation
-            else TurnKind.COMPACTION if ingested.compaction
+            TurnKind.AUTONOMOUS
+            if ingested.autonomous or ingested.report_reminder or ingested.goal_continuation
+            else TurnKind.COMPACTION
+            if ingested.compaction
             # A peer's message is not the user speaking, or the model reads a report as an instruction.
-            else TurnKind.PEER if ingested.peer_sender
+            else TurnKind.PEER
+            if ingested.peer_sender
             else TurnKind.USER
         )
         # Stamp the kind onto the task, so restart reconciliation reads a real field rather than guessing.
@@ -366,13 +394,19 @@ class _TurnRunner:
         stamped.kind = self._turn_kind
         stamped.peer_sender = ingested.peer_sender
         task.metadata = stamped.apply_to(task.metadata)
-        parent_context = _telemetry.context_from_traceparent((ingested.message.metadata or {}).get("traceparent", ""))
-        self._turn_span_context = _telemetry.span("agent.turn", {
-            "session.id": task.context_id,
-            "langmesh.task.id": task.id,
-            "langmesh.agent.name": self._executor._agent_name,
-            "langmesh.turn.kind": self._turn_kind,
-        }, parent_context)
+        parent_context = _telemetry.context_from_traceparent(
+            (ingested.message.metadata or {}).get("traceparent", "")
+        )
+        self._turn_span_context = _telemetry.span(
+            "agent.turn",
+            {
+                "session.id": task.context_id,
+                "langmesh.task.id": task.id,
+                "langmesh.agent.name": self._executor._agent_name,
+                "langmesh.turn.kind": self._turn_kind,
+            },
+            parent_context,
+        )
         self._turn_span = self._turn_span_context.__enter__()
 
     async def _prepare_runtime(self, resolved: _Resolved) -> _Prepared | object:
@@ -382,8 +416,12 @@ class _TurnRunner:
         if self._autonomous:
             existing_state = self._executor._contexts.get(task.context_id)
             existing_runtime = existing_state.runtime if existing_state is not None else None
-            has_live_result = existing_runtime is not None and existing_runtime.has_completed_undelivered_jobs()
-            has_stored_result = self._executor._job_store.has_undelivered_jobs(task.context_id, self._executor._agent_name)
+            has_live_result = (
+                existing_runtime is not None and existing_runtime.has_completed_undelivered_jobs()
+            )
+            has_stored_result = self._executor._job_store.has_undelivered_jobs(
+                task.context_id, self._executor._agent_name
+            )
             if not has_live_result and not has_stored_result:
                 await self._updater.complete()
                 return self._DONE
@@ -402,7 +440,6 @@ class _TurnRunner:
 
         workspace = self._executor._workspace(self._requested_working_directory)
 
-
         existing_state = self._executor._contexts.get(task.context_id)
         runtime = await self._executor._runtime_for(task.context_id, workspace)
 
@@ -416,7 +453,9 @@ class _TurnRunner:
             save_conversation=self._save_runtime_conversation,
             suspend=self._suspend_turn,
             telemetry_span=self._turn_span,
-            model_identifier=lambda: self._runtime.effective_model_identifier if self._runtime is not None else "",
+            model_identifier=lambda: self._runtime.effective_model_identifier
+            if self._runtime is not None
+            else "",
         )
         return _Prepared(resolved=resolved, runtime=runtime, sink=self._sink)
 
@@ -451,37 +490,48 @@ class _TurnRunner:
         if self._goal_continuation:
             # The goal as the turn's opening message, delivered as a reminder so nothing claims a person asked.
             goal = runtime.goal
-            requirements = "\n".join(f"- {requirement}" for requirement in (goal.requirements if goal else []))
-            self._turn_input = _PROMPTS.load("goal_continuation", {
-                "goal": goal.text if goal else "",
-                "requirements": requirements,
-                # From the same setting anything else reads, so the number told and the number configured cannot drift.
-                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
-            })
+            requirements = "\n".join(
+                f"- {requirement}" for requirement in (goal.requirements if goal else [])
+            )
+            self._turn_input = _PROMPTS.load(
+                "goal_continuation",
+                {
+                    "goal": goal.text if goal else "",
+                    "requirements": requirements,
+                    # From the same setting anything else reads, so the number told and the number configured cannot drift.
+                    "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
+                },
+            )
         elif self._report_reminder:
             # A reminder, never user prose: this is the harness speaking, not the person the session works for.
-            self._turn_input = _PROMPTS.load("report_reminder_note", {"parent": self._executor._parent})
+            self._turn_input = _PROMPTS.load(
+                "report_reminder_note", {"parent": self._executor._parent}
+            )
         elif self._autonomous:
             # The wake carries no prose, so the framing note is supplied here and delivered as a reminder.
             self._turn_input = _PROMPTS.load("background_resume_note", {})
         elif self._structured_payloads:
             # Give the tools read access to exactly the attached files, which usually live under a denied directory.
             if runtime is not None:
-                runtime.note_attachments([
-                    str(attachment.get("path") or "")
-                    for attachment in _all_attachments(self._structured_payloads)
-                ])
+                runtime.note_attachments(
+                    [
+                        str(attachment.get("path") or "")
+                        for attachment in _all_attachments(self._structured_payloads)
+                    ]
+                )
             # Paths always ride as a text block; images are inlined only where the model advertises vision.
             model_identifier = runtime.effective_model_identifier if runtime is not None else ""
             self._turn_input, images_not_inlined = compose_turn_input(
-                self._user_text, self._structured_payloads, model_identifier,
+                self._user_text,
+                self._structured_payloads,
+                model_identifier,
                 runtime.inline_image_bytes if runtime is not None else 0,
             )
             self._turn_has_images = isinstance(self._turn_input, list)
             if images_not_inlined:
-                await self._emit(_event_part(
-                    _attachment_warning_event(images_not_inlined, model_identifier)
-                ))
+                await self._emit(
+                    _event_part(_attachment_warning_event(images_not_inlined, model_identifier))
+                )
         else:
             self._turn_input = self._user_text
         # Attachments reach the model through `_structured_payloads`, which is where the image blocks are built.
@@ -498,7 +548,9 @@ class _TurnRunner:
         event_source = (
             composed.prepared.runtime.resume_stream(resolved.resume_plans, resolved.resume_answers)
             if resolved.is_resume
-            else composed.prepared.runtime.stream(composed.turn_input, as_system_note=composed.as_system_note)
+            else composed.prepared.runtime.stream(
+                composed.turn_input, as_system_note=composed.as_system_note
+            )
         )
         async for event in event_source:
             if await self._sink.handle(event):
@@ -525,9 +577,15 @@ class _TurnRunner:
         # Log the real exception, but show the user a safe category rather than raw exception text.
         # The one it was handed, not the one in flight, since this is reached by a call rather than by a raise.
         logger.error("agent turn failed", exc_info=exception)
-        await self._updater.failed(self._updater.new_agent_message(
-            [_event_part(ErrorEvent(**_safe_turn_error(exception, had_images=self._turn_has_images)))]
-        ))
+        await self._updater.failed(
+            self._updater.new_agent_message(
+                [
+                    _event_part(
+                        ErrorEvent(**_safe_turn_error(exception, had_images=self._turn_has_images))
+                    )
+                ]
+            )
+        )
 
     async def _teardown(self) -> None:
         task = self._task
@@ -540,12 +598,22 @@ class _TurnRunner:
         if state is not None and (
             self._runtime is not None or task.context_id in self._executor._conversations
         ):
-            messages = self._runtime.conversation if self._runtime is not None else self._executor._conversations.get(task.context_id, [])
+            messages = (
+                self._runtime.conversation
+                if self._runtime is not None
+                else self._executor._conversations.get(task.context_id, [])
+            )
             # Goal and tasks persist atomically beside the checkpoint, so the two can never drift apart.
-            session_state = self._runtime.dirty_session_snapshot() if self._runtime is not None else None
+            session_state = (
+                self._runtime.dirty_session_snapshot() if self._runtime is not None else None
+            )
             checkpoint_messages, inherited_snapshot_id = self._checkpoint_messages(messages)
             await self._executor._turn_store.save_turn_state(
-                task.context_id, task.id, checkpoint_messages, session_state, inherited_snapshot_id,
+                task.context_id,
+                task.id,
+                checkpoint_messages,
+                session_state,
+                inherited_snapshot_id,
             )
             if session_state is not None and self._runtime is not None:
                 self._runtime.clear_session_dirty()

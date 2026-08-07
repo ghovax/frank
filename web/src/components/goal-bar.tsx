@@ -16,8 +16,10 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
   const status = goal.status || "active";
   const tone = status === "blocked" ? "red.fg" : status === "parked" ? "orange.fg" : "fg.muted";
   const statusLabel =
-    status === "blocked" ? translation("blocked")
-      : status === "parked" ? translation("waiting")
+    status === "blocked"
+      ? translation("blocked")
+      : status === "parked"
+        ? translation("waiting")
         : translation("working");
 
   // The requirements are the goal's substance, but taller than the bar, so they live in the hover card.
@@ -30,13 +32,17 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
       <Text mb={goal.requirements?.length || goal.blocker ? 2 : 0}>{text}</Text>
       {!!goal.requirements?.length && (
         <Box>
-          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>{translation("requirements")}</Text>
+          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>
+            {translation("requirements")}
+          </Text>
           <ProseList items={goal.requirements} />
         </Box>
       )}
       {!!goal.blocker && (
         <Box mt={2}>
-          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>{translation("blocker")}</Text>
+          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>
+            {translation("blocker")}
+          </Text>
           <Text>{goal.blocker}</Text>
         </Box>
       )}
@@ -44,12 +50,32 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
   );
 
   return (
-    <Flex align="center" gap={2} mb={2} px={2} py={1.5} borderRadius="md" border="1px solid" borderColor="border" bg="bg.subtle">
-      <Tooltip content={detail} rich openDelay={200} closeDelay={60} positioning={{ placement: "top" }}>
+    <Flex
+      align="center"
+      gap={2}
+      mb={2}
+      px={2}
+      py={1.5}
+      borderRadius="md"
+      border="1px solid"
+      borderColor="border"
+      bg="bg.subtle"
+    >
+      <Tooltip
+        content={detail}
+        rich
+        openDelay={200}
+        closeDelay={60}
+        positioning={{ placement: "top" }}
+      >
         <Flex align="center" gap={2} flex={1} minW={0} color={tone}>
           <LuTarget size={12} />
-          <Text textStyle="fieldLabel" flexShrink={0}>{statusLabel}</Text>
-          <Text fontSize="sm" color="fg.muted" truncate>{text}</Text>
+          <Text textStyle="fieldLabel" flexShrink={0}>
+            {statusLabel}
+          </Text>
+          <Text fontSize="sm" color="fg.muted" truncate>
+            {text}
+          </Text>
         </Flex>
       </Tooltip>
       <Button size="2xs" variant="outline" flexShrink={0} onClick={onClear}>

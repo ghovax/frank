@@ -1,4 +1,5 @@
 """Semantic retrieval over a live surface: ranks elements against a plain-words goal and returns the best matches."""
+
 from __future__ import annotations
 
 import logging
@@ -8,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class RetrievalPolicy:
@@ -55,14 +57,16 @@ def retrieval_policy_from(section: object) -> RetrievalPolicy:
     if section is None:
         return shipped
     return RetrievalPolicy(
-        multilingual_rank_model=str(getattr(section, "multilingual_rank_model",
-                                            shipped.multilingual_rank_model)),
-        english_rank_model=str(getattr(section, "english_rank_model",
-                                       shipped.english_rank_model)),
-        lexical_gate_short_words=int(getattr(section, "lexical_gate_short_words",
-                                             shipped.lexical_gate_short_words)),
-        lexical_gate_long_words=int(getattr(section, "lexical_gate_long_words",
-                                            shipped.lexical_gate_long_words)),
+        multilingual_rank_model=str(
+            getattr(section, "multilingual_rank_model", shipped.multilingual_rank_model)
+        ),
+        english_rank_model=str(getattr(section, "english_rank_model", shipped.english_rank_model)),
+        lexical_gate_short_words=int(
+            getattr(section, "lexical_gate_short_words", shipped.lexical_gate_short_words)
+        ),
+        lexical_gate_long_words=int(
+            getattr(section, "lexical_gate_long_words", shipped.lexical_gate_long_words)
+        ),
     )
 
 
@@ -80,40 +84,90 @@ def lexical_weight(query: str) -> float:
 
 # What each accessibility role is called in the words a person asks for it with.
 _ROLE_IN_WORDS = {
-    "AXButton": "button", "AXTextField": "text field", "AXTextArea": "text area",
-    "AXStaticText": "text label", "AXRadioButton": "tab option", "AXCheckBox": "checkbox",
-    "AXPopUpButton": "dropdown menu", "AXMenuButton": "menu button", "AXMenuItem": "menu item",
-    "AXImage": "image", "AXLink": "link", "AXSlider": "slider", "AXIncrementor": "stepper",
-    "AXRow": "row", "AXCell": "cell", "AXColumn": "column", "AXTabGroup": "tab bar",
-    "AXOutline": "list", "AXTable": "table", "AXList": "list", "AXScrollBar": "scroll bar",
-    "AXGroup": "group", "AXToolbar": "toolbar", "AXWindow": "window", "AXSheet": "dialog",
-    "AXComboBox": "combo box", "AXProgressIndicator": "progress bar", "AXDisclosureTriangle": "disclosure arrow",
-    "combobox": "combo box", "textbox": "text field", "searchbox": "search field",
-    "link": "link", "button": "button", "checkbox": "checkbox", "radio": "radio button",
-    "tab": "tab", "menuitem": "menu item", "heading": "heading", "listitem": "list item",
+    "AXButton": "button",
+    "AXTextField": "text field",
+    "AXTextArea": "text area",
+    "AXStaticText": "text label",
+    "AXRadioButton": "tab option",
+    "AXCheckBox": "checkbox",
+    "AXPopUpButton": "dropdown menu",
+    "AXMenuButton": "menu button",
+    "AXMenuItem": "menu item",
+    "AXImage": "image",
+    "AXLink": "link",
+    "AXSlider": "slider",
+    "AXIncrementor": "stepper",
+    "AXRow": "row",
+    "AXCell": "cell",
+    "AXColumn": "column",
+    "AXTabGroup": "tab bar",
+    "AXOutline": "list",
+    "AXTable": "table",
+    "AXList": "list",
+    "AXScrollBar": "scroll bar",
+    "AXGroup": "group",
+    "AXToolbar": "toolbar",
+    "AXWindow": "window",
+    "AXSheet": "dialog",
+    "AXComboBox": "combo box",
+    "AXProgressIndicator": "progress bar",
+    "AXDisclosureTriangle": "disclosure arrow",
+    "combobox": "combo box",
+    "textbox": "text field",
+    "searchbox": "search field",
+    "link": "link",
+    "button": "button",
+    "checkbox": "checkbox",
+    "radio": "radio button",
+    "tab": "tab",
+    "menuitem": "menu item",
+    "heading": "heading",
+    "listitem": "list item",
 }
 
 
-def element_text(name: str = "", description: str = "", value: Any = None, context: str = "",
-                 role: str = "") -> str:
+def element_text(
+    name: str = "", description: str = "", value: Any = None, context: str = "", role: str = ""
+) -> str:
     """Join an element's words for the text the model reads, which is not what either surface embeds."""
     value_text = value if isinstance(value, str) else ("" if value is None else str(value))
     spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
-    return " ".join(part for part in (spoken, name, description, value_text, context) if part).strip()
+    return " ".join(
+        part for part in (spoken, name, description, value_text, context) if part
+    ).strip()
 
 
 # Path segments that appear on nearly every URL and so tell nothing apart, kept small on purpose.
-_URL_NOISE_WORDS = frozenset({
-    "www", "com", "org", "net", "http", "https", "html", "htm", "php", "aspx",
-    "index", "wiki", "page", "en", "us", "docs",
-})
+_URL_NOISE_WORDS = frozenset(
+    {
+        "www",
+        "com",
+        "org",
+        "net",
+        "http",
+        "https",
+        "html",
+        "htm",
+        "php",
+        "aspx",
+        "index",
+        "wiki",
+        "page",
+        "en",
+        "us",
+        "docs",
+    }
+)
 _URL_SEPARATORS = re.compile(r"[^A-Za-z]+")
 
 
 def url_in_words(url: str, *, keep_last: int = 4) -> str:
     """The readable words of a URL, keeping only the tail because a path narrows left to right."""
-    words = [word for word in _URL_SEPARATORS.split(url or "")
-             if len(word) > 2 and word.lower() not in _URL_NOISE_WORDS]
+    words = [
+        word
+        for word in _URL_SEPARATORS.split(url or "")
+        if len(word) > 2 and word.lower() not in _URL_NOISE_WORDS
+    ]
     return " ".join(words[-keep_last:])
 
 
@@ -145,6 +199,7 @@ def web_element_text(name: str = "", url: str = "", title: str = "", value: str 
 @dataclass
 class Document:
     """One indexed unit: the handle the model acts on, the text we rank against, and the payload returned verbatim."""
+
     id: str
     text: str
     payload: dict[str, Any] = field(default_factory=dict)
@@ -203,14 +258,16 @@ class _BM25:
     def __init__(
         self,
         corpus: list[list[str]],
-        saturation: float = 1.5,        # `k1`: how fast a repeated term stops adding score
-        length_scaling: float = 0.75,   # `b`: how much a document's length discounts its terms
+        saturation: float = 1.5,  # `k1`: how fast a repeated term stops adding score
+        length_scaling: float = 0.75,  # `b`: how much a document's length discounts its terms
     ) -> None:
         self.corpus = corpus
         self.saturation = saturation
         self.length_scaling = length_scaling
         self.count = len(corpus)
-        self.average_length = (sum(len(document) for document in corpus) / self.count) if self.count else 0.0
+        self.average_length = (
+            (sum(len(document) for document in corpus) / self.count) if self.count else 0.0
+        )
         document_frequency: dict[str, int] = {}
         for document in corpus:
             for term in set(document):
@@ -241,10 +298,18 @@ class _BM25:
                 if not frequency:
                     continue
                 idf = self.inverse_frequency.get(term, 0.0)
-                total += idf * (frequency * (self.saturation + 1)) / (
-                    frequency
-                    + self.saturation
-                    * (1 - self.length_scaling + self.length_scaling * length / self.average_length)
+                total += (
+                    idf
+                    * (frequency * (self.saturation + 1))
+                    / (
+                        frequency
+                        + self.saturation
+                        * (
+                            1
+                            - self.length_scaling
+                            + self.length_scaling * length / self.average_length
+                        )
+                    )
                 )
             out[index] = total
         return out
@@ -299,7 +364,7 @@ _WHITESPACE = re.compile(r"\s+")
 def _trigrams_of(text: str) -> list[str]:
     """The character trigrams of a string, padded so its first and last letters count too."""
     folded = _TRIGRAM_PADDING + _WHITESPACE.sub(" ", text.lower().strip()) + _TRIGRAM_PADDING
-    return [folded[position:position + 3] for position in range(len(folded) - 2)]
+    return [folded[position : position + 3] for position in range(len(folded) - 2)]
 
 
 def _standardised(scores: Any) -> Any:
@@ -370,18 +435,25 @@ class Index:
         matrix = self._dense_matrices.get(model_name)
         if matrix is None:
             vectors = np.asarray(
-                model.encode([document.text for document in self.documents],
-                             show_progress_bar=False), dtype=np.float32)
+                model.encode(
+                    [document.text for document in self.documents], show_progress_bar=False
+                ),
+                dtype=np.float32,
+            )
             if model_name == _policy.multilingual_rank_model:
                 self._unreachable = self._unrepresentable_indices(vectors)
                 if self._unreachable:
-                    logger.info("screen index: %d of %d keys encode to nothing and are "
-                                "unsearchable", len(self._unreachable), len(self.documents))
+                    logger.info(
+                        "screen index: %d of %d keys encode to nothing and are unsearchable",
+                        len(self._unreachable),
+                        len(self.documents),
+                    )
             norms = np.linalg.norm(vectors, axis=1, keepdims=True)
             matrix = vectors / np.clip(norms, 1e-9, None)
             self._dense_matrices[model_name] = matrix
-        query_vector = np.asarray(model.encode([query], show_progress_bar=False)[0],
-                                  dtype=np.float32)
+        query_vector = np.asarray(
+            model.encode([query], show_progress_bar=False)[0], dtype=np.float32
+        )
         query_vector = query_vector / max(float(np.linalg.norm(query_vector)), 1e-9)
         return matrix @ query_vector
 
@@ -415,26 +487,38 @@ class Index:
             fused, unreachable = ranking.tolist(), self._unreachable
             # The floor is read off the cosine rather than the ranking score, which is comparable only within one ranking.
             if floor > 0:
-                admitted = {index for index in range(len(self.documents))
-                            if float(cosines[index]) >= floor}
+                admitted = {
+                    index for index in range(len(self.documents)) if float(cosines[index]) >= floor
+                }
                 unreachable = unreachable | (set(range(len(self.documents))) - admitted)
             cutoff = float("-inf")
         else:
             # Without the model BM25 carries retrieval, where the same elements are unreachable for the same reason.
             fused = self._bm25.scores(_tokens(query))
-            unreachable = {index for index, document in enumerate(self.documents)
-                           if not _tokens(document.text)}
+            unreachable = {
+                index for index, document in enumerate(self.documents) if not _tokens(document.text)
+            }
             best = max(fused, default=0.0)
             cutoff = floor * best if floor > 0 and best > 0 else float("-inf")
-        order = [index for index in _ranked_indices(fused)
-                 if index not in unreachable and fused[index] >= cutoff]
+        order = [
+            index
+            for index in _ranked_indices(fused)
+            if index not in unreachable and fused[index] >= cutoff
+        ]
         order = self._one_per_visible_thing(order)[:top_k]
-        return [Hit(id=self.documents[index].id, score=fused[index], payload=self.documents[index].payload) for index in order]
+        return [
+            Hit(
+                id=self.documents[index].id,
+                score=fused[index],
+                payload=self.documents[index].payload,
+            )
+            for index in order
+        ]
 
     def _one_per_visible_thing(self, order: list[int]) -> list[int]:
         """Collapse ranked positions that are the same visible thing published more than once."""
         kept: list[int] = []
-        seen: dict[tuple, int] = {}          # identity -> where its survivor sits in `kept`
+        seen: dict[tuple, int] = {}  # identity -> where its survivor sits in `kept`
         for index in order:
             payload = self.documents[index].payload
             name = str(payload.get("name") or "").strip()
@@ -452,8 +536,9 @@ class Index:
                 kept[position] = index
         return kept
 
-    def anchored(self, query: str, near: str, *, top_k: int, weight: float,
-                 anchor_margin: float) -> list[Hit]:
+    def anchored(
+        self, query: str, near: str, *, top_k: int, weight: float, anchor_margin: float
+    ) -> list[Hit]:
         """Rank against `query` while preferring elements near whatever `near` matches, joined by structure rather than words."""
         if not self.documents:
             return []
@@ -477,8 +562,16 @@ class Index:
             relevance[index] / ceiling + weight * _closeness(document.id, anchor_id)
             for index, document in enumerate(self.documents)
         ]
-        order = [index for index in _ranked_indices(combined)
-                 if index not in self._unreachable and index != best][:top_k]
-        return [Hit(id=self.documents[index].id, score=combined[index],
-                    payload=self.documents[index].payload) for index in order]
-
+        order = [
+            index
+            for index in _ranked_indices(combined)
+            if index not in self._unreachable and index != best
+        ][:top_k]
+        return [
+            Hit(
+                id=self.documents[index].id,
+                score=combined[index],
+                payload=self.documents[index].payload,
+            )
+            for index in order
+        ]

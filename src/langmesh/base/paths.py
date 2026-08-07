@@ -137,7 +137,10 @@ def ssh_control_identifier(host_alias: str) -> str:
 def ssh_control_directory() -> Path:
     """Where control sockets live, in the runtime directory unless it is too deep for even a short name."""
     preferred = runtime_directory() / "ssh"
-    if len(str(preferred).encode()) + 1 + SSH_CONTROL_IDENTIFIER_LENGTH <= SOCKET_PATH_MAXIMUM_BYTES:
+    if (
+        len(str(preferred).encode()) + 1 + SSH_CONTROL_IDENTIFIER_LENGTH
+        <= SOCKET_PATH_MAXIMUM_BYTES
+    ):
         preferred.mkdir(parents=True, exist_ok=True)
         return preferred
     # `/tmp` literally, since on macOS the temporary directory is the long path this is escaping.
@@ -150,9 +153,6 @@ def ssh_control_directory() -> Path:
 def session_socket_identifier(session_id: str) -> str:
     """The short, stable filename stem for a session's socket, since a session id is too long to bind under."""
     return hashlib.sha256(session_id.encode()).hexdigest()[:16]
-
-
-
 
 
 def daemon_token_path() -> Path:

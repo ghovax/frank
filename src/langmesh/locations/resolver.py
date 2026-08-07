@@ -28,7 +28,9 @@ def location_uri_for(address: LocationAddress) -> str:
         host = ssh_hosts.resolve_host(address.host_alias)
         if host is None:
             return location_uri.format_remote(address.host_alias, address.base_directory)
-        return location_uri.format_remote(host.hostname, address.base_directory, user=host.user, port=host.port)
+        return location_uri.format_remote(
+            host.hostname, address.base_directory, user=host.user, port=host.port
+        )
     raise ValueError(f"Unknown location kind: {address.kind!r}")
 
 
@@ -37,7 +39,9 @@ def host_is_defined(alias: str) -> bool:
     return any(host.alias == alias for host in ssh_hosts.list_ssh_hosts())
 
 
-def executor_for(address: LocationAddress, *, control_directory: Path | None = None) -> LocationExecutor:
+def executor_for(
+    address: LocationAddress, *, control_directory: Path | None = None
+) -> LocationExecutor:
     """The executor that runs tools against this location."""
     if address.kind == "local":
         return LocalExecutor()

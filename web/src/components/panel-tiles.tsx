@@ -17,7 +17,9 @@ function columnCounts(count: number): number[] {
   const cols = Math.ceil(count / maxColumnHeight);
   const base = Math.floor(count / cols);
   const extra = count % cols;
-  return Array.from({ length: cols }, (_, index) => base + (index < extra ? 1 : 0)).filter((columnCount) => columnCount > 0);
+  return Array.from({ length: cols }, (_, index) => base + (index < extra ? 1 : 0)).filter(
+    (columnCount) => columnCount > 0,
+  );
 }
 
 const RESIZE_THICKNESS = 8; // px hit area for a handle (its visible line is 1px, centered)
@@ -39,7 +41,9 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
   const containerRef = useRef<HTMLDivElement>(null);
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [colFlex, setColFlex] = useState<number[]>(() => columns.map(() => 1));
-  const [rowFlex, setRowFlex] = useState<number[][]>(() => columns.map((column) => column.map(() => 1)));
+  const [rowFlex, setRowFlex] = useState<number[][]>(() =>
+    columns.map((column) => column.map(() => 1)),
+  );
 
   // Reset in render rather than in an effect, so panel contents are not remounted and terminal state survives.
   const [layoutSignature, setLayoutSignature] = useState(signature);
@@ -52,8 +56,12 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
   // Mirror the weights into refs, so a resize starting later reads current values.
   const colFlexRef = useRef(colFlex);
   const rowFlexRef = useRef(rowFlex);
-  useEffect(() => { colFlexRef.current = colFlex; }, [colFlex]);
-  useEffect(() => { rowFlexRef.current = rowFlex; }, [rowFlex]);
+  useEffect(() => {
+    colFlexRef.current = colFlex;
+  }, [colFlex]);
+  useEffect(() => {
+    rowFlexRef.current = rowFlex;
+  }, [rowFlex]);
 
   // Repartition weight between two adjacent siblings as the pointer drags.
   const startResize = useCallback(
@@ -79,7 +87,7 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
 
       const onMove = (moveEvent: globalThis.PointerEvent) => {
         const position = axis === "x" ? moveEvent.clientX : moveEvent.clientY;
-        const deltaFraction = ((position - start) / total) * (base.reduce((a, b) => a + b, 0));
+        const deltaFraction = ((position - start) / total) * base.reduce((a, b) => a + b, 0);
         // Keep each side at least 12% of the pair so a panel never collapses to nothing.
         const minWeight = sum * 0.12;
         let firstWeight = base[first] + deltaFraction;
@@ -142,7 +150,12 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
                   h={`${RESIZE_THICKNESS}px`}
                   cursor="row-resize"
                   zIndex={2}
-                  css={{ touchAction: "none", "&:hover > div, &[data-dragging] > div": { background: "var(--chakra-colors-border-emphasized)" } }}
+                  css={{
+                    touchAction: "none",
+                    "&:hover > div, &[data-dragging] > div": {
+                      background: "var(--chakra-colors-border-emphasized)",
+                    },
+                  }}
                   onPointerDown={(event) =>
                     startResize(
                       event,
@@ -150,14 +163,24 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
                       columnRefs.current[colIndex],
                       () => rowFlexRef.current[colIndex] ?? [],
                       (nextColumn) => {
-                        const next = rowFlexRef.current.map((entry, index) => (index === colIndex ? nextColumn : entry));
+                        const next = rowFlexRef.current.map((entry, index) =>
+                          index === colIndex ? nextColumn : entry,
+                        );
                         setRowFlex(next);
                       },
                       rowIndex,
                     )
                   }
                 >
-                  <Box position="absolute" left={0} right={0} top="50%" h="1px" transform="translateY(-50%)" background="transparent" />
+                  <Box
+                    position="absolute"
+                    left={0}
+                    right={0}
+                    top="50%"
+                    h="1px"
+                    transform="translateY(-50%)"
+                    background="transparent"
+                  />
                 </Box>
               )}
             </Box>
@@ -174,12 +197,32 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
               w={`${RESIZE_THICKNESS}px`}
               cursor="col-resize"
               zIndex={2}
-              css={{ touchAction: "none", "&:hover > div, &[data-dragging] > div": { background: "var(--chakra-colors-border-emphasized)" } }}
+              css={{
+                touchAction: "none",
+                "&:hover > div, &[data-dragging] > div": {
+                  background: "var(--chakra-colors-border-emphasized)",
+                },
+              }}
               onPointerDown={(event) =>
-                startResize(event, "x", containerRef.current, () => colFlexRef.current, setColFlex, colIndex)
+                startResize(
+                  event,
+                  "x",
+                  containerRef.current,
+                  () => colFlexRef.current,
+                  setColFlex,
+                  colIndex,
+                )
               }
             >
-              <Box position="absolute" top={0} bottom={0} left="50%" w="1px" transform="translateX(-50%)" background="transparent" />
+              <Box
+                position="absolute"
+                top={0}
+                bottom={0}
+                left="50%"
+                w="1px"
+                transform="translateX(-50%)"
+                background="transparent"
+              />
             </Box>
           )}
         </Flex>

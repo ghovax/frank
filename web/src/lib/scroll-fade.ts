@@ -66,7 +66,11 @@ export function useScrollEdgeFade() {
     };
   }, [measure]);
   const fade = hiddenAbove
-    ? (hiddenBelow ? scrollFadeTopBottom : scrollFade)
-    : (hiddenBelow ? scrollFadeBottom : undefined);
+    ? hiddenBelow
+      ? scrollFadeTopBottom
+      : scrollFade
+    : hiddenBelow
+      ? scrollFadeBottom
+      : undefined;
   return { containerRef, onScroll: measure, fade, hiddenAbove, hiddenBelow };
 }

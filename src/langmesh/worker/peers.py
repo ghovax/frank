@@ -58,7 +58,11 @@ class PeerSessions:
     # The SessionAccess surface the runtime's tools call.
 
     async def create(
-        self, *, agent: str, working_directory: str, inherited_conversation: list[dict[str, Any]],
+        self,
+        *,
+        agent: str,
+        working_directory: str,
+        inherited_conversation: list[dict[str, Any]],
     ) -> dict:
         """Make a peer that inherits this session's conversation through a shared snapshot. It is not named here: a session is named after the first thing it is asked to do."""
         result = await self._call(

@@ -41,7 +41,13 @@ from langmesh.base.ports import (
     TurnSummary,
     describe_unmet,
 )
-from langmesh.base.schedules import ScheduleError, is_due, next_firing, validate as validate_schedule
+from langmesh.base.schedules import (
+    ScheduleError,
+    is_due,
+    next_firing,
+    validate as validate_schedule,
+)
+
 # The vocabulary `stream()` speaks, exported because a caller driving a turn has to dispatch on it.
 from langmesh.runtime.turn_events import (
     Checkpoint,
@@ -369,19 +375,25 @@ class Session:
         runtime = self.runtime
         runtime.note_attachments([record["path"] for record in records])
         turn_input, images_not_inlined = compose_turn_input(
-            message, [attachment_payload(records)], runtime.effective_model_identifier,
+            message,
+            [attachment_payload(records)],
+            runtime.effective_model_identifier,
         )
         if images_not_inlined:
             # A library caller may have no client to raise a warning event to, so this goes to the log it does have.
             logger.warning(
                 "%d attached image(s) were not inlined: %s does not advertise vision support. "
                 "The model has the file paths and can open them with its tools.",
-                images_not_inlined, runtime.effective_model_identifier or "the session model",
+                images_not_inlined,
+                runtime.effective_model_identifier or "the session model",
             )
         return turn_input
 
     async def stream(
-        self, message: str, *, attachments: Sequence[str | Path] = (),
+        self,
+        message: str,
+        *,
+        attachments: Sequence[str | Path] = (),
     ) -> AsyncIterator[TurnEventUnion]:
         """Drive a turn, yielding each event, and keep driving turns while a goal the agent set is still open."""
         if not self._restored:
@@ -410,18 +422,23 @@ class Session:
                 self.runtime.park_goal()
                 return
             self.runtime.note_goal_continuation()
-            async for event in self.runtime.stream(self._goal_continuation_note(goal), as_system_note=True):
+            async for event in self.runtime.stream(
+                self._goal_continuation_note(goal), as_system_note=True
+            ):
                 yield event
 
     def _goal_continuation_note(self, goal) -> str:
         """The goal, restated as the next turn's opening message."""
         from langmesh.base.tuning import Tunable, active_tuning
 
-        return self.runtime._prompt_loader.load("goal_continuation", {
-            "goal": goal.text,
-            "requirements": "\n".join(f"- {requirement}" for requirement in goal.requirements),
-            "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
-        })
+        return self.runtime._prompt_loader.load(
+            "goal_continuation",
+            {
+                "goal": goal.text,
+                "requirements": "\n".join(f"- {requirement}" for requirement in goal.requirements),
+                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
+            },
+        )
 
     async def ask(self, message: str, *, attachments: Sequence[str | Path] = ()) -> str:
         """Drive a turn, or a goal to its end, and answer with the agent's prose."""

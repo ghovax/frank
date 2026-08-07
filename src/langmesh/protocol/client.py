@@ -21,6 +21,7 @@ from langmesh.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
+
 def _available_transports() -> list[TransportProtocol]:
     """Transports the client will negotiate, in preference order, with gRPC only when its dependency is installed."""
     transports = [TransportProtocol.jsonrpc, TransportProtocol.http_json]
@@ -94,7 +95,9 @@ class _OAuth2ClientCredentials(httpx.Auth):
             if self._auth.scopes:
                 data["scope"] = " ".join(self._auth.scopes)
             # No redirects on the token endpoint, since one could replay the credentials to a host the configuration never named.
-            async with httpx.AsyncClient(timeout=active_tuning().duration(Tunable.card_resolve), follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                timeout=active_tuning().duration(Tunable.card_resolve), follow_redirects=False
+            ) as client:
                 response = await client.post(
                     self._auth.token_url,
                     data=data,
@@ -116,7 +119,10 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
     host = _host_of(url)
     if not host:
         raise RemoteAgentTrustError(f"Remote agent {configuration.name!r}: malformed URL {url!r}.")
-    allowed = {_host_of(configuration.card_url), *(host.lower() for host in configuration.allowed_hosts)}
+    allowed = {
+        _host_of(configuration.card_url),
+        *(host.lower() for host in configuration.allowed_hosts),
+    }
     if host not in allowed:
         raise RemoteAgentTrustError(
             f"Remote agent {configuration.name!r}: card URL host {host!r} is not the registered "
@@ -133,7 +139,7 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
 
 def _card_urls(card: AgentCard) -> list[str]:
     urls = [card.url]
-    for interface in (card.additional_interfaces or []):
+    for interface in card.additional_interfaces or []:
         urls.append(interface.url)
     return [url for url in urls if url]
 
@@ -156,7 +162,11 @@ class _RemoteAgent:
             auth_flow: Optional[httpx.Auth] = None
             auth = self.configuration.auth
             if auth.kind in {"bearer", "api_key"} and auth.token:
-                value = f"{auth.scheme_prefix} {auth.token}".strip() if auth.kind == "bearer" else auth.token
+                value = (
+                    f"{auth.scheme_prefix} {auth.token}".strip()
+                    if auth.kind == "bearer"
+                    else auth.token
+                )
                 headers[auth.header] = value
             elif auth.kind == "oauth2":
                 auth_flow = _OAuth2ClientCredentials(auth)
@@ -182,7 +192,9 @@ class _RemoteAgent:
         try:
             _assert_url_trusted(base, self.configuration)
             resolver = A2ACardResolver(self._httpx_client(), origin, agent_card_path=path)
-            card = await asyncio.wait_for(resolver.get_agent_card(), timeout=active_tuning().duration(Tunable.card_resolve))
+            card = await asyncio.wait_for(
+                resolver.get_agent_card(), timeout=active_tuning().duration(Tunable.card_resolve)
+            )
             for url in _card_urls(card):
                 _assert_url_trusted(url, self.configuration)
         except RemoteAgentTrustError as exception:
@@ -220,7 +232,11 @@ class _RemoteAgent:
                 except RemoteAgentTrustError as exception:
                     # A trust violation on the extended card is a real signal, so it is surfaced rather than silently ignored.
                     self.health, self.error = "untrusted", str(exception)
-                    logger.warning("remote agent %r extended card untrusted", self.configuration.name, exc_info=True)
+                    logger.warning(
+                        "remote agent %r extended card untrusted",
+                        self.configuration.name,
+                        exc_info=True,
+                    )
                 except Exception:  # noqa: BLE001 — a non-trust extended-card fetch failure is optional
                     pass
         return self._client
@@ -275,7 +291,9 @@ class RemoteAgentManager:
 
     async def start(self) -> None:
         """Resolve every agent's card once, isolating failures so one bad agent never blocks the others."""
-        await asyncio.gather(*(agent.resolve_card() for agent in self._agents.values()), return_exceptions=True)
+        await asyncio.gather(
+            *(agent.resolve_card() for agent in self._agents.values()), return_exceptions=True
+        )
 
     async def refresh(self, name: str) -> Optional[AgentCard]:
         agent = self._agents.get(name)
@@ -283,7 +301,10 @@ class RemoteAgentManager:
 
     async def refresh_all(self) -> None:
         """Force a fresh card resolution for every agent, updating health even while idle."""
-        await asyncio.gather(*(agent.resolve_card(force=True) for agent in self._agents.values()), return_exceptions=True)
+        await asyncio.gather(
+            *(agent.resolve_card(force=True) for agent in self._agents.values()),
+            return_exceptions=True,
+        )
 
     def has_agents(self) -> bool:
         return bool(self._agents)
@@ -299,16 +320,22 @@ class RemoteAgentManager:
                 self._agents[name] = _RemoteAgent(configuration)
         await self.start()
 
-    async def message_session(self, name: str, message: Message) -> AsyncIterator[ClientEvent | Message]:
+    async def message_session(
+        self, name: str, message: Message
+    ) -> AsyncIterator[ClientEvent | Message]:
         """Stream a message to a remote agent, yielding the client's updates."""
         agent = self._agents.get(name)
         if agent is None:
             raise LookupError(f"No remote agent named {name!r}.")
         client = await agent.client()
         if client is None:
-            raise RuntimeError(f"Remote agent {name!r} is not reachable ({agent.health}: {agent.error}).")
+            raise RuntimeError(
+                f"Remote agent {name!r} is not reachable ({agent.health}: {agent.error})."
+            )
         async for event in client.message_session(message):
             yield event
 
     async def aclose(self) -> None:
-        await asyncio.gather(*(agent.aclose() for agent in self._agents.values()), return_exceptions=True)
+        await asyncio.gather(
+            *(agent.aclose() for agent in self._agents.values()), return_exceptions=True
+        )

@@ -69,7 +69,9 @@ export function MermaidDiagram({ code, fallback }: { code: string; fallback: Rea
       maxW="100%"
       overflowX="auto"
       // The diagram scales down to the column but never past its natural size, and centres.
-      css={{ "& svg": { maxWidth: "100%", height: "auto", display: "block", marginInline: "auto" } }}
+      css={{
+        "& svg": { maxWidth: "100%", height: "auto", display: "block", marginInline: "auto" },
+      }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

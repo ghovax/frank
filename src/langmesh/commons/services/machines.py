@@ -29,7 +29,7 @@ def read_pairing_link(link: str) -> dict[str, str]:
     """Turn a pairing link into the machine it describes, from its padding-stripped base64url payload."""
     fragment = link.strip()
     if fragment.startswith(PAIRING_PREFIX):
-        fragment = fragment[len(PAIRING_PREFIX):]
+        fragment = fragment[len(PAIRING_PREFIX) :]
     elif "#" in fragment:
         fragment = fragment.split("#", 1)[1]
     if not fragment:

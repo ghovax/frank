@@ -2,7 +2,16 @@
 
 // Shared building blocks for the floating side panels, which are all the same card.
 
-import { Box, EmptyState, Flex, IconButton, Text, VStack, type BoxProps, type FlexProps } from "@chakra-ui/react";
+import {
+  Box,
+  EmptyState,
+  Flex,
+  IconButton,
+  Text,
+  VStack,
+  type BoxProps,
+  type FlexProps,
+} from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { LuX } from "react-icons/lu";
 import { FADE_BOTTOM, FADE_TOP, fadeOverlay, useScrollEdgeFade } from "@/lib/scroll-fade";
@@ -72,7 +81,17 @@ export function PanelBody({ children, ...rest }: BoxProps) {
   const { containerRef, onScroll, hiddenAbove, hiddenBelow } = useScrollEdgeFade();
   return (
     <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
-      <Box ref={containerRef} onScroll={onScroll} flex={1} minH={0} overflowY="auto" px={2} pb={2} pt={0} {...rest}>
+      <Box
+        ref={containerRef}
+        onScroll={onScroll}
+        flex={1}
+        minH={0}
+        overflowY="auto"
+        px={2}
+        pb={2}
+        pt={0}
+        {...rest}
+      >
         {children}
       </Box>
       {hiddenAbove ? <Box css={fadeOverlay("top", FADE_TOP)} /> : null}
@@ -92,7 +111,16 @@ export function PanelEmptyState({
   description?: ReactNode;
 }) {
   return (
-    <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
+    <Flex
+      direction="column"
+      align="center"
+      justify="center"
+      minH="100%"
+      gap={6}
+      px={2}
+      pt={4}
+      pb={12}
+    >
       <EmptyState.Root size="sm">
         <EmptyState.Content>
           <EmptyState.Indicator>{icon}</EmptyState.Indicator>

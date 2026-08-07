@@ -63,7 +63,9 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
             }
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.get(
-                    MODELS_URL, params={"client_version": CLIENT_VERSION}, headers=headers,
+                    MODELS_URL,
+                    params={"client_version": CLIENT_VERSION},
+                    headers=headers,
                 )
                 response.raise_for_status()
                 for entry in response.json().get("models", []):
@@ -127,13 +129,15 @@ def capture_usage_headers(headers: httpx.Headers) -> None:
         if resets_at is None:
             after = _header_int(headers.get(f"x-codex-{key}-reset-after-seconds"))
             resets_at = now + after if after is not None else None
-        windows.append({
-            # The label is derived and localised on the client, so this layer stays free of presentation.
-            "key": key,
-            "used_percent": _header_float(headers.get(f"x-codex-{key}-used-percent")) or 0.0,
-            "window_minutes": window_minutes,
-            "resets_at": resets_at,
-        })
+        windows.append(
+            {
+                # The label is derived and localised on the client, so this layer stays free of presentation.
+                "key": key,
+                "used_percent": _header_float(headers.get(f"x-codex-{key}-used-percent")) or 0.0,
+                "window_minutes": window_minutes,
+                "resets_at": resets_at,
+            }
+        )
     _usage_snapshot = {
         "plan_type": headers.get("x-codex-plan-type", ""),
         "active_limit": headers.get("x-codex-active-limit", ""),

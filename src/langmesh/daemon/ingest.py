@@ -53,7 +53,8 @@ async def _turn_save_state(params: dict) -> dict:
 
 async def _turn_save_session_state(params: dict) -> dict:
     await state.turn_store.save_session_state(
-        str(params.get("session_id") or ""), params.get("session_state") or {},
+        str(params.get("session_id") or ""),
+        params.get("session_state") or {},
     )
     return {"saved": True}
 
@@ -216,7 +217,9 @@ async def _session_append_ledger(params: dict) -> dict:
         return {"appended": 0}
     entries = params.get("entries") or []
     appended = await state.turn_store.append_ledger(
-        str(params.get("session_id") or ""), str(params.get("ledger") or "observations"), list(entries),
+        str(params.get("session_id") or ""),
+        str(params.get("ledger") or "observations"),
+        list(entries),
     )
     return {"appended": appended}
 

@@ -216,8 +216,11 @@ class ChatCursorModel(BaseChatModel):
     @staticmethod
     def _system_prompt(messages: Sequence[BaseMessage]) -> str:
         return "\n\n".join(
-            text for text in (message_text(message) for message in messages
-                              if isinstance(message, SystemMessage)) if text
+            text
+            for text in (
+                message_text(message) for message in messages if isinstance(message, SystemMessage)
+            )
+            if text
         )
 
     def _render(self, messages: Sequence[BaseMessage]) -> str:
@@ -240,7 +243,11 @@ class ChatCursorModel(BaseChatModel):
                     blocks.append(f"## Assistant tool call: {call.get('name')}\n{rendered}")
                 continue
             blocks.append(f"## User\n{message_text(message)}")
-        return self._preamble(any(isinstance(m, ToolMessage) for m in conversation)) + "\n\n" + "\n\n".join(blocks)
+        return (
+            self._preamble(any(isinstance(m, ToolMessage) for m in conversation))
+            + "\n\n"
+            + "\n\n".join(blocks)
+        )
 
     @staticmethod
     def _preamble(carries_tool_results: bool) -> str:
@@ -270,7 +277,7 @@ class ChatCursorModel(BaseChatModel):
         entry = _resumptions.get(self._conversation_key(messages))
         if entry is None or entry.prefix_length >= len(messages):
             return None
-        if _digest_messages(messages[:entry.prefix_length]) != entry.prefix_digest:
+        if _digest_messages(messages[: entry.prefix_length]) != entry.prefix_digest:
             return None  # history was rewritten under us; the checkpoint describes something else
         return entry
 
@@ -307,7 +314,7 @@ class ChatCursorModel(BaseChatModel):
 
         if resumption is not None:
             state = wire.resumed_conversation_state(resumption.checkpoint)
-            body = self._render(messages[resumption.prefix_length:])
+            body = self._render(messages[resumption.prefix_length :])
             conversation_id = resumption.conversation_id
         else:
             state = wire.conversation_state(root_prompt_ids)
@@ -331,7 +338,9 @@ class ChatCursorModel(BaseChatModel):
         action = wire.blob(
             1,  # ConversationAction.user_message_action
             wire.blob(1, message_body)
-            + wire.blob(2, wire.request_context(self._environment(), tool_definitions, tool_instructions)),
+            + wire.blob(
+                2, wire.request_context(self._environment(), tool_definitions, tool_instructions)
+            ),
         )
         run_request = wire.agent_run_request(
             state=state,
@@ -341,7 +350,9 @@ class ChatCursorModel(BaseChatModel):
             tools=tool_definitions,
             conversation_id=conversation_id,
             file_system_options=(
-                wire.mcp_file_system_options(workspace, tool_instructions) if tool_definitions else b""
+                wire.mcp_file_system_options(workspace, tool_instructions)
+                if tool_definitions
+                else b""
             ),
         )
         return wire.client_message_run(run_request), blobs, conversation_id
@@ -368,7 +379,9 @@ class ChatCursorModel(BaseChatModel):
                 "Cursor rejected the subscription token (expired, revoked, or the plan "
                 f"lacks access). Sign in again. Detail: {upstream_detail(detail)}"
             )
-        return _HostUnavailable(f"Cursor agent service returned {status}: {upstream_detail(detail)}")
+        return _HostUnavailable(
+            f"Cursor agent service returned {status}: {upstream_detail(detail)}"
+        )
 
     @staticmethod
     def _stream_error(status: int, message: str) -> Exception:
@@ -376,7 +389,9 @@ class ChatCursorModel(BaseChatModel):
             return RuntimeError("Cursor reports this subscription's usage limit is reached.")
         if status == STATUS_UNAUTHENTICATED:
             return CursorAuthError("Cursor rejected the subscription token. Sign in again.")
-        return RuntimeError(f"Cursor agent stream failed (grpc-status {status}): {message or 'no detail'}")
+        return RuntimeError(
+            f"Cursor agent stream failed (grpc-status {status}): {message or 'no detail'}"
+        )
 
     # Streaming generation (the path the harness actually uses).
 
@@ -398,7 +413,13 @@ class ChatCursorModel(BaseChatModel):
             try:
                 produced = False
                 async for chunk in self._run_once(
-                    host, tokens, turn, blobs, conversation_id, messages, tool_names,
+                    host,
+                    tokens,
+                    turn,
+                    blobs,
+                    conversation_id,
+                    messages,
+                    tool_names,
                 ):
                     produced = True
                     yield chunk
@@ -427,7 +448,10 @@ class ChatCursorModel(BaseChatModel):
 
         async with httpx.AsyncClient(timeout=self.timeout, http2=False) as client:
             request = client.build_request(
-                "POST", run_url, content=wire.frame(wire.bidi_request_id(request_id)), headers=headers,
+                "POST",
+                run_url,
+                content=wire.frame(wire.bidi_request_id(request_id)),
+                headers=headers,
             )
             # The open is started, the turn pushed, and only then are headers awaited, since the server has nothing to send first.
             opening = asyncio.create_task(client.send(request, stream=True))
@@ -446,7 +470,12 @@ class ChatCursorModel(BaseChatModel):
                     detail = (await response.aread()).decode("utf-8", "replace")
                     raise self._auth_error(response.status_code, detail)
                 async for chunk in self._read(
-                    channel, response, blobs, conversation_id, messages, tool_names,
+                    channel,
+                    response,
+                    blobs,
+                    conversation_id,
+                    messages,
+                    tool_names,
                 ):
                     yield chunk
             finally:
@@ -497,7 +526,9 @@ class ChatCursorModel(BaseChatModel):
                 if message.text_delta:
                     yield _chunk(content_block=_text_block(message.text_delta, run_identifier))
                 if message.thinking_delta:
-                    yield _chunk(content_block=_reasoning_block(message.thinking_delta, run_identifier))
+                    yield _chunk(
+                        content_block=_reasoning_block(message.thinking_delta, run_identifier)
+                    )
                 if message.blob_request is not None:
                     await self._answer_blob(channel, message.blob_request, blobs)
                 if (request := message.exec_request) is not None:
@@ -545,8 +576,11 @@ class ChatCursorModel(BaseChatModel):
         arguments = build(request.arguments)
         if arguments is None:
             return None
-        return wire.ToolCall(call_id=f"cursor-{request.exec_id_number}", tool_name=name,
-                             arguments={**arguments, "explanation": _BUILTIN_JUSTIFICATION})
+        return wire.ToolCall(
+            call_id=f"cursor-{request.exec_id_number}",
+            tool_name=name,
+            arguments={**arguments, "explanation": _BUILTIN_JUSTIFICATION},
+        )
 
     @staticmethod
     async def _answer_blob(
@@ -574,9 +608,14 @@ class ChatCursorModel(BaseChatModel):
             result = wire.blob(1, wire.blob(1, wire.request_context(self._environment(), [], "")))
         else:
             return  # an exec kind with no reply this can shape; let it lapse
-        await channel.push(wire.client_message_exec_result(
-            request.exec_id_number, request.exec_id, result_field, result,
-        ))
+        await channel.push(
+            wire.client_message_exec_result(
+                request.exec_id_number,
+                request.exec_id,
+                result_field,
+                result,
+            )
+        )
         await channel.push(wire.client_message_stream_close(request.exec_id_number))
 
     # Aggregation.
@@ -618,7 +657,9 @@ class ChatCursorModel(BaseChatModel):
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs))
+            return asyncio.run(
+                self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            )
         raise RuntimeError(
             "ChatCursorModel has no synchronous path inside a running event loop — "
             "await ainvoke/astream instead."
@@ -627,15 +668,18 @@ class ChatCursorModel(BaseChatModel):
 
 # Chunk construction shared by the stream and its aggregation, mirroring the Codex client's helpers.
 
+
 def _chunk(
     content_block: ContentBlock | None = None,
     tool_call_chunk: Optional[ToolCallChunk] = None,
 ) -> ChatGenerationChunk:
     blocks = [content_block] if content_block is not None else []
-    return ChatGenerationChunk(message=AIMessageChunk(
-        content=content_blocks_to_message_content(blocks),
-        tool_call_chunks=[tool_call_chunk] if tool_call_chunk else [],
-    ))
+    return ChatGenerationChunk(
+        message=AIMessageChunk(
+            content=content_blocks_to_message_content(blocks),
+            tool_call_chunks=[tool_call_chunk] if tool_call_chunk else [],
+        )
+    )
 
 
 def _text_block(body: str, run_identifier: str) -> TextContentBlock:
@@ -645,30 +689,38 @@ def _text_block(body: str, run_identifier: str) -> TextContentBlock:
 
 def _reasoning_block(body: str, run_identifier: str) -> ReasoningContentBlock:
     return ReasoningContentBlock(
-        type="reasoning", reasoning=body, id=f"{run_identifier}-reasoning", index=1,
+        type="reasoning",
+        reasoning=body,
+        id=f"{run_identifier}-reasoning",
+        index=1,
     )
 
 
 def _tool_call_chunk(call: wire.ToolCall) -> ChatGenerationChunk:
     """A tool call, whole, because Cursor delivers arguments complete rather than as a stream of text."""
-    return _chunk(tool_call_chunk={
-        "index": 0,
-        "id": call.call_id or str(uuid.uuid4()),
-        "name": call.tool_name,
-        "args": compact(call.arguments),
-        "type": "tool_call_chunk",
-    })
+    return _chunk(
+        tool_call_chunk={
+            "index": 0,
+            "id": call.call_id or str(uuid.uuid4()),
+            "name": call.tool_name,
+            "args": compact(call.arguments),
+            "type": "tool_call_chunk",
+        }
+    )
 
 
 def _final_chunk(finish_reason: str, input_tokens: int, output_tokens: int) -> ChatGenerationChunk:
     """The turn's last chunk: why it ended and what it cost, both from the server and neither estimated."""
     usage: Optional[UsageMetadata] = None
     if input_tokens or output_tokens:
-        usage = cast(UsageMetadata, {
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        })
+        usage = cast(
+            UsageMetadata,
+            {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+        )
     return ChatGenerationChunk(
         message=AIMessageChunk(content="", usage_metadata=usage),
         generation_info={"finish_reason": finish_reason},
@@ -701,7 +753,9 @@ def _digest_messages(messages: Sequence[BaseMessage]) -> str:
         for call in getattr(message, "tool_calls", None) or []:
             arguments = call.get("args")
             hasher.update(str(call.get("name")).encode())
-            hasher.update((arguments if isinstance(arguments, str) else compact(arguments)).encode())
+            hasher.update(
+                (arguments if isinstance(arguments, str) else compact(arguments)).encode()
+            )
         hasher.update(b"\x1e")
     return hasher.hexdigest()
 

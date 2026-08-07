@@ -29,6 +29,7 @@ from langmesh.commons.services.settings import (
 
 logger = logging.getLogger(__name__)
 
+
 async def open_shared_resources() -> None:
     """Build what the daemon holds for everyone, in dependency order."""
     from langmesh.commons.brokers.composio import composio_mcp_servers
@@ -60,7 +61,9 @@ async def open_shared_resources() -> None:
     await asyncio.to_thread(_ensure_default_project)
 
     # Toolboxes outlive a daemon that was killed, so ones belonging to gone sessions are swept.
-    live_sessions = [record.id for record in state.registry.live()] if state.registry is not None else []
+    live_sessions = (
+        [record.id for record in state.registry.live()] if state.registry is not None else []
+    )
     swept = await asyncio.to_thread(toolbox.sweep, live_sessions)
     if swept:
         logger.info("swept %d toolbox(es) belonging to sessions that are gone", len(swept))
@@ -83,7 +86,9 @@ async def open_shared_resources() -> None:
         allowed_root=signing_root / "uploads",
     )
 
-    commons_state.push_configuration_store = PersistentPushNotificationConfigurationStore(commons_state.async_engine)
+    commons_state.push_configuration_store = PersistentPushNotificationConfigurationStore(
+        commons_state.async_engine
+    )
     await commons_state.push_configuration_store.initialize()
     import httpx
 
@@ -116,7 +121,11 @@ async def open_shared_resources() -> None:
 
 async def close_shared_resources() -> None:
     """Release everything the opener built, ordered and individually guarded."""
-    for task in [*getattr(state, "_watchers", []), state.__dict__.get("_mcp_start_task"), state.__dict__.get("_remote_start_task")]:
+    for task in [
+        *getattr(state, "_watchers", []),
+        state.__dict__.get("_mcp_start_task"),
+        state.__dict__.get("_remote_start_task"),
+    ]:
         if task is not None and not task.done():
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

@@ -1,4 +1,5 @@
 """The runtime's compaction concern: when to fold a conversation, and the observation log it folds into."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,12 @@ from itertools import accumulate, takewhile
 
 from langmesh.base.message_content import forget_carried_reasoning, message_text
 from langmesh.base.tuning import Tunable, active_tuning, count_tokens
-from langmesh.runtime.internals import DirectiveBatch, ObservationBatch, conversation_tokens, message_tokens
+from langmesh.runtime.internals import (
+    DirectiveBatch,
+    ObservationBatch,
+    conversation_tokens,
+    message_tokens,
+)
 from langmesh.runtime.turn_events import CompactionDone, CompactionStarted, TurnEvent
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
@@ -39,15 +45,32 @@ class _CompactsContext:
             try:
                 response = await model.ainvoke(request)
             except Exception:  # noqa: BLE001 — one dropped call is not the end of the fold
-                logger.warning("the %s pass could not be reached (attempt %d of %d)", what, attempt, attempts, exc_info=True)
+                logger.warning(
+                    "the %s pass could not be reached (attempt %d of %d)",
+                    what,
+                    attempt,
+                    attempts,
+                    exc_info=True,
+                )
                 continue
             if response is None or not response.tool_calls:
-                logger.warning("the %s pass answered without recording anything (attempt %d of %d)", what, attempt, attempts)
+                logger.warning(
+                    "the %s pass answered without recording anything (attempt %d of %d)",
+                    what,
+                    attempt,
+                    attempts,
+                )
                 continue
             try:
                 return schema.model_validate(response.tool_calls[0]["args"])
             except ValidationError:
-                logger.warning("the %s pass did not fit its schema (attempt %d of %d)", what, attempt, attempts, exc_info=True)
+                logger.warning(
+                    "the %s pass did not fit its schema (attempt %d of %d)",
+                    what,
+                    attempt,
+                    attempts,
+                    exc_info=True,
+                )
                 continue
         return None
 
@@ -70,11 +93,16 @@ class _CompactsContext:
     @staticmethod
     def _claims(entries: list[dict]) -> list[dict]:
         """The record as a later pass is shown it: enough to judge an entry, date it and name it, not its whole text."""
-        fields = ("kind", "summary") if entries and "summary" in entries[0] else ("category", "claim")
+        fields = (
+            ("kind", "summary") if entries and "summary" in entries[0] else ("category", "claim")
+        )
         # When it was learned, because deciding what a new finding replaces depends on which came first.
         return [
-            {"id": entry.get("id"), "learned": entry.get("written_at", ""),
-             **{name: entry.get(name) for name in fields}}
+            {
+                "id": entry.get("id"),
+                "learned": entry.get("written_at", ""),
+                **{name: entry.get(name) for name in fields},
+            }
             for entry in entries
         ]
 
@@ -91,10 +119,21 @@ class _CompactsContext:
     def _build_observation_message(self, observations: list[dict], directives: list[dict]):
         """The record the agent reads: both ledgers, rendered as the turns they describe leave the conversation."""
         return self._reminder_message(
-            self._prompt_loader.load("observation_log", {
-                "observations": lines(self._readable(self._live(observations))),
-                "directives": lines(self._readable([one for one in self._live(directives) if one.get("still_binding", True)])),
-            }),
+            self._prompt_loader.load(
+                "observation_log",
+                {
+                    "observations": lines(self._readable(self._live(observations))),
+                    "directives": lines(
+                        self._readable(
+                            [
+                                one
+                                for one in self._live(directives)
+                                if one.get("still_binding", True)
+                            ]
+                        )
+                    ),
+                },
+            ),
             marks={"observation_log": True, "observations": observations, "directives": directives},
         )
 
@@ -103,7 +142,9 @@ class _CompactsContext:
         window = self._context_window
         if window <= 0:
             return 0
-        return max(0, window - int(window * self._global_configuration.compaction.output_reserve_fraction))
+        return max(
+            0, window - int(window * self._global_configuration.compaction.output_reserve_fraction)
+        )
 
     def _recent_working_set(self, reason: str = "automatic") -> int:
         """The tail kept verbatim rather than folded, as a share of the usable window so it scales with the model."""
@@ -140,8 +181,11 @@ class _CompactsContext:
         fitting = sum(1 for _ in takewhile(lambda total: total <= budget, running))
         # A tool result without the call it answers is not a conversation, so the tail never begins on one.
         keep_from = next(
-            (index for index in range(len(recent) - fitting, len(recent))
-             if not isinstance(recent[index], ToolMessage)),
+            (
+                index
+                for index in range(len(recent) - fitting, len(recent))
+                if not isinstance(recent[index], ToolMessage)
+            ),
             len(recent),
         )
         if keep_from:
@@ -158,9 +202,12 @@ class _CompactsContext:
     def _current_exchange(self) -> list:
         """The unit just completed: the person's last message and everything the agent did after it."""
         opening = next(
-            (index for index in range(len(self._conversation) - 1, -1, -1)
-             if isinstance(self._conversation[index], HumanMessage)
-             and not self._conversation[index].additional_kwargs.get("reminder")),
+            (
+                index
+                for index in range(len(self._conversation) - 1, -1, -1)
+                if isinstance(self._conversation[index], HumanMessage)
+                and not self._conversation[index].additional_kwargs.get("reminder")
+            ),
             None,
         )
         if opening is None:
@@ -168,14 +215,17 @@ class _CompactsContext:
         # The harness's own notes are cut out: the turn context, the confinement profile and the system
         # reminders are scaffolding, and an observer given them records the scaffolding as a finding.
         return [
-            message for message in self._conversation[opening:]
-            if not message.additional_kwargs.get("reminder") or message is self._conversation[opening]
+            message
+            for message in self._conversation[opening:]
+            if not message.additional_kwargs.get("reminder")
+            or message is self._conversation[opening]
         ]
 
     def _exchanges_present(self) -> set[str]:
         """Every exchange still visible in the conversation, whose entries therefore need not be repeated."""
         return {
-            self._exchange_of(message) for message in self._conversation
+            self._exchange_of(message)
+            for message in self._conversation
             if isinstance(message, HumanMessage) and not message.additional_kwargs.get("reminder")
         }
 
@@ -187,7 +237,7 @@ class _CompactsContext:
         tag = self._exchange_of(exchange[0])
         recorded = await self._ledger("observations")
         if any(entry.get("exchange") == tag for entry in recorded):
-            return                          # already observed: a turn can end more than once
+            return  # already observed: a turn can end more than once
         asked = await self._ledger("directives")
         observations, directives = await asyncio.gather(
             self._fold_into_observations(exchange, recorded, asked),
@@ -213,9 +263,16 @@ class _CompactsContext:
         if self._turn_store is None:
             return None
         present = self._exchanges_present()
-        observations = [entry for entry in await self._ledger("observations") if entry.get("exchange") not in present]
-        directives = [entry for entry in await self._ledger("directives")
-                      if entry.get("exchange") not in present and entry.get("still_binding", True)]
+        observations = [
+            entry
+            for entry in await self._ledger("observations")
+            if entry.get("exchange") not in present
+        ]
+        directives = [
+            entry
+            for entry in await self._ledger("directives")
+            if entry.get("exchange") not in present and entry.get("still_binding", True)
+        ]
         if not observations and not directives:
             return None
         return self._build_observation_message(observations, directives)
@@ -234,24 +291,32 @@ class _CompactsContext:
             except Exception:  # noqa: BLE001 — the fold has already happened; losing the durable copy must not undo it
                 logger.warning("could not append to the %s ledger", ledger, exc_info=True)
 
-    async def _fold_into_observations(self, older: list, existing: list[dict], asked: list[dict]) -> list[dict]:
+    async def _fold_into_observations(
+        self, older: list, existing: list[dict], asked: list[dict]
+    ) -> list[dict]:
         """New entries from these messages, with both records shown so it writes neither what it nor the other holds."""
-        instructions = self._prompt_loader.load("observer", {
-            "existing_observations": lines(self._claims(self._live(existing))),
-            # The other ledger too: an entry cannot be left to a record it was never shown.
-            "existing_directives": lines(self._claims(self._live(asked))),
-        })
-        entries = await self._emit_observations([
-            SystemMessage(content=instructions),
-            *older,
-            HumanMessage(content=self._prompt_loader.load("observe_now", {})),
-        ])
+        instructions = self._prompt_loader.load(
+            "observer",
+            {
+                "existing_observations": lines(self._claims(self._live(existing))),
+                # The other ledger too: an entry cannot be left to a record it was never shown.
+                "existing_directives": lines(self._claims(self._live(asked))),
+            },
+        )
+        entries = await self._emit_observations(
+            [
+                SystemMessage(content=instructions),
+                *older,
+                HumanMessage(content=self._prompt_loader.load("observe_now", {})),
+            ]
+        )
         return self._identified(entries)
 
     async def _fold_into_directives(self, older: list, existing: list[dict]) -> list[dict]:
         """What the person asked for in these turns, in their meaning rather than their words."""
         spoken = [
-            message for message in older
+            message
+            for message in older
             if isinstance(message, HumanMessage) and not message.additional_kwargs.get("reminder")
         ]
         if not spoken:
@@ -260,7 +325,11 @@ class _CompactsContext:
         instructions = self._prompt_loader.load("directives", {"existing_directives": shown})
         entries = await self._emit_batch(
             DirectiveBatch,
-            [SystemMessage(content=instructions), *spoken, HumanMessage(content=self._prompt_loader.load("directives_now", {}))],
+            [
+                SystemMessage(content=instructions),
+                *spoken,
+                HumanMessage(content=self._prompt_loader.load("directives_now", {})),
+            ],
             "directive",
         )
         return self._identified(getattr(entries, "directives", []) if entries else [])
@@ -273,34 +342,51 @@ class _CompactsContext:
             messages_before = len(self._conversation)
             tokens_before = self._latest_context_tokens
             yield CompactionStarted(
-                reason=reason, messages_before=messages_before, tokens_before=tokens_before,
+                reason=reason,
+                messages_before=messages_before,
+                tokens_before=tokens_before,
             )
-            self._conversation[:] = _without_provider_reasoning(await self._compaction.compact(state))
+            self._conversation[:] = _without_provider_reasoning(
+                await self._compaction.compact(state)
+            )
             yield CompactionDone(
-                reason=reason, ok=True,
-                messages_before=messages_before, messages_after=len(self._conversation),
-                tokens_before=tokens_before, tokens_after=self._latest_context_tokens,
+                reason=reason,
+                ok=True,
+                messages_before=messages_before,
+                messages_after=len(self._conversation),
+                tokens_before=tokens_before,
+                tokens_after=self._latest_context_tokens,
             )
             return
         # Each exchange was recorded when it closed, so all that is left here is the discarding.
         messages_before = len(self._conversation)
         tokens_before = self._latest_context_tokens
-        yield CompactionStarted(reason=reason, messages_before=messages_before, tokens_before=tokens_before)
+        yield CompactionStarted(
+            reason=reason, messages_before=messages_before, tokens_before=tokens_before
+        )
         kept = self._bounded_tail(self._conversation)
         if len(kept) >= messages_before:
             # Everything already fits, so a deliberate request is answered rather than met with silence.
             yield CompactionDone(
-                reason=reason, ok=False, messages_before=messages_before, messages_after=messages_before,
-                tokens_before=tokens_before, tokens_after=tokens_before, log_tokens=0,
+                reason=reason,
+                ok=False,
+                messages_before=messages_before,
+                messages_after=messages_before,
+                tokens_before=tokens_before,
+                tokens_after=tokens_before,
+                log_tokens=0,
             )
             return
         self._conversation[:] = _without_provider_reasoning(kept)
         self._latest_context_tokens = conversation_tokens(self._conversation)
         recorded = await self._ledger("observations")
         yield CompactionDone(
-            reason=reason, ok=True,
-            messages_before=messages_before, messages_after=len(self._conversation),
-            tokens_before=tokens_before, tokens_after=self._latest_context_tokens,
+            reason=reason,
+            ok=True,
+            messages_before=messages_before,
+            messages_after=len(self._conversation),
+            tokens_before=tokens_before,
+            tokens_after=self._latest_context_tokens,
             log_tokens=count_tokens(lines(recorded)),
         )
 
@@ -317,7 +403,7 @@ class KeepRecentTurns:
         return len(state.messages) > self._keep * 2
 
     async def compact(self, state) -> list:
-        return list(state.messages[-self._keep * 2:])
+        return list(state.messages[-self._keep * 2 :])
 
 
 __all__ = ["KeepRecentTurns"]

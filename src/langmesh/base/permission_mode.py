@@ -23,7 +23,9 @@ class PermissionMode(StrEnum):
             return None
 
     @classmethod
-    def coerce(cls, value: str | PermissionMode | None, default: PermissionMode | None = None) -> PermissionMode:
+    def coerce(
+        cls, value: str | PermissionMode | None, default: PermissionMode | None = None
+    ) -> PermissionMode:
         """The mode a value names, falling back to ``default``. The parse to use at a string boundary."""
         parsed = cls.parse(value)
         return parsed if parsed is not None else (default if default is not None else cls.ASK)
@@ -51,7 +53,9 @@ class PermissionMode(StrEnum):
         """The mode a child of ``parent`` runs under: inherited when unstated, never looser, and never asking under a parent that cannot answer."""
         parent_mode = cls.parse(parent)
         chosen = cls.more_restrictive(
-            cls.parse(requested) or parent_mode or cls.parse(fallback), parent_mode, ceiling,
+            cls.parse(requested) or parent_mode or cls.parse(fallback),
+            parent_mode,
+            ceiling,
         )
         if parent_mode is not None and parent_mode.never_asks and not chosen.never_asks:
             raise ValueError(

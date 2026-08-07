@@ -12,6 +12,7 @@ from langmesh.commons.brokers.mcp_servers import _ensure_mcp_servers_for
 
 router = APIRouter()
 
+
 @router.get("/mcp/tools")
 async def mcp_tools(server: str = "", working_directory: str = ""):
     """The configured MCP servers with their tools; disabled ones are returned empty rather than hidden."""
@@ -28,7 +29,9 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
             if name in allowed
         }
         home_root = state.global_configuration.home_agents_root().resolve()
-        project_root = state.global_configuration.project_agents_root_for(working_directory).resolve()
+        project_root = state.global_configuration.project_agents_root_for(
+            working_directory
+        ).resolve()
         if project_root != home_root:
             project_server_names = set(
                 _configuration.MCPConfiguration.from_dotagents_roots([project_root]).servers

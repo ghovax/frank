@@ -45,7 +45,9 @@ def escape_of(
         return Escape()
     readable = tuple(profile.filesystem.readable) + tuple(profile.filesystem.writable)
     held_reads = set(_contained_in(request.reads, readable, workspace=workspace))
-    held_writes = set(_contained_in(request.writes, tuple(profile.filesystem.writable), workspace=workspace))
+    held_writes = set(
+        _contained_in(request.writes, tuple(profile.filesystem.writable), workspace=workspace)
+    )
     return Escape(
         reads=tuple(path for path in request.reads if path not in held_reads),
         writes=tuple(path for path in request.writes if path not in held_writes),
@@ -115,7 +117,8 @@ def _refused_by_deny_list(escape: Escape, profile: Profile, *, workspace: str) -
     from pathlib import Path
 
     denied = [
-        Path(resolved) for entry in profile.filesystem.deny
+        Path(resolved)
+        for entry in profile.filesystem.deny
         if (resolved := expand(entry, workspace=workspace))
     ]
     if not denied:

@@ -26,7 +26,11 @@ class SessionAccess(Protocol):
     permission_mode: str
 
     async def create(
-        self, *, agent: str, working_directory: str, inherited_conversation: list[dict[str, Any]],
+        self,
+        *,
+        agent: str,
+        working_directory: str,
+        inherited_conversation: list[dict[str, Any]],
     ) -> dict: ...
     async def send(self, session_id: str, text: str) -> None: ...
     async def get(self, session_id: str) -> dict: ...
@@ -37,11 +41,13 @@ class SessionAccess(Protocol):
 
 
 def _unavailable(code: str) -> str:
-    return compact({
-        "code": code,
-        "status": "error",
-        "message": "Peer sessions are not available in this process.",
-    })
+    return compact(
+        {
+            "code": code,
+            "status": "error",
+            "message": "Peer sessions are not available in this process.",
+        }
+    )
 
 
 async def _create_session(
@@ -58,17 +64,23 @@ async def _create_session(
         record = await access.create(
             agent=agent,
             working_directory=working_directory or access.working_directory,
-            inherited_conversation=conversation_snapshot() if conversation_snapshot is not None else [],
+            inherited_conversation=conversation_snapshot()
+            if conversation_snapshot is not None
+            else [],
         )
     except Exception as exception:  # noqa: BLE001 — surfaced to the model as a tool result
-        return compact({"code": "create_session_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "create_session_error", "status": "error", "message": str(exception)}
+        )
     session_id = str(record.get("id") or "")
-    return compact({
-        "code": "session_created",
-        "status": "ok",
-        "session": session_id,
-        "agent": agent,
-    })
+    return compact(
+        {
+            "code": "session_created",
+            "status": "ok",
+            "session": session_id,
+            "agent": agent,
+        }
+    )
 
 
 async def _message_session(session: str, message: str, explanation: str) -> str:
@@ -79,18 +91,29 @@ async def _message_session(session: str, message: str, explanation: str) -> str:
     try:
         outcome = await access.send(session, message)
     except Exception as exception:  # noqa: BLE001
-        return compact({
-            "code": "message_session_error", "status": "error",
-            "session": session, "message": str(exception),
-        })
+        return compact(
+            {
+                "code": "message_session_error",
+                "status": "error",
+                "session": session,
+                "message": str(exception),
+            }
+        )
     # A peer parked on a decision does not take the message, and saying so is the point.
     if isinstance(outcome, dict) and outcome.get("awaiting_input"):
-        return compact({
-            "code": "session_awaiting_input", "status": "error", "session": session,
-            "message": _PROMPTS.load("session_awaiting_input", {
-                "waiting_on": str(outcome.get("waiting_on") or "a decision from the user"),
-            }).strip(),
-        })
+        return compact(
+            {
+                "code": "session_awaiting_input",
+                "status": "error",
+                "session": session,
+                "message": _PROMPTS.load(
+                    "session_awaiting_input",
+                    {
+                        "waiting_on": str(outcome.get("waiting_on") or "a decision from the user"),
+                    },
+                ).strip(),
+            }
+        )
     return compact({"code": "message_sent", "status": "ok", "session": session})
 
 
@@ -102,10 +125,14 @@ async def _read_session(session: str, explanation: str) -> str:
     try:
         record = await access.get(session)
     except Exception as exception:  # noqa: BLE001
-        return compact({
-            "code": "read_session_error", "status": "error",
-            "session": session, "message": str(exception),
-        })
+        return compact(
+            {
+                "code": "read_session_error",
+                "status": "error",
+                "session": session,
+                "message": str(exception),
+            }
+        )
     return compact({"code": "session", "status": "ok", **record})
 
 
@@ -117,7 +144,9 @@ async def _list_sessions(explanation: str) -> str:
     try:
         records = await access.children()
     except Exception as exception:  # noqa: BLE001
-        return compact({"code": "list_sessions_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "list_sessions_error", "status": "error", "message": str(exception)}
+        )
     return compact({"code": "sessions", "status": "ok", "sessions": records})
 
 
@@ -129,7 +158,9 @@ async def _list_remote_agents(explanation: str) -> str:
     try:
         agents = await access.remote_list()
     except Exception as exception:  # noqa: BLE001
-        return compact({"code": "list_remote_agents_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "list_remote_agents_error", "status": "error", "message": str(exception)}
+        )
     return compact({"code": "remote_agents", "status": "ok", "agents": agents})
 
 
@@ -141,10 +172,14 @@ async def _message_remote_agent(name: str, message: str, explanation: str) -> st
     try:
         result = await access.remote_send(name, message)
     except Exception as exception:  # noqa: BLE001
-        return compact({
-            "code": "message_remote_agent_error", "status": "error",
-            "agent": name, "message": str(exception),
-        })
+        return compact(
+            {
+                "code": "message_remote_agent_error",
+                "status": "error",
+                "agent": name,
+                "message": str(exception),
+            }
+        )
     return compact({"code": "remote_agent_replied", "status": "ok", "agent": name, **result})
 
 
@@ -161,7 +196,10 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
         # Absent is how "the same as mine" is said, which a schema expresses by leaving a field out.
         working_directory=(
             Optional[str],
-            Field(default=None, description="Where the peer works. Omit to use your working directory."),
+            Field(
+                default=None,
+                description="Where the peer works. Omit to use your working directory.",
+            ),
         ),
     )
     return StructuredTool.from_function(
@@ -201,7 +239,8 @@ list_sessions_tool = StructuredTool.from_function(
     coroutine=_list_sessions,
     name="list_sessions",
     description=_description("list_sessions"),
-    args_schema=create_model("ListSessionsArguments",
+    args_schema=create_model(
+        "ListSessionsArguments",
         explanation=(str, Field(description=EXPLANATION)),
     ),
 )
@@ -211,7 +250,8 @@ list_remote_agents_tool = StructuredTool.from_function(
     coroutine=_list_remote_agents,
     name="list_remote_agents",
     description=_description("list_remote_agents"),
-    args_schema=create_model("ListRemoteAgentsArguments",
+    args_schema=create_model(
+        "ListRemoteAgentsArguments",
         explanation=(str, Field(description=EXPLANATION)),
     ),
 )
@@ -267,9 +307,11 @@ async def invoke(tool_name: str, tool_arguments: dict, create_tool: BaseTool | N
         return await tool.ainvoke(tool_arguments)
     except ValidationError as exception:
         # Named, so the model can see which call to fix rather than which turn to mourn.
-        return compact({
-            "code": "invalid_tool_arguments",
-            "status": "error",
-            "tool": tool_name,
-            "message": str(exception),
-        })
+        return compact(
+            {
+                "code": "invalid_tool_arguments",
+                "status": "error",
+                "tool": tool_name,
+                "message": str(exception),
+            }
+        )

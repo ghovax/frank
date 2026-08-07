@@ -51,7 +51,15 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 /** A label and value on one baseline-aligned row — for short scalar values. */
 
-export function InlineField({ label, children, mt }: { label: string; children: ReactNode; mt?: number }) {
+export function InlineField({
+  label,
+  children,
+  mt,
+}: {
+  label: string;
+  children: ReactNode;
+  mt?: number;
+}) {
   const shown = useContext(ShownFields);
   if (!claimField(label, shown)) return null;
   return (
@@ -75,7 +83,13 @@ export function Mono({ children, ...rest }: { children: ReactNode } & SpanProps)
   );
 }
 
-export function MonoBlock({ children, maxH = 64 }: { children: ReactNode; maxH?: number | string }) {
+export function MonoBlock({
+  children,
+  maxH = 64,
+}: {
+  children: ReactNode;
+  maxH?: number | string;
+}) {
   return (
     <Pre
       m={0}

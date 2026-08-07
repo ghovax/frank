@@ -135,7 +135,9 @@ class ChatLiteLLMModel(BaseChatModel):
             role = ChatLiteLLMModel._role_for(message)
             entry: dict[str, Any] = {
                 "role": role,
-                "content": message_text(message) if isinstance(message, AIMessage) else message.content,
+                "content": message_text(message)
+                if isinstance(message, AIMessage)
+                else message.content,
             }
             if isinstance(message, AIMessage):
                 tool_calls = ChatLiteLLMModel._tool_calls_to_openai(message.tool_calls)
@@ -156,7 +158,8 @@ class ChatLiteLLMModel(BaseChatModel):
         """Whatever of the provider's own reasoning this message can hand back, taking the signed block over the deltas."""
         carried: dict[str, Any] = {}
         blocks = [
-            block for block in ChatLiteLLMModel._plain(getattr(source, "thinking_blocks", None))
+            block
+            for block in ChatLiteLLMModel._plain(getattr(source, "thinking_blocks", None))
             if block.get("type") == "redacted_thinking" or block.get("signature")
         ]
         if blocks:
@@ -204,27 +207,35 @@ class ChatLiteLLMModel(BaseChatModel):
         return self._CACHE_CONTROL_KEYS.get(self._route(), self._DEFAULT_CACHE_CONTROL_KEY)
 
     def _apply_cache_breakpoints(
-        self, dicts: list[dict[str, Any]], messages: Sequence[BaseMessage] = (),
+        self,
+        dicts: list[dict[str, Any]],
+        messages: Sequence[BaseMessage] = (),
     ) -> list[dict[str, Any]]:
         """Mark the messages the provider should cache up to, since Anthropic caches nothing unless asked."""
         route = self._route()
         if route == self._GATEWAY_ROUTE:
             return dicts
         model = self.model.lower()
-        if not (any(marker in model for marker in self._CACHE_BREAKPOINT_MARKERS)
-                or route in self._CACHE_BREAKPOINT_ROUTES):
+        if not (
+            any(marker in model for marker in self._CACHE_BREAKPOINT_MARKERS)
+            or route in self._CACHE_BREAKPOINT_ROUTES
+        ):
             return dicts
         # `dicts` is built one-for-one from `messages`, in order, so the index is the join.
         transient = {
-            index for index, message in enumerate(messages)
+            index
+            for index, message in enumerate(messages)
             if getattr(message, "additional_kwargs", {}).get("transient")
         }
         durable = [
-            entry for index, entry in enumerate(dicts)
+            entry
+            for index, entry in enumerate(dicts)
             if entry["role"] != "system" and index not in transient
         ]
         # Disjoint by construction, so the two selections never mark the same message or exceed four breakpoints.
-        system = [entry for entry in dicts if entry["role"] == "system"][: self._LEADING_BREAKPOINTS]
+        system = [entry for entry in dicts if entry["role"] == "system"][
+            : self._LEADING_BREAKPOINTS
+        ]
         for entry in system:
             self._mark_cached(entry, self._cache_control_key())
         # Walk back until the trailing breakpoints are actually placed, since not every message can carry one.
@@ -274,17 +285,18 @@ class ChatLiteLLMModel(BaseChatModel):
 
     @staticmethod
     def _tool_calls_to_openai(tool_calls: Sequence[Any]) -> list[dict[str, Any]]:
-
         rendered: list[dict[str, Any]] = []
         for call in tool_calls:
             # LangChain stores parsed arguments under `args`, while the wire format we serialize back to uses `arguments`.
             arguments = call.get("args")
             serialized = arguments if isinstance(arguments, str) else compact(arguments)
-            rendered.append({
-                "id": call.get("id"),
-                "type": "function",
-                "function": {"name": call.get("name"), "arguments": serialized},
-            })
+            rendered.append(
+                {
+                    "id": call.get("id"),
+                    "type": "function",
+                    "function": {"name": call.get("name"), "arguments": serialized},
+                }
+            )
         return rendered
 
     # Shared kwargs assembled for every LiteLLM completion call.
@@ -325,13 +337,18 @@ class ChatLiteLLMModel(BaseChatModel):
         params.update({key: value for key, value in kwargs.items() if value is not None})
         return params
 
-
     def _trace_request(self, params: dict[str, Any], sent: list[dict[str, Any]]) -> RequestTrace:
         """Cut the outgoing request into the pieces a prompt cache matches on, in wire order."""
         pieces = [Piece(kind=TOOLS, text=compact(params.get("tools") or []))]
         for position, message in enumerate(sent):
-            pieces.append(Piece(kind=ITEM, text=compact(message), position=position,
-                                role=str(message.get("role") or "")))
+            pieces.append(
+                Piece(
+                    kind=ITEM,
+                    text=compact(message),
+                    position=position,
+                    role=str(message.get("role") or ""),
+                )
+            )
         return trace(pieces)
 
     def _cache_diagnosis(self, current: RequestTrace) -> dict[str, object]:
@@ -351,7 +368,10 @@ class ChatLiteLLMModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         # `include_usage` asks for a trailing usage chunk, so a streamed turn still reports real token counts.
         params = self._completion_kwargs(
-            stop=stop, stream=True, stream_options={"include_usage": True}, **kwargs,
+            stop=stop,
+            stream=True,
+            stream_options={"include_usage": True},
+            **kwargs,
         )
         # One name for the prose this call produces, minted here because nothing LiteLLM streams identifies the block.
         block = f"litellm-{uuid4().hex}-"
@@ -366,7 +386,9 @@ class ChatLiteLLMModel(BaseChatModel):
                 # Attached to the chunk carrying usage, so the diagnosis travels with the figure it explains.
                 if generation_chunk.message.usage_metadata and not reported:
                     reported = True
-                    generation_chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(current_trace)
+                    generation_chunk.message.additional_kwargs["cache_trace"] = (
+                        self._cache_diagnosis(current_trace)
+                    )
                 yield generation_chunk
 
     @staticmethod
@@ -392,42 +414,61 @@ class ChatLiteLLMModel(BaseChatModel):
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
         }
-        prompt_details = usage.get("prompt_tokens_details") if isinstance(usage, dict) else getattr(usage, "prompt_tokens_details", None)
+        prompt_details = (
+            usage.get("prompt_tokens_details")
+            if isinstance(usage, dict)
+            else getattr(usage, "prompt_tokens_details", None)
+        )
         cache_read = _value(prompt_details, "cached_tokens")
         if cache_read:
             metadata["input_token_details"] = {"cache_read": cache_read}
-        completion_details = usage.get("completion_tokens_details") if isinstance(usage, dict) else getattr(usage, "completion_tokens_details", None)
+        completion_details = (
+            usage.get("completion_tokens_details")
+            if isinstance(usage, dict)
+            else getattr(usage, "completion_tokens_details", None)
+        )
         reasoning = _value(completion_details, "reasoning_tokens")
         if reasoning:
             metadata["output_token_details"] = {"reasoning": reasoning}
         return cast(UsageMetadata, metadata)
 
-    def _litellm_chunk_to_generation_chunk(self, chunk: Any, block: str = "") -> Optional[ChatGenerationChunk]:
+    def _litellm_chunk_to_generation_chunk(
+        self, chunk: Any, block: str = ""
+    ) -> Optional[ChatGenerationChunk]:
         usage_metadata = ChatLiteLLMModel._usage_metadata(getattr(chunk, "usage", None))
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             # A chunk with usage but no choices surfaces an empty message, so the merged response still accumulates the counts.
             if usage_metadata is not None:
-                return ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=usage_metadata))
+                return ChatGenerationChunk(
+                    message=AIMessageChunk(content="", usage_metadata=usage_metadata)
+                )
             return None
         choice = choices[0]
         delta = getattr(choice, "delta", None)
         if delta is None:
             if usage_metadata is not None:
-                return ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=usage_metadata))
+                return ChatGenerationChunk(
+                    message=AIMessageChunk(content="", usage_metadata=usage_metadata)
+                )
             return None
         content = getattr(delta, "content", None) or ""
         tool_call_chunks: list[ToolCallChunk] = []
         for call in getattr(delta, "tool_calls", None) or []:
             function = getattr(call, "function", None)
-            tool_call_chunks.append(cast(ToolCallChunk, {
-                "index": getattr(call, "index", 0) or 0,
-                "id": getattr(call, "id", None),
-                "name": getattr(function, "name", None) if function else None,
-                # The streaming delta exposes partial JSON as `function.arguments`, which LangChain stores under `args`.
-                "args": getattr(function, "arguments", None) if function else None,
-                "type": "tool_call_chunk",
-            }))
+            tool_call_chunks.append(
+                cast(
+                    ToolCallChunk,
+                    {
+                        "index": getattr(call, "index", 0) or 0,
+                        "id": getattr(call, "id", None),
+                        "name": getattr(function, "name", None) if function else None,
+                        # The streaming delta exposes partial JSON as `function.arguments`, which LangChain stores under `args`.
+                        "args": getattr(function, "arguments", None) if function else None,
+                        "type": "tool_call_chunk",
+                    },
+                )
+            )
         reasoning = getattr(delta, "reasoning_content", None)
         if not reasoning:
             # Some providers nest reasoning under a different attribute.
@@ -445,16 +486,20 @@ class ChatLiteLLMModel(BaseChatModel):
         return ChatGenerationChunk(message=message, generation_info=generation_info)
 
     @staticmethod
-    def _standard_content_blocks(content: Any, reasoning: Any, block: str = "") -> list[ContentBlock]:
+    def _standard_content_blocks(
+        content: Any, reasoning: Any, block: str = ""
+    ) -> list[ContentBlock]:
         """Name the blocks in one streamed chunk, keyed by the call so two calls' prose never merges into one block."""
         normalized_blocks: list[ContentBlock] = []
         if reasoning:
-            normalized_blocks.append(ReasoningContentBlock(
-                type="reasoning",
-                reasoning=str(reasoning),
-                id=f"{block}reasoning",
-                index=0,
-            ))
+            normalized_blocks.append(
+                ReasoningContentBlock(
+                    type="reasoning",
+                    reasoning=str(reasoning),
+                    id=f"{block}reasoning",
+                    index=0,
+                )
+            )
         if content:
             source_blocks = AIMessageChunk(content=content).content_blocks
             for position, source_block in enumerate(source_blocks):
@@ -511,11 +556,13 @@ class ChatLiteLLMModel(BaseChatModel):
                 parsed_arguments = _json.loads(raw_arguments) if raw_arguments else {}
             except (TypeError, ValueError):
                 parsed_arguments = raw_arguments
-            tool_calls.append({
-                "name": getattr(function, "name", None) if function else None,
-                "args": parsed_arguments,
-                "id": getattr(call, "id", None),
-            })
+            tool_calls.append(
+                {
+                    "name": getattr(function, "name", None) if function else None,
+                    "args": parsed_arguments,
+                    "id": getattr(call, "id", None),
+                }
+            )
         message = AIMessage(
             content_blocks=ChatLiteLLMModel._standard_content_blocks(content, reasoning),
             # An empty list rather than `None`, because a default applies to an omitted key and an explicit `None` fails validation.

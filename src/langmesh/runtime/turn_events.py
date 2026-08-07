@@ -210,7 +210,20 @@ class CompactionDone(TurnEvent):
 
 # The closed union of every turn event, so a consumer can prove exhaustiveness rather than fall through.
 TurnEventUnion = Union[
-    Status, Thinking, ThinkingDone, TextChunk, ToolCall, ToolResult, Mcp, Usage, Done,
-    Suspended, Checkpoint, Error, DeniedInjection, Steering,
-    CompactionStarted, CompactionDone,
+    Status,
+    Thinking,
+    ThinkingDone,
+    TextChunk,
+    ToolCall,
+    ToolResult,
+    Mcp,
+    Usage,
+    Done,
+    Suspended,
+    Checkpoint,
+    Error,
+    DeniedInjection,
+    Steering,
+    CompactionStarted,
+    CompactionDone,
 ]

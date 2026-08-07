@@ -31,7 +31,9 @@ def _terminal_directory(session_id: str, working_directory: str) -> Path:
         try:
             record = database_session.get(SessionRecord, session_id)
             if record is not None:
-                directory = record.runtime_working_directory or record.working_directory or directory
+                directory = (
+                    record.runtime_working_directory or record.working_directory or directory
+                )
         finally:
             database_session.close()
     path = Path(directory or str(Path.home())).expanduser()
@@ -121,7 +123,9 @@ def _load_terminal_state(terminal_context: str, terminal_key: str) -> str:
         database_session.close()
 
 
-def _save_terminal_state(terminal_context: str, terminal_key: str, directory: Path, scrollback: str) -> None:
+def _save_terminal_state(
+    terminal_context: str, terminal_key: str, directory: Path, scrollback: str
+) -> None:
     if state.session_factory is None:
         return
     with sqlite_write_lock():
@@ -327,11 +331,13 @@ class TerminalSession:
         finally:
             if not self._closed:
                 await self._record_exit()
-                self._broadcast({
-                    "type": "exit",
-                    "exit_code": self.exit_code,
-                    "exit_signal": self.exit_signal,
-                })
+                self._broadcast(
+                    {
+                        "type": "exit",
+                        "exit_code": self.exit_code,
+                        "exit_signal": self.exit_signal,
+                    }
+                )
             await self.persist()
 
     async def _record_exit(self) -> None:
@@ -400,8 +406,18 @@ class TerminalSessionManager:
             if existing is not None and existing.running:
                 existing.resize(rows, columns)
                 return existing
-            persisted_scrollback = await asyncio.to_thread(_load_terminal_state, terminal_context, terminal_key)
-            session = TerminalSession(terminal_context, terminal_key, directory, rows, columns, persisted_scrollback, remote_host_alias=remote_host_alias)
+            persisted_scrollback = await asyncio.to_thread(
+                _load_terminal_state, terminal_context, terminal_key
+            )
+            session = TerminalSession(
+                terminal_context,
+                terminal_key,
+                directory,
+                rows,
+                columns,
+                persisted_scrollback,
+                remote_host_alias=remote_host_alias,
+            )
             self._sessions[key] = session
             await session.start()
             return session

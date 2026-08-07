@@ -40,7 +40,9 @@ def _login_script(command: str, cwd: str, env: dict[str, str] | None) -> str:
     """One shell script: change into the base directory, export any extra environment, run the command."""
     prefix = ""
     if env:
-        prefix = "".join(f"export {name}={shlex.quote(str(value))}; " for name, value in env.items())
+        prefix = "".join(
+            f"export {name}={shlex.quote(str(value))}; " for name, value in env.items()
+        )
     return f"cd {shlex.quote(cwd)} && {prefix}{command}"
 
 
@@ -110,7 +112,14 @@ class LocationExecutor(abc.ABC):
     is_local: bool = False
 
     @abc.abstractmethod
-    def run(self, command: str, cwd: str, *, timeout: float = DEFAULT_TIMEOUT, env: dict[str, str] | None = None) -> CommandResult: ...
+    def run(
+        self,
+        command: str,
+        cwd: str,
+        *,
+        timeout: float = DEFAULT_TIMEOUT,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult: ...
 
     @abc.abstractmethod
     def read_bytes(self, path: str) -> bytes: ...
@@ -136,11 +145,20 @@ class LocationExecutor(abc.ABC):
         """Resolve a possibly-relative path against the location's base directory, expanding `~`."""
 
     @abc.abstractmethod
-    def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
+    def glob_files(
+        self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False
+    ) -> list[str]:
         """Absolute paths of files matching the glob, newest first and capped, honouring `.gitignore` unless told not to."""
 
     @abc.abstractmethod
-    def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
+    def grep(
+        self,
+        pattern: str,
+        target: str,
+        include: str | None,
+        maximum_results: int,
+        include_ignored: bool = False,
+    ) -> list[str]:
         """`path:line:content` matches of a regex under a path, optionally filtered by a filename glob."""
 
     def read_text(self, path: str) -> str:
@@ -155,7 +173,14 @@ class LocalExecutor(LocationExecutor):
 
     is_local = True
 
-    def run(self, command: str, cwd: str, *, timeout: float = DEFAULT_TIMEOUT, env: dict[str, str] | None = None) -> CommandResult:
+    def run(
+        self,
+        command: str,
+        cwd: str,
+        *,
+        timeout: float = DEFAULT_TIMEOUT,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         completed = subprocess.run(
             ["bash", "-lc", _login_script(command, cwd, None)],
             capture_output=True,
@@ -177,7 +202,10 @@ class LocalExecutor(LocationExecutor):
             check=False,
         )
         if completed.returncode != 0:
-            raise OSError(completed.stderr.decode("utf-8", errors="replace").strip() or f"command failed: {command}")
+            raise OSError(
+                completed.stderr.decode("utf-8", errors="replace").strip()
+                or f"command failed: {command}"
+            )
         return completed.stdout
 
     def write_bytes(self, path: str, data: bytes) -> None:
@@ -201,7 +229,9 @@ class LocalExecutor(LocationExecutor):
             candidate = base / candidate
         return str(candidate.resolve(strict=False))
 
-    def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
+    def glob_files(
+        self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False
+    ) -> list[str]:
         base = Path(base_directory) if base_directory else Path.cwd()
         if not base.exists():
             raise FileNotFoundError(f"Directory does not exist: {base}")
@@ -231,37 +261,76 @@ class LocalExecutor(LocationExecutor):
                         break
             return matched
         # Fallback without ripgrep: `Path.glob`, dropping `.git` and asking `git check-ignore` about the rest.
-        candidates = [match for match in base.glob(pattern) if not match.is_dir() and ".git" not in match.parts]
+        candidates = [
+            match
+            for match in base.glob(pattern)
+            if not match.is_dir() and ".git" not in match.parts
+        ]
         if not include_ignored:
             candidates = _prune_gitignored(base, candidates)
         candidates.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
         return [str(match) for match in candidates[:limit]]
 
-    def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
+    def grep(
+        self,
+        pattern: str,
+        target: str,
+        include: str | None,
+        maximum_results: int,
+        include_ignored: bool = False,
+    ) -> list[str]:
         if shutil.which("rg"):
             try:
-                return self._grep_with_ripgrep(pattern, target, include, maximum_results, include_ignored)
+                return self._grep_with_ripgrep(
+                    pattern, target, include, maximum_results, include_ignored
+                )
             except (subprocess.SubprocessError, FileNotFoundError):
                 pass
         return self._grep_python(pattern, target, include, maximum_results, include_ignored)
 
-    def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
+    def _grep_with_ripgrep(
+        self,
+        pattern: str,
+        target: str,
+        include: str | None,
+        maximum_results: int,
+        include_ignored: bool = False,
+    ) -> list[str]:
         command = [
-            "rg", "--line-number", "--no-heading", "--color=never",
-            "--max-count", str(active_tuning().amount(Tunable.grep_per_file)),
+            "rg",
+            "--line-number",
+            "--no-heading",
+            "--color=never",
+            "--max-count",
+            str(active_tuning().amount(Tunable.grep_per_file)),
         ]
         if include_ignored:
-            command += ["--no-ignore", "--hidden"]  # reach gitignored + hidden files; .git stays out
+            command += [
+                "--no-ignore",
+                "--hidden",
+            ]  # reach gitignored + hidden files; .git stays out
         if include:
             command += ["--glob", include]
         command += ["-e", pattern, "--", target]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=active_tuning().duration(Tunable.ripgrep))
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=active_tuning().duration(Tunable.ripgrep),
+        )
         # rg exits 1 on "no matches", 2 on a real error (bad pattern, IO failure).
         if result.returncode not in (0, 1):
             raise ValueError((result.stderr or "").strip() or "search failed")
         return (result.stdout or "").splitlines()[:maximum_results]
 
-    def _grep_python(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
+    def _grep_python(
+        self,
+        pattern: str,
+        target: str,
+        include: str | None,
+        maximum_results: int,
+        include_ignored: bool = False,
+    ) -> list[str]:
         """Fallback grep using a pure-Python walk (used when ripgrep is unavailable)."""
         per_file_limit = active_tuning().amount(Tunable.grep_per_file)
         try:
@@ -273,7 +342,9 @@ class LocalExecutor(LocationExecutor):
         if root.is_file():
             candidates = [root]
         else:
-            walked = [path for path in root.rglob("*") if path.is_file() and ".git" not in path.parts]
+            walked = [
+                path for path in root.rglob("*") if path.is_file() and ".git" not in path.parts
+            ]
             # Honour `.gitignore` on the fallback path too, so ripgrep's presence never changes what a search can see.
             candidates = walked if include_ignored else _prune_gitignored(root, walked)
         results: list[str] = []
@@ -313,12 +384,22 @@ class SshExecutor(LocationExecutor):
         # Our own digest of the alias rather than ssh's, whose full hash overran the unix socket path limit.
         control_path = str(self._control_directory / ssh_control_identifier(self.alias))
         return [
-            "-o", "ControlMaster=auto",
-            "-o", f"ControlPath={control_path}",
-            "-o", f"ControlPersist={CONTROL_PERSIST_SECONDS}",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            f"ControlPath={control_path}",
+            "-o",
+            f"ControlPersist={CONTROL_PERSIST_SECONDS}",
         ]
 
-    def _ssh(self, remote_command: str, *, timeout: float, extra_options: list[str] | None = None, stdin: bytes | None = None) -> subprocess.CompletedProcess:
+    def _ssh(
+        self,
+        remote_command: str,
+        *,
+        timeout: float,
+        extra_options: list[str] | None = None,
+        stdin: bytes | None = None,
+    ) -> subprocess.CompletedProcess:
         argv = ["ssh", *self._mux_options(), *(extra_options or []), self.alias, remote_command]
         return subprocess.run(
             argv,
@@ -333,7 +414,14 @@ class SshExecutor(LocationExecutor):
         remote = f"bash -lc {shlex.quote(_login_script(command, cwd, env))}"
         return ["ssh", *self._mux_options(), self.alias, remote]
 
-    def run(self, command: str, cwd: str, *, timeout: float = DEFAULT_TIMEOUT, env: dict[str, str] | None = None) -> CommandResult:
+    def run(
+        self,
+        command: str,
+        cwd: str,
+        *,
+        timeout: float = DEFAULT_TIMEOUT,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         remote = f"bash -lc {shlex.quote(_login_script(command, cwd, env))}"
         completed = self._ssh(remote, timeout=timeout)
         return CommandResult(
@@ -345,14 +433,20 @@ class SshExecutor(LocationExecutor):
     def read_bytes(self, path: str) -> bytes:
         completed = self._ssh(f"cat -- {shlex.quote(path)}", timeout=DEFAULT_TIMEOUT)
         if completed.returncode != 0:
-            raise OSError(completed.stderr.decode("utf-8", errors="replace").strip() or f"failed to read {path}")
+            raise OSError(
+                completed.stderr.decode("utf-8", errors="replace").strip()
+                or f"failed to read {path}"
+            )
         return completed.stdout
 
     def run_bytes(self, command: str, cwd: str, *, timeout: float = DEFAULT_TIMEOUT) -> bytes:
         remote = f"bash -lc {shlex.quote(_login_script(command, cwd, None))}"
         completed = self._ssh(remote, timeout=timeout)
         if completed.returncode != 0:
-            raise OSError(completed.stderr.decode("utf-8", errors="replace").strip() or f"command failed: {command}")
+            raise OSError(
+                completed.stderr.decode("utf-8", errors="replace").strip()
+                or f"command failed: {command}"
+            )
         return completed.stdout
 
     def write_bytes(self, path: str, data: bytes) -> None:
@@ -363,7 +457,10 @@ class SshExecutor(LocationExecutor):
             stdin=data,
         )
         if completed.returncode != 0:
-            raise OSError(completed.stderr.decode("utf-8", errors="replace").strip() or f"failed to write {path}")
+            raise OSError(
+                completed.stderr.decode("utf-8", errors="replace").strip()
+                or f"failed to write {path}"
+            )
 
     def exists(self, path: str) -> bool:
         completed = self._ssh(f"test -e {shlex.quote(path)}", timeout=DEFAULT_CONNECT_TIMEOUT)
@@ -401,14 +498,18 @@ class SshExecutor(LocationExecutor):
             self._ripgrep_available = probe.returncode == 0
         return self._ripgrep_available
 
-    def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
+    def glob_files(
+        self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False
+    ) -> list[str]:
         regex = re.compile(glob_to_regex(pattern))
         if self._has_ripgrep():
             # ripgrep does the walk on the remote too, and we match the glob against its results ourselves.
             no_ignore = " --no-ignore --hidden" if include_ignored else ""
             listing = self.run(f"rg --files --sortr modified{no_ignore}", base_directory)
             if listing.returncode not in (0, 1):  # 1 == the tree has no files
-                raise FileNotFoundError(listing.stderr.strip() or f"Directory does not exist: {base_directory}")
+                raise FileNotFoundError(
+                    listing.stderr.strip() or f"Directory does not exist: {base_directory}"
+                )
             base = base_directory.rstrip("/")
             paths: list[str] = []
             for line in listing.stdout.splitlines():
@@ -427,7 +528,9 @@ class SshExecutor(LocationExecutor):
             base_directory,
         )
         if listing.returncode != 0 and not listing.stdout:
-            raise FileNotFoundError(listing.stderr.strip() or f"Directory does not exist: {base_directory}")
+            raise FileNotFoundError(
+                listing.stderr.strip() or f"Directory does not exist: {base_directory}"
+            )
         relative = [line[2:] for line in listing.stdout.splitlines() if line.startswith("./")]
         matched = [path for path in relative if regex.fullmatch(path)][:limit]
         # Newest-first, matching the local contract, with `xargs -0` chunking very large sets.
@@ -439,14 +542,23 @@ class SshExecutor(LocationExecutor):
                 stdin=stdin,
             )
             sorted_lines = [
-                line for line in sorted_run.stdout.decode("utf-8", errors="replace").splitlines() if line
+                line
+                for line in sorted_run.stdout.decode("utf-8", errors="replace").splitlines()
+                if line
             ]
             if len(sorted_lines) == len(matched):
                 matched = sorted_lines
         base = base_directory.rstrip("/")
         return [path if path.startswith("/") else f"{base}/{path}" for path in matched]
 
-    def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
+    def grep(
+        self,
+        pattern: str,
+        target: str,
+        include: str | None,
+        maximum_results: int,
+        include_ignored: bool = False,
+    ) -> list[str]:
         # Prefer ripgrep so the regex dialect matches, and otherwise use `grep -E` rather than basic expressions.
         quoted_pattern = shlex.quote(pattern)
         quoted_target = shlex.quote(target)
@@ -475,7 +587,9 @@ class SshExecutor(LocationExecutor):
 
     def connect(self, *, timeout: float = DEFAULT_CONNECT_TIMEOUT) -> CommandResult:
         """Establish or reuse the master and confirm the host is reachable, letting interactive auth surface."""
-        completed = self._ssh("true", timeout=timeout, extra_options=["-o", f"ConnectTimeout={int(timeout)}"])
+        completed = self._ssh(
+            "true", timeout=timeout, extra_options=["-o", f"ConnectTimeout={int(timeout)}"]
+        )
         return CommandResult(
             completed.returncode,
             completed.stdout.decode("utf-8", errors="replace"),
@@ -503,5 +617,7 @@ class SshExecutor(LocationExecutor):
 
     def terminal_argv(self, base_directory: str) -> list[str]:
         """The ssh argv for an interactive login shell on the remote, sharing this host's multiplexed connection."""
-        remote_command = f"cd {shlex.quote(base_directory)} 2>/dev/null; exec ${{SHELL:-/bin/bash}} -l"
+        remote_command = (
+            f"cd {shlex.quote(base_directory)} 2>/dev/null; exec ${{SHELL:-/bin/bash}} -l"
+        )
         return ["ssh", "-tt", *self._mux_options(), self.alias, remote_command]

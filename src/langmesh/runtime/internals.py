@@ -1,4 +1,5 @@
 """The helpers and small dataclasses the AgentRuntime mixins share, in a leaf module so the graph stays a DAG."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -66,7 +67,9 @@ def _only_with_a_parent(entry):
 class ObservationBatch(BaseModel):
     """Everything one pass appends to the ledger. Nothing is ever removed from it."""
 
-    observations: list[Observation] = Field(default_factory=list, description=_says("observation_batch"))
+    observations: list[Observation] = Field(
+        default_factory=list, description=_says("observation_batch")
+    )
 
 
 class Directive(BaseModel):
@@ -119,7 +122,9 @@ def model_is_authorized(
         return cursor_is_signed_in()
     if provider_identifier == "custom":
         return True
-    return bool(resolve_api_key(provider_identifier, global_configuration.configured_provider_keys()))
+    return bool(
+        resolve_api_key(provider_identifier, global_configuration.configured_provider_keys())
+    )
 
 
 def _maybe_json(value: str) -> Any:
@@ -168,9 +173,14 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     parsed = _maybe_json(result)
     if not isinstance(parsed, dict):
         excerpt, _ = clip_to_tokens(result, budget)
-        return compact({"code": code, "truncated": True,
-                        "omitted_characters": len(result) - len(excerpt),
-                        "output_excerpt": excerpt})
+        return compact(
+            {
+                "code": code,
+                "truncated": True,
+                "omitted_characters": len(result) - len(excerpt),
+                "output_excerpt": excerpt,
+            }
+        )
 
     kept = dict(parsed)
     omitted: dict[str, int] = {}
@@ -196,9 +206,9 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept) or not isinstance(kept[key], str):
             continue
-        elsewhere = count_tokens(rendered_with(
-            {other: value for other, value in kept.items() if other != key}
-        ))
+        elsewhere = count_tokens(
+            rendered_with({other: value for other, value in kept.items() if other != key})
+        )
         excerpt, clipped = clip_to_tokens(kept[key], max(1, budget - elsewhere))
         if clipped:
             omitted[f"{key} (clipped)"] = len(kept[key]) - len(excerpt)
@@ -213,9 +223,7 @@ def message_tokens(message: Any) -> int:
     total = count_tokens(message_text(message))
     for tool_call in getattr(message, "tool_calls", None) or []:
         arguments = tool_call.get("args")
-        total += count_tokens(
-            arguments if isinstance(arguments, str) else compact(arguments)
-        )
+        total += count_tokens(arguments if isinstance(arguments, str) else compact(arguments))
         total += count_tokens(str(tool_call.get("name") or ""))
     return total
 
@@ -254,7 +262,12 @@ _MODEL_PROMPT_LOADER = PromptLoader(Path(__file__).parent / "prompts")
 
 
 def _model_visible_tool_result(
-    content: str, metadata: dict[str, Any], status: str, code: str | None = None, *, kind: str = "tool_result",
+    content: str,
+    metadata: dict[str, Any],
+    status: str,
+    code: str | None = None,
+    *,
+    kind: str = "tool_result",
 ) -> str:
     """A model-facing tool result: a one-line JSON header, a blank line, then the tool's output as-is."""
     header: dict[str, Any] = {
@@ -268,10 +281,13 @@ def _model_visible_tool_result(
         value = metadata.get(key)
         if value is not None:
             header[key] = value
-    return _MODEL_PROMPT_LOADER.load("model_tool_result", {
-        "header": compact(header),
-        "content": content,
-    })
+    return _MODEL_PROMPT_LOADER.load(
+        "model_tool_result",
+        {
+            "header": compact(header),
+            "content": content,
+        },
+    )
 
 
 def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple[str, str | None]:
@@ -287,7 +303,11 @@ def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple
 
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
     """``(worktree_root, is_git_repo)``, walking up for a ``.git`` marker and falling back to the directory."""
-    base = Path(working_directory).expanduser().resolve() if working_directory else Path.cwd().resolve()
+    base = (
+        Path(working_directory).expanduser().resolve()
+        if working_directory
+        else Path.cwd().resolve()
+    )
     current = base
     while True:
         if (current / ".git").exists():
@@ -339,7 +359,9 @@ def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
             parsed = json.loads(text)
         except (ValueError, TypeError):
             continue
-        if (list in origins and isinstance(parsed, list)) or (dict in origins and isinstance(parsed, dict)):
+        if (list in origins and isinstance(parsed, list)) or (
+            dict in origins and isinstance(parsed, dict)
+        ):
             coerced[name] = parsed
     return coerced
 
@@ -403,14 +425,23 @@ class _PreflightGate:
     def to_dict(self) -> dict:
         """Every field as plain data: this dict crosses to a client and into the durable plan, so an omission disappears."""
         return {
-            "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
-            "tool_name": self.tool_name, "arguments": self.arguments,
-            "command": self.command, "explanation": self.explanation,
-            "reason": self.reason.model_dump() if hasattr(self.reason, "model_dump") else self.reason,
-            "questions": self.questions, "is_bash": self.is_bash,
-            "deny_message": self.deny_message, "egress_agent": self.egress_agent,
+            "request_id": self.request_id,
+            "tool_call_id": self.tool_call_id,
+            "kind": self.kind,
+            "tool_name": self.tool_name,
+            "arguments": self.arguments,
+            "command": self.command,
+            "explanation": self.explanation,
+            "reason": self.reason.model_dump()
+            if hasattr(self.reason, "model_dump")
+            else self.reason,
+            "questions": self.questions,
+            "is_bash": self.is_bash,
+            "deny_message": self.deny_message,
+            "egress_agent": self.egress_agent,
             "escape": _escape_to_dict(self.escape),
-            "whole_disk": self.whole_disk, "denial_evidence": self.denial_evidence,
+            "whole_disk": self.whole_disk,
+            "denial_evidence": self.denial_evidence,
             "refused_result": self.refused_result,
             "grants_screen_mutations": self.grants_screen_mutations,
         }
@@ -418,14 +449,18 @@ class _PreflightGate:
     @classmethod
     def from_dict(cls, data: dict) -> _PreflightGate:
         return cls(
-            request_id=str(data.get("request_id", "")), tool_call_id=str(data.get("tool_call_id", "")),
+            request_id=str(data.get("request_id", "")),
+            tool_call_id=str(data.get("tool_call_id", "")),
             kind=str(data.get("kind", "permission")),
-            tool_name=str(data.get("tool_name", "")), arguments=dict(data.get("arguments") or {}),
+            tool_name=str(data.get("tool_name", "")),
+            arguments=dict(data.get("arguments") or {}),
             command=str(data.get("command", "")),
             explanation=str(data.get("explanation", "")),
             reason=data.get("reason"),
-            questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
-            deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),
+            questions=list(data.get("questions", []) or []),
+            is_bash=bool(data.get("is_bash", False)),
+            deny_message=str(data.get("deny_message", "")),
+            egress_agent=str(data.get("egress_agent", "")),
             # Rebuilt as the real thing: `_approve` reads `.reads`, `.writes` and `.network` off it.
             escape=_escape_from_dict(data.get("escape")),
             whole_disk=bool(data.get("whole_disk", False)),
@@ -440,7 +475,9 @@ class _ToolPlan:
     """The verdict for one call: a refusal, some gates, or neither. Computed once, so execution only carries it out."""
 
     tool_call_id: str
-    refusal: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
+    refusal: Optional[dict] = (
+        None  # {"code", "message", "denied_injection", "raw_command", "reason"}
+    )
     gates: list[_PreflightGate] = field(default_factory=list)
     # Whether a screen script may change something. False by default, so the narrow set is what a call gets.
     screen_mutations: bool = False
@@ -459,7 +496,8 @@ class _ToolPlan:
 
     def to_dict(self) -> dict:
         return {
-            "tool_call_id": self.tool_call_id, "refusal": self.refusal,
+            "tool_call_id": self.tool_call_id,
+            "refusal": self.refusal,
             "gates": [gate.to_dict() for gate in self.gates],
             "screen_mutations": self.screen_mutations,
             "retry_grant": self.retry_grant.as_dict() if self.retry_grant is not None else None,
@@ -495,7 +533,9 @@ class _ResolvedToolDecision:
 
     tool_call_id: str
     approved: bool = True
-    denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
+    denial: Optional[dict] = (
+        None  # {"code", "message", "denied_injection", "raw_command", "reason"}
+    )
     answers: Any = None  # ask_user: the answers list, or the decline sentinel
     # Whether a screen script may change something. False unless a rule or an answer said otherwise.
     screen_mutations: bool = False
@@ -506,9 +546,9 @@ class _ResolvedToolDecision:
 
 
 # How a turn phase tells the driver what to do next: a generator cannot return through ``async for``.
-_PROCEED = "proceed"    # fall through to the rest of the iteration
+_PROCEED = "proceed"  # fall through to the rest of the iteration
 _CONTINUE = "continue"  # the phase already advanced loop bookkeeping; loop again
-_STOP = "stop"          # the turn is over (a terminal event was already yielded); return
+_STOP = "stop"  # the turn is over (a terminal event was already yielded); return
 
 
 @dataclass

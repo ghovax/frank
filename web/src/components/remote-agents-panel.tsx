@@ -62,7 +62,12 @@ const HEALTH_PALETTE: Record<string, string> = {
 function draftToInput(draft: Draft): RemoteAgentInput {
   const auth =
     draft.authType === "oauth2"
-      ? { type: "oauth2", tokenUrl: draft.tokenUrl, clientId: draft.clientId, clientSecret: draft.clientSecret }
+      ? {
+          type: "oauth2",
+          tokenUrl: draft.tokenUrl,
+          clientId: draft.clientId,
+          clientSecret: draft.clientSecret,
+        }
       : draft.authType === "none"
         ? { type: "none" }
         : { type: draft.authType, token: draft.token };
@@ -151,7 +156,10 @@ export function RemoteAgentsPanel() {
   const refresh = useCallback(async (name: string) => {
     try {
       const result = await refreshRemoteAgent(name);
-      toaster.create({ title: `${name}: ${result.health}`, type: result.health === "ok" ? "success" : "error" });
+      toaster.create({
+        title: `${name}: ${result.health}`,
+        type: result.health === "ok" ? "success" : "error",
+      });
     } catch {
       // Reported by the toast below.
       toaster.create({ title: "Could not refresh external agent", type: "error" });
@@ -198,10 +206,19 @@ export function RemoteAgentsPanel() {
               )}
             </Flex>
             <Flex gap={1} flexShrink={0}>
-              <IconButton aria-label="Refresh card" variant="ghost" onClick={() => void refresh(agent.name)}>
+              <IconButton
+                aria-label="Refresh card"
+                variant="ghost"
+                onClick={() => void refresh(agent.name)}
+              >
                 <LuRefreshCw size={13} />
               </IconButton>
-              <IconButton aria-label="Remove agent" variant="ghost" colorPalette="red" onClick={() => void remove(agent.name)}>
+              <IconButton
+                aria-label="Remove agent"
+                variant="ghost"
+                colorPalette="red"
+                onClick={() => void remove(agent.name)}
+              >
                 <LuTrash2 size={13} />
               </IconButton>
             </Flex>
@@ -209,10 +226,21 @@ export function RemoteAgentsPanel() {
         ))
       )}
 
-      <Flex direction="column" gap={3} borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
+      <Flex
+        direction="column"
+        gap={3}
+        borderWidth="1px"
+        borderColor="border"
+        borderRadius="md"
+        p={3}
+      >
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">Name</Text>
-          <Input value={draft.name} onChange={(event) => update({ name: event.target.value })} placeholder="acme-researcher" />
+          <Input
+            value={draft.name}
+            onChange={(event) => update({ name: event.target.value })}
+            placeholder="acme-researcher"
+          />
         </Flex>
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">Agent card URL</Text>
@@ -224,27 +252,46 @@ export function RemoteAgentsPanel() {
         </Flex>
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">Authentication</Text>
-          <SimpleSelect items={AUTH_ITEMS} value={draft.authType} onValueChange={(value) => update({ authType: value })} />
+          <SimpleSelect
+            items={AUTH_ITEMS}
+            value={draft.authType}
+            onValueChange={(value) => update({ authType: value })}
+          />
         </Flex>
         {(draft.authType === "bearer" || draft.authType === "api_key") && (
           <Flex direction="column" gap={1}>
             <Text textStyle="fieldLabel">Token</Text>
-            <Input value={draft.token} onChange={(event) => update({ token: event.target.value })} placeholder="${ACME_TOKEN}" />
+            <Input
+              value={draft.token}
+              onChange={(event) => update({ token: event.target.value })}
+              placeholder="${ACME_TOKEN}"
+            />
           </Flex>
         )}
         {draft.authType === "oauth2" && (
           <>
             <Flex direction="column" gap={1}>
               <Text textStyle="fieldLabel">Token URL</Text>
-              <Input value={draft.tokenUrl} onChange={(event) => update({ tokenUrl: event.target.value })} placeholder="https://auth.example.com/oauth/token" />
+              <Input
+                value={draft.tokenUrl}
+                onChange={(event) => update({ tokenUrl: event.target.value })}
+                placeholder="https://auth.example.com/oauth/token"
+              />
             </Flex>
             <Flex direction="column" gap={1}>
               <Text textStyle="fieldLabel">Client ID</Text>
-              <Input value={draft.clientId} onChange={(event) => update({ clientId: event.target.value })} />
+              <Input
+                value={draft.clientId}
+                onChange={(event) => update({ clientId: event.target.value })}
+              />
             </Flex>
             <Flex direction="column" gap={1}>
               <Text textStyle="fieldLabel">Client secret</Text>
-              <Input value={draft.clientSecret} onChange={(event) => update({ clientSecret: event.target.value })} placeholder="${ACME_CLIENT_SECRET}" />
+              <Input
+                value={draft.clientSecret}
+                onChange={(event) => update({ clientSecret: event.target.value })}
+                placeholder="${ACME_CLIENT_SECRET}"
+              />
             </Flex>
           </>
         )}
@@ -258,9 +305,19 @@ export function RemoteAgentsPanel() {
         </Flex>
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">Allow private/loopback host</Text>
-          <SimpleSelect items={YES_NO} value={draft.allowPrivate} onValueChange={(value) => update({ allowPrivate: value })} />
+          <SimpleSelect
+            items={YES_NO}
+            value={draft.allowPrivate}
+            onValueChange={(value) => update({ allowPrivate: value })}
+          />
         </Flex>
-        <Button variant="subtle" colorPalette="blue" w="100%" loading={saving} onClick={() => void save()}>
+        <Button
+          variant="subtle"
+          colorPalette="blue"
+          w="100%"
+          loading={saving}
+          onClick={() => void save()}
+        >
           <LuPlus size={14} /> Add external agent
         </Button>
       </Flex>

@@ -6,7 +6,15 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 // The same glyphs the transcript uses for these things.
 import { CONCEPT_ICONS } from "@/lib/glyphs";
-import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
+import {
+  fetchMcpTools,
+  fetchSkills,
+  subscribeEvents,
+  type AgentCard,
+  type AgentSkill,
+  type McpServerTools,
+  type McpTool,
+} from "@/lib/api";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { SectionHeader } from "./ui/section-header";
 import { Pill } from "./ui/pill";
@@ -17,11 +25,16 @@ import { MarkdownContent } from "./markdown-content";
 function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
   const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
-  return <Span fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Span>;
+  return (
+    <Span fontFamily="var(--app-font-mono)" fontWeight="medium">
+      {identifier}
+    </Span>
+  );
 }
 
 // Tool descriptions come from docstrings whose sections duplicate the input schema, so only the summary is shown.
-const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Args|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
+const DOCSTRING_SECTION =
+  /\n[ \t]*(Arguments|Args|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
 
 function docstringSummary(description: string): string {
   const match = description.match(DOCSTRING_SECTION);
@@ -34,7 +47,13 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 }
 
 // The selected agent's skills as collapsible rows, plus the tools its configured servers expose.
-export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
+export function AgentSkills({
+  card,
+  workingDirectory,
+}: {
+  card: AgentCard | null;
+  workingDirectory?: string;
+}) {
   const translation = useTranslations("AgentSkills");
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
   const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
@@ -47,12 +66,16 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
         .then((skills) => {
           if (!cancelled) setFolderSkills(skills);
         })
-        .catch((caught) => swallowed({ component: "agent-skills", operation: "list the skills" }, caught));
+        .catch((caught) =>
+          swallowed({ component: "agent-skills", operation: "list the skills" }, caught),
+        );
       fetchMcpTools(workingDirectory)
         .then((servers) => {
           if (!cancelled) setMcpServers(servers);
         })
-        .catch((caught) => swallowed({ component: "agent-skills", operation: "list the MCP tools" }, caught));
+        .catch((caught) =>
+          swallowed({ component: "agent-skills", operation: "list the MCP tools" }, caught),
+        );
     };
     loadCapabilities();
     // Both reload live, since their files are watched, so refetch when the server signals a change.
@@ -102,7 +125,9 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
           />
           <Flex direction="column" gap={2}>
             {/* One list rather than two, since where a skill is defined is how it got here rather than what it is. */}
-            {[...globalSkills, ...workspaceSkills].map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+            {[...globalSkills, ...workspaceSkills].map((skill) => (
+              <SkillCard key={skill.id} skill={skill} />
+            ))}
           </Flex>
         </>
       )}
@@ -115,7 +140,9 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             description={translation("toolsDescription")}
           />
           <Flex direction="column" gap={2}>
-            {[...globalServers, ...workspaceServers].map((server) => <McpServerGroup key={server.name} server={server} />)}
+            {[...globalServers, ...workspaceServers].map((server) => (
+              <McpServerGroup key={server.name} server={server} />
+            ))}
           </Flex>
         </Box>
       )}
@@ -131,8 +158,16 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   return (
     <DisclosureRow
       disabled={!enabled}
-      icon={<Box color="fg.muted"><CONCEPT_ICONS.skill /></Box>}
-      title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
+      icon={
+        <Box color="fg.muted">
+          <CONCEPT_ICONS.skill />
+        </Box>
+      }
+      title={
+        <DisclosureLabel>
+          <CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} />
+        </DisclosureLabel>
+      }
       badges={enabled ? undefined : <Pill colorPalette="gray">{translation("disabled")}</Pill>}
     >
       {enabled && hasBody ? (
@@ -147,7 +182,9 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
               <InlineField label={translation("examples")}>
                 <Flex direction="column" gap={1}>
                   {skill.examples.map((example, index) => (
-                    <Text key={index} fontSize="xs" color="fg.muted">“{example}”</Text>
+                    <Text key={index} fontSize="xs" color="fg.muted">
+                      “{example}”
+                    </Text>
                   ))}
                 </Flex>
               </InlineField>
@@ -166,12 +203,24 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
   return (
     <DisclosureRow
       disabled={!enabled}
-      icon={<Box color="fg.muted"><CONCEPT_ICONS.mcp /></Box>}
-      title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
+      icon={
+        <Box color="fg.muted">
+          <CONCEPT_ICONS.mcp />
+        </Box>
+      }
+      title={
+        <DisclosureLabel>
+          <CapabilityTitle identifier={server.name} />
+        </DisclosureLabel>
+      }
       badges={
-        enabled
-          ? <Pill colorPalette="gray">{translation("toolCount", { count: server.tools.length })}</Pill>
-          : <Pill colorPalette="gray">{translation("disabled")}</Pill>
+        enabled ? (
+          <Pill colorPalette="gray">
+            {translation("toolCount", { count: server.tools.length })}
+          </Pill>
+        ) : (
+          <Pill colorPalette="gray">{translation("disabled")}</Pill>
+        )
       }
     >
       {enabled && server.tools.length > 0 ? (

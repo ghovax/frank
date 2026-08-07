@@ -42,6 +42,7 @@ def _dump(model) -> str:
 
 # Adjacent same-kind deltas merge into one message, so a replay re-reduces far fewer and larger rows.
 
+
 def _sole_part(message: object) -> dict | None:
     parts = message.get("parts") if isinstance(message, dict) else None  # type: ignore[union-attr]
     if not parts or not isinstance(parts, list) or len(parts) != 1:
@@ -94,11 +95,13 @@ def _compact_history(messages: list) -> list:
             last_part = _agent_text_part(last) if last is not None else None
             current_block_identifier = (
                 content_block_identifier(current_part.get("metadata"))
-                if current_part is not None else None
+                if current_part is not None
+                else None
             )
             last_block_identifier = (
                 content_block_identifier(last_part.get("metadata"))
-                if last_part is not None else None
+                if last_part is not None
+                else None
             )
             if (
                 last_part is not None
@@ -121,7 +124,15 @@ def _compact_history(messages: list) -> list:
                 and _path_key(last_sub) == key
                 and str(last_sub.get("block_id", "")) == str(sub.get("block_id", ""))
             ):
-                last["parts"] = [{"kind": "data", "data": {**last_sub, "text": str(last_sub.get("text", "")) + str(sub.get("text", ""))}}]  # type: ignore[index]
+                last["parts"] = [
+                    {
+                        "kind": "data",
+                        "data": {
+                            **last_sub,
+                            "text": str(last_sub.get("text", "")) + str(sub.get("text", "")),
+                        },
+                    }
+                ]  # type: ignore[index]
                 continue
             compacted.append(message)
             continue
@@ -135,7 +146,16 @@ def _compact_history(messages: list) -> list:
                 and _path_key(last_thinking) == key
                 and str(last_thinking.get("block_id", "")) == str(thinking.get("block_id", ""))
             ):
-                last["parts"] = [{"kind": "data", "data": {**last_thinking, "text": str(last_thinking.get("text", "")) + str(thinking.get("text", ""))}}]  # type: ignore[index]
+                last["parts"] = [
+                    {
+                        "kind": "data",
+                        "data": {
+                            **last_thinking,
+                            "text": str(last_thinking.get("text", ""))
+                            + str(thinking.get("text", "")),
+                        },
+                    }
+                ]  # type: ignore[index]
                 continue
             compacted.append(message)
             continue
@@ -212,7 +232,12 @@ class AppendOnlyTaskStore(TaskStore):
             UniqueConstraint("session_id", "ledger", "entry_id", name="uq_session_ledger_entry"),
             sqlite_autoincrement=True,
         )
-        Index("idx_session_ledger_session", self._ledger.c.session_id, self._ledger.c.ledger, self._ledger.c.row_id)
+        Index(
+            "idx_session_ledger_session",
+            self._ledger.c.session_id,
+            self._ledger.c.ledger,
+            self._ledger.c.row_id,
+        )
 
         self._checkpoint = Table(
             "turn_checkpoint",
@@ -304,19 +329,30 @@ class AppendOnlyTaskStore(TaskStore):
                     current_state = str(json.loads(head_row["status"]).get("state", ""))
                     if current_state in _TERMINAL_TASK_STATES:
                         continue
-                    metadata = json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else {}
+                    metadata = (
+                        json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else {}
+                    )
                     kind = TurnRecord.from_metadata(metadata).kind
-                    if reconcile_action(kind, current_state, input_required=input_required) is ReconcileAction.PRESERVE:
+                    if (
+                        reconcile_action(kind, current_state, input_required=input_required)
+                        is ReconcileAction.PRESERVE
+                    ):
                         continue
                     turn_id = str(head_row["id"])
                     session_id = str(head_row["session_id"] or "")
                     interrupted_message = Message(
                         role=Role.agent,
-                        parts=[Part(root=DataPart(data={
-                            "kind": "error",
-                            "code": "turn_interrupted",
-                            "message": "This turn was interrupted because the daemon restarted.",
-                        }))],
+                        parts=[
+                            Part(
+                                root=DataPart(
+                                    data={
+                                        "kind": "error",
+                                        "code": "turn_interrupted",
+                                        "message": "This turn was interrupted because the daemon restarted.",
+                                    }
+                                )
+                            )
+                        ],
                         message_id=uuid.uuid4().hex,
                         task_id=turn_id,
                         context_id=session_id or None,
@@ -378,7 +414,9 @@ class AppendOnlyTaskStore(TaskStore):
                         )
                     ).scalar()
                     if snapshot_exists is None:
-                        raise ValueError(f"Unknown inherited conversation snapshot {inherited_snapshot_id!r}")
+                        raise ValueError(
+                            f"Unknown inherited conversation snapshot {inherited_snapshot_id!r}"
+                        )
                     inheritance_insert = sqlite_insert(self._conversation_inheritance).values(
                         session_id=session_id,
                         snapshot_id=inherited_snapshot_id,
@@ -426,10 +464,15 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     sqlite_insert(self._conversation_snapshot)
                     .values(snapshot_id=snapshot_id, messages=compact(messages))
-                    .on_conflict_do_nothing(index_elements=[self._conversation_snapshot.c.snapshot_id])
+                    .on_conflict_do_nothing(
+                        index_elements=[self._conversation_snapshot.c.snapshot_id]
+                    )
                 )
                 checkpoint_insert = sqlite_insert(self._checkpoint).values(
-                    session_id=session_id, turn_id="", messages="[]", updated_at=now,
+                    session_id=session_id,
+                    turn_id="",
+                    messages="[]",
+                    updated_at=now,
                 )
                 await connection.execute(
                     checkpoint_insert.on_conflict_do_update(
@@ -438,7 +481,8 @@ class AppendOnlyTaskStore(TaskStore):
                     )
                 )
                 inheritance_insert = sqlite_insert(self._conversation_inheritance).values(
-                    session_id=session_id, snapshot_id=snapshot_id,
+                    session_id=session_id,
+                    snapshot_id=snapshot_id,
                 )
                 await connection.execute(
                     inheritance_insert.on_conflict_do_update(
@@ -495,14 +539,14 @@ class AppendOnlyTaskStore(TaskStore):
                         self._conversation_snapshot.c.messages,
                     )
                     .select_from(
-                        self._checkpoint
-                        .outerjoin(
+                        self._checkpoint.outerjoin(
                             self._conversation_inheritance,
-                            self._conversation_inheritance.c.session_id == self._checkpoint.c.session_id,
-                        )
-                        .outerjoin(
+                            self._conversation_inheritance.c.session_id
+                            == self._checkpoint.c.session_id,
+                        ).outerjoin(
                             self._conversation_snapshot,
-                            self._conversation_snapshot.c.snapshot_id == self._conversation_inheritance.c.snapshot_id,
+                            self._conversation_snapshot.c.snapshot_id
+                            == self._conversation_inheritance.c.snapshot_id,
                         )
                     )
                     .where(self._checkpoint.c.session_id == session_id)
@@ -531,7 +575,9 @@ class AppendOnlyTaskStore(TaskStore):
         async with self._engine.connect() as connection:
             row = (
                 await connection.execute(
-                    select(self._session_state.c.state).where(self._session_state.c.session_id == session_id)
+                    select(self._session_state.c.state).where(
+                        self._session_state.c.session_id == session_id
+                    )
                 )
             ).scalar()
         if not row:
@@ -542,14 +588,15 @@ class AppendOnlyTaskStore(TaskStore):
         except (json.JSONDecodeError, TypeError):
             return {}
 
-
     async def _persisted_count(self, connection, turn_id: str) -> int:
         """How many history rows are already persisted, so a save appends only the suffix not yet stored."""
         cached = self._persisted_counts.get(turn_id)
         if cached is not None:
             return cached
         result = await connection.execute(
-            select(func.count()).select_from(self._history).where(self._history.c.turn_id == turn_id)
+            select(func.count())
+            .select_from(self._history)
+            .where(self._history.c.turn_id == turn_id)
         )
         seeded = int(result.scalar() or 0)
         self._persisted_counts[turn_id] = seeded
@@ -575,7 +622,7 @@ class AppendOnlyTaskStore(TaskStore):
                 .where(self._history.c.row_id == existing_rows[message_index].row_id)
                 .values(message=json.dumps(message))
             )
-        surplus_row_ids = [row.row_id for row in existing_rows[len(compacted_messages):]]
+        surplus_row_ids = [row.row_id for row in existing_rows[len(compacted_messages) :]]
         if surplus_row_ids:
             await connection.execute(
                 delete(self._history).where(self._history.c.row_id.in_(surplus_row_ids))
@@ -601,7 +648,9 @@ class AppendOnlyTaskStore(TaskStore):
                     "session_id": task.context_id,
                     "kind": task.kind,
                     "status": _dump(task.status),
-                    "turn_metadata": json.dumps(task.metadata) if task.metadata is not None else None,
+                    "turn_metadata": json.dumps(task.metadata)
+                    if task.metadata is not None
+                    else None,
                 }
                 head_insert = sqlite_insert(self._head).values(**head_values)
                 await connection.execute(
@@ -622,7 +671,10 @@ class AppendOnlyTaskStore(TaskStore):
                 if new_messages:
                     await connection.execute(
                         self._history.insert(),
-                        [{"turn_id": task.id, "message": _dump(message)} for message in new_messages],
+                        [
+                            {"turn_id": task.id, "message": _dump(message)}
+                            for message in new_messages
+                        ],
                     )
                     self._persisted_counts[task.id] = persisted + len(new_messages)
 
@@ -642,7 +694,10 @@ class AppendOnlyTaskStore(TaskStore):
                     )
                     await connection.execute(
                         artifact_insert.on_conflict_do_update(
-                            index_elements=[self._artifacts.c.turn_id, self._artifacts.c.artifact_id],
+                            index_elements=[
+                                self._artifacts.c.turn_id,
+                                self._artifacts.c.artifact_id,
+                            ],
                             set_={"artifact": artifact_json},
                         )
                     )
@@ -653,29 +708,43 @@ class AppendOnlyTaskStore(TaskStore):
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             head_row = (
-                await connection.execute(select(self._head).where(self._head.c.id == turn_id))
-            ).mappings().first()
+                (await connection.execute(select(self._head).where(self._head.c.id == turn_id)))
+                .mappings()
+                .first()
+            )
             if head_row is None:
                 return None
             history_rows = (
-                await connection.execute(
-                    select(self._history.c.message)
-                    .where(self._history.c.turn_id == turn_id)
-                    .order_by(self._history.c.row_id)
+                (
+                    await connection.execute(
+                        select(self._history.c.message)
+                        .where(self._history.c.turn_id == turn_id)
+                        .order_by(self._history.c.row_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             artifact_rows = (
-                await connection.execute(
-                    select(self._artifacts.c.artifact).where(self._artifacts.c.turn_id == turn_id)
+                (
+                    await connection.execute(
+                        select(self._artifacts.c.artifact).where(
+                            self._artifacts.c.turn_id == turn_id
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         data = {
             "id": head_row["id"],
             "context_id": head_row["session_id"],
             "kind": head_row["kind"] or "task",
             "status": json.loads(head_row["status"]),
-            "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
+            "metadata": json.loads(head_row["turn_metadata"])
+            if head_row["turn_metadata"]
+            else None,
             "history": [json.loads(message) for message in history_rows],
             "artifacts": [json.loads(artifact) for artifact in artifact_rows] or None,
         }
@@ -686,13 +755,17 @@ class AppendOnlyTaskStore(TaskStore):
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             head_rows = (
-                await connection.execute(
-                    select(self._head)
-                    .where(self._head.c.session_id == session_id)
-                    # Ordered by when each turn actually started, since a turn's id is a random UUID and sorts arbitrarily.
-                    .order_by(self._head.c.id)
+                (
+                    await connection.execute(
+                        select(self._head)
+                        .where(self._head.c.session_id == session_id)
+                        # Ordered by when each turn actually started, since a turn's id is a random UUID and sorts arbitrarily.
+                        .order_by(self._head.c.id)
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
             turn_ids = [str(row["id"]) for row in head_rows]
             if not turn_ids:
                 return []
@@ -726,15 +799,21 @@ class AppendOnlyTaskStore(TaskStore):
             started.setdefault(str(turn_id), position)
 
         turns: list[Task] = []
-        for head_row in sorted(head_rows, key=lambda row: started.get(str(row["id"]), len(history_rows))):
+        for head_row in sorted(
+            head_rows, key=lambda row: started.get(str(row["id"]), len(history_rows))
+        ):
             turn_id = str(head_row["id"])
             data = {
                 "id": turn_id,
                 "context_id": head_row["session_id"],
                 "kind": head_row["kind"] or "task",
                 "status": json.loads(head_row["status"]),
-                "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
-                "history": _compact_history([json.loads(message) for message in histories[turn_id]]),
+                "metadata": json.loads(head_row["turn_metadata"])
+                if head_row["turn_metadata"]
+                else None,
+                "history": _compact_history(
+                    [json.loads(message) for message in histories[turn_id]]
+                ),
                 "artifacts": [json.loads(artifact) for artifact in artifacts[turn_id]] or None,
             }
             turns.append(Task.model_validate(data))
@@ -752,10 +831,14 @@ class AppendOnlyTaskStore(TaskStore):
         page_limit = max(1, min(limit, 1000))
         async with self._engine.connect() as connection:
             head_rows = (
-                await connection.execute(
-                    select(self._head).where(self._head.c.session_id == session_id)
+                (
+                    await connection.execute(
+                        select(self._head).where(self._head.c.session_id == session_id)
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
             if not head_rows:
                 return {"turns": [], "next_before_row_id": None, "has_more": False}
 
@@ -771,15 +854,19 @@ class AppendOnlyTaskStore(TaskStore):
             related_tasks = []
             if before_row_id is None:
                 related_tasks = [
-                    Task.model_validate({
-                        "id": str(row["id"]),
-                        "context_id": row["session_id"],
-                        "kind": row["kind"] or "task",
-                        "status": json.loads(row["status"]),
-                        "metadata": json.loads(row["turn_metadata"]) if row["turn_metadata"] else None,
-                        "history": [],
-                        "artifacts": None,
-                    })
+                    Task.model_validate(
+                        {
+                            "id": str(row["id"]),
+                            "context_id": row["session_id"],
+                            "kind": row["kind"] or "task",
+                            "status": json.loads(row["status"]),
+                            "metadata": json.loads(row["turn_metadata"])
+                            if row["turn_metadata"]
+                            else None,
+                            "history": [],
+                            "artifacts": None,
+                        }
+                    )
                     for row in related_head_rows
                 ]
             if not turn_ids:
@@ -802,7 +889,9 @@ class AppendOnlyTaskStore(TaskStore):
             first_row_by_turn: dict[str, int] = {}
             for row in page_rows:
                 turn_id = str(row.turn_id)
-                first_row_by_turn[turn_id] = min(first_row_by_turn.get(turn_id, int(row.row_id)), int(row.row_id))
+                first_row_by_turn[turn_id] = min(
+                    first_row_by_turn.get(turn_id, int(row.row_id)), int(row.row_id)
+                )
             page_turn_ids = sorted(first_row_by_turn, key=first_row_by_turn.__getitem__)
             maximum_row_rows = (
                 await connection.execute(
@@ -811,7 +900,11 @@ class AppendOnlyTaskStore(TaskStore):
                     .group_by(self._history.c.turn_id)
                 )
             ).all()
-            maximum_row_by_turn = {str(turn_id): int(maximum_row) for turn_id, maximum_row in maximum_row_rows if maximum_row is not None}
+            maximum_row_by_turn = {
+                str(turn_id): int(maximum_row)
+                for turn_id, maximum_row in maximum_row_rows
+                if maximum_row is not None
+            }
             artifact_rows = (
                 await connection.execute(
                     select(self._artifacts.c.turn_id, self._artifacts.c.artifact)
@@ -845,10 +938,15 @@ class AppendOnlyTaskStore(TaskStore):
                 "context_id": head_row["session_id"],
                 "kind": head_row["kind"] or "task",
                 "status": status,
-                "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
-                "history": _compact_history([json.loads(message) for _, message in histories[turn_id]]),
+                "metadata": json.loads(head_row["turn_metadata"])
+                if head_row["turn_metadata"]
+                else None,
+                "history": _compact_history(
+                    [json.loads(message) for _, message in histories[turn_id]]
+                ),
                 "artifacts": ([json.loads(artifact) for artifact in artifacts[turn_id]] or None)
-                if holds_turn_tail[turn_id] else None,
+                if holds_turn_tail[turn_id]
+                else None,
             }
             tasks.append(Task.model_validate(data))
 
@@ -891,14 +989,20 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
         return len(rows)
 
-    async def ledger_entries(self, session_id: str, ledger: str, *, live_only: bool = True) -> list[dict]:
+    async def ledger_entries(
+        self, session_id: str, ledger: str, *, live_only: bool = True
+    ) -> list[dict]:
         """A session's ledger in the order it was written; live entries are those nothing later replaces."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
                 await connection.execute(
-                    select(self._ledger.c.entry_id, self._ledger.c.entry, self._ledger.c.supersedes,
-                           self._ledger.c.written_at)
+                    select(
+                        self._ledger.c.entry_id,
+                        self._ledger.c.entry,
+                        self._ledger.c.supersedes,
+                        self._ledger.c.written_at,
+                    )
                     .where(self._ledger.c.session_id == session_id, self._ledger.c.ledger == ledger)
                     .order_by(self._ledger.c.row_id)
                 )
@@ -927,8 +1031,12 @@ class AppendOnlyTaskStore(TaskStore):
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
-                await connection.execute(delete(self._history).where(self._history.c.turn_id == turn_id))
-                await connection.execute(delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id))
+                await connection.execute(
+                    delete(self._history).where(self._history.c.turn_id == turn_id)
+                )
+                await connection.execute(
+                    delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id)
+                )
                 await connection.execute(delete(self._head).where(self._head.c.id == turn_id))
             self._persisted_counts.pop(turn_id, None)
             self._terminal_turns.discard(turn_id)
@@ -942,22 +1050,38 @@ class AppendOnlyTaskStore(TaskStore):
         try:
             async with self._engine.begin() as connection:
                 turn_ids = (
-                    await connection.execute(
-                        select(self._head.c.id).where(self._head.c.session_id == session_id)
+                    (
+                        await connection.execute(
+                            select(self._head.c.id).where(self._head.c.session_id == session_id)
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 for turn_id in turn_ids:
-                    await connection.execute(delete(self._history).where(self._history.c.turn_id == turn_id))
-                    await connection.execute(delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id))
-                await connection.execute(delete(self._head).where(self._head.c.session_id == session_id))
-                await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.session_id == session_id))
+                    await connection.execute(
+                        delete(self._history).where(self._history.c.turn_id == turn_id)
+                    )
+                    await connection.execute(
+                        delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id)
+                    )
+                await connection.execute(
+                    delete(self._head).where(self._head.c.session_id == session_id)
+                )
+                await connection.execute(
+                    delete(self._checkpoint).where(self._checkpoint.c.session_id == session_id)
+                )
                 await connection.execute(
                     delete(self._conversation_inheritance).where(
                         self._conversation_inheritance.c.session_id == session_id
                     )
                 )
                 await self._delete_unreferenced_conversation_snapshots(connection)
-                await connection.execute(delete(self._session_state).where(self._session_state.c.session_id == session_id))
+                await connection.execute(
+                    delete(self._session_state).where(
+                        self._session_state.c.session_id == session_id
+                    )
+                )
             for turn_id in turn_ids:
                 self._persisted_counts.pop(str(turn_id), None)
                 self._terminal_turns.discard(str(turn_id))
@@ -986,10 +1110,14 @@ class AppendOnlyTaskStore(TaskStore):
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
-                await connection.execute(
-                    select(self._head.c.id).where(self._head.c.session_id == session_id)
+                (
+                    await connection.execute(
+                        select(self._head.c.id).where(self._head.c.session_id == session_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return list(rows)
 
     async def session_message_texts(self, session_id: str) -> list[str]:
@@ -997,12 +1125,20 @@ class AppendOnlyTaskStore(TaskStore):
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
-                await connection.execute(
-                    select(self._history.c.message)
-                    .select_from(self._history.join(self._head, self._history.c.turn_id == self._head.c.id))
-                    .where(self._head.c.session_id == session_id)
+                (
+                    await connection.execute(
+                        select(self._history.c.message)
+                        .select_from(
+                            self._history.join(
+                                self._head, self._history.c.turn_id == self._head.c.id
+                            )
+                        )
+                        .where(self._head.c.session_id == session_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return list(rows)
 
     async def any_history_references(self, needle: str) -> bool:

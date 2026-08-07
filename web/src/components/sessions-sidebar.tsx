@@ -2,18 +2,48 @@
 
 // The chat-history sidebar as a self-contained unit: workspaces, a new-session row, and their sessions.
 
-import { Alert, Box, Button, Flex, IconButton, Input, Kbd, Menu, Text, VStack } from "@chakra-ui/react";
+import {
+  Alert,
+  Box,
+  Button,
+  Flex,
+  IconButton,
+  Input,
+  Kbd,
+  Menu,
+  Text,
+  VStack,
+} from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { useCallback, useEffect, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import {
+  LuArrowDownUp,
+  LuChevronDown,
+  LuClock,
+  LuEllipsis,
+  LuFolderOpen,
+  LuFolderPlus,
+  LuSearch,
+  LuSettings,
+  LuSquarePen,
+  LuTrash2,
+} from "react-icons/lu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LangMeshMark } from "@/components/ui/langmesh-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
-import { deleteWorkspace, listWorkspaces, listSshHosts, subscribeEvents, type AgentSummary, type Workspace, type SshHost } from "@/lib/api";
+import {
+  deleteWorkspace,
+  listWorkspaces,
+  listSshHosts,
+  subscribeEvents,
+  type AgentSummary,
+  type Workspace,
+  type SshHost,
+} from "@/lib/api";
 import { locationTargetAddress, workspaceLabel } from "./location-status";
 import { NewScheduleDialog } from "./new-schedule-dialog";
 import { NewWorkspaceDialog } from "./new-workspace-dialog";
@@ -28,26 +58,40 @@ import { errorMessage } from "@/lib/errors";
 // The workspace hover card follows the Git bar's shape, which is already this interface's vocabulary.
 
 function WorkspaceHoverCard({
-  label, workspace, sessionCount,
-}: { label: string; workspace: Workspace; sessionCount: number }) {
+  label,
+  workspace,
+  sessionCount,
+}: {
+  label: string;
+  workspace: Workspace;
+  sessionCount: number;
+}) {
   const translation = useTranslations("SessionsSidebar");
   const locations = workspace.locations ?? [];
   return (
     <Box maxW="320px">
       <Flex align="center" gap={1} mb={1} color="fg">
         <LuFolderOpen size={12} />
-        <Text fontWeight="semibold" truncate>{label}</Text>
+        <Text fontWeight="semibold" truncate>
+          {label}
+        </Text>
       </Flex>
       <Flex direction="column" ps={2} gap={1}>
         {/* Every location, since a workspace reaching two machines is precisely the one whose card is worth opening. */}
         {locations.map((location, index) => (
           <InlineField key={index} label={index === 0 ? translation("fieldLocation") : ""}>
-            <Text fontFamily="mono" wordBreak="break-all">{locationTargetAddress(location)}</Text>
+            <Text fontFamily="mono" wordBreak="break-all">
+              {locationTargetAddress(location)}
+            </Text>
           </InlineField>
         ))}
-        <InlineField label={translation("fieldConversations")}><Text>{sessionCount}</Text></InlineField>
+        <InlineField label={translation("fieldConversations")}>
+          <Text>{sessionCount}</Text>
+        </InlineField>
         <InlineField label={translation("fieldWorkspace")}>
-          <Text fontFamily="mono" wordBreak="break-all" color="fg.muted">{workspace.id}</Text>
+          <Text fontFamily="mono" wordBreak="break-all" color="fg.muted">
+            {workspace.id}
+          </Text>
         </InlineField>
       </Flex>
     </Box>
@@ -108,7 +152,11 @@ export function SessionsSidebar({
     : sessions;
 
   const refreshWorkspaces = useCallback(() => {
-    listWorkspaces().then(setWorkspaces).catch((caught) => swallowed({ component: "sessions-sidebar", operation: "list the SSH hosts" }, caught));
+    listWorkspaces()
+      .then(setWorkspaces)
+      .catch((caught) =>
+        swallowed({ component: "sessions-sidebar", operation: "list the SSH hosts" }, caught),
+      );
   }, []);
 
   useEffect(() => {
@@ -141,7 +189,9 @@ export function SessionsSidebar({
     const deletedWorkspaceId = pendingWorkspaceDelete.id;
     try {
       await deleteWorkspace(deletedWorkspaceId);
-      const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== deletedWorkspaceId);
+      const remainingWorkspaces = workspaces.filter(
+        (workspace) => workspace.id !== deletedWorkspaceId,
+      );
       setWorkspaces(remainingWorkspaces);
       if (deletedWorkspaceId === currentWorkspaceId && remainingWorkspaces[0]) {
         onSwitchWorkspace(remainingWorkspaces[0].id);
@@ -174,7 +224,15 @@ export function SessionsSidebar({
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
         <LangMeshMark size="26px" style={{ flexShrink: 0 }} />
-        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">LangMesh</Text>
+        <Text
+          fontFamily="var(--font-display)"
+          fontSize="2xl"
+          lineHeight="1"
+          fontWeight="bold"
+          letterSpacing="tight"
+        >
+          LangMesh
+        </Text>
       </Flex>
 
       {/* New session reads as the first row of the list rather than a separate button, with its shortcut on hover. */}
@@ -196,9 +254,21 @@ export function SessionsSidebar({
           <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
             <LuSquarePen size={14} />
           </Flex>
-          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newConversation")}</Text>
+          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">
+            {translation("newConversation")}
+          </Text>
           {/* The semantic keyboard-key component in its plain variant, so it reads as a hint rather than a keycap. */}
-          <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
+          <Kbd
+            data-kbd-hint
+            variant="plain"
+            fontFamily="var(--app-font-sans)"
+            fontSize="xs"
+            color="blue.fg"
+            transition="opacity 0.12s"
+            flexShrink={0}
+          >
+            ⌘N
+          </Kbd>
         </Button>
       </Box>
 
@@ -217,7 +287,9 @@ export function SessionsSidebar({
           <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
             <LuFolderPlus size={14} />
           </Flex>
-          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newWorkspace")}</Text>
+          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">
+            {translation("newWorkspace")}
+          </Text>
         </Button>
       </Box>
 
@@ -238,15 +310,29 @@ export function SessionsSidebar({
             <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
               <LuClock size={14} />
             </Flex>
-            <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newSchedule")}</Text>
+            <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">
+              {translation("newSchedule")}
+            </Text>
           </Button>
         </Box>
       ) : null}
 
       {/* Filter the list by title — the same field treatment as the settings search. */}
       <Box px={2} flexShrink={0} pb={1}>
-        <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg.subtle" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
-          <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
+        <Flex
+          align="center"
+          gap={2}
+          h={8}
+          px={2}
+          borderRadius="md"
+          bg="bg.subtle"
+          borderWidth="1px"
+          borderColor="border.muted"
+          _focusWithin={{ borderColor: "border.emphasized" }}
+        >
+          <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center">
+            <LuSearch size={14} />
+          </Box>
           <Input
             border="none"
             size="xs"
@@ -263,7 +349,9 @@ export function SessionsSidebar({
 
       <PanelBody pt={1}>
         <Flex align="center" gap={1.5} mb={1} color="fg.muted">
-          <Text textStyle="sectionLabel" flex={1}>{translation("workspaces")}</Text>
+          <Text textStyle="sectionLabel" flex={1}>
+            {translation("workspaces")}
+          </Text>
           <Box>
             <DropdownMenu
               trigger={
@@ -287,10 +375,18 @@ export function SessionsSidebar({
             >
               <Menu.ItemGroup>
                 <Menu.ItemGroupLabel>{translation("sortBy")}</Menu.ItemGroupLabel>
-                <MenuOption value="recent" selected={sessionSort === "recent"} onClick={() => onSessionSortChange("recent")}>
+                <MenuOption
+                  value="recent"
+                  selected={sessionSort === "recent"}
+                  onClick={() => onSessionSortChange("recent")}
+                >
                   {translation("newestFirst")}
                 </MenuOption>
-                <MenuOption value="active" selected={sessionSort === "active"} onClick={() => onSessionSortChange("active")}>
+                <MenuOption
+                  value="active"
+                  selected={sessionSort === "active"}
+                  onClick={() => onSessionSortChange("active")}
+                >
                   {translation("activeFirst")}
                 </MenuOption>
               </Menu.ItemGroup>
@@ -302,7 +398,9 @@ export function SessionsSidebar({
           <Alert.Root status="info" size="sm" borderRadius="md" my={2} alignItems="center">
             <Alert.Indicator />
             <Alert.Content minW={0}>
-              <Alert.Description fontSize="xs">{translation("noMatches", { query: search })}</Alert.Description>
+              <Alert.Description fontSize="xs">
+                {translation("noMatches", { query: search })}
+              </Alert.Description>
             </Alert.Content>
           </Alert.Root>
         ) : (
@@ -310,10 +408,15 @@ export function SessionsSidebar({
             {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
               const label = workspaceName(workspace);
               // Keyed by the workspace alone: including the search text made every keystroke discard the choice.
-              const workspaceOpen = workspaceOpenOverrides[workspace.id]
-                ?? (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
+              const workspaceOpen =
+                workspaceOpenOverrides[workspace.id] ??
+                (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
               const tooltipContent = (
-                <WorkspaceHoverCard label={label} workspace={workspace} sessionCount={workspaceSessions.length} />
+                <WorkspaceHoverCard
+                  label={label}
+                  workspace={workspace}
+                  sessionCount={workspaceSessions.length}
+                />
               );
               const workspaceActions = (
                 <Box>
@@ -327,7 +430,12 @@ export function SessionsSidebar({
                         _hover={{ bg: "transparent", color: "fg" }}
                         _active={{ bg: "transparent" }}
                         _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
-                        css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
+                        css={{
+                          "&[data-state=open]": {
+                            background: "transparent",
+                            color: "var(--chakra-colors-fg)",
+                          },
+                        }}
                       >
                         <LuEllipsis size={13} />
                       </IconButton>
@@ -335,7 +443,11 @@ export function SessionsSidebar({
                     minW="180px"
                     positioning={{ placement: "bottom-end" }}
                   >
-                    <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenWorkspaceSettings(workspace.id)}>
+                    <MenuOption
+                      value="settings"
+                      icon={<LuSettings size={14} />}
+                      onClick={() => onOpenWorkspaceSettings(workspace.id)}
+                    >
                       {translation("workspaceSettings")}
                     </MenuOption>
                     <Menu.Item
@@ -355,16 +467,30 @@ export function SessionsSidebar({
                 <TreeRow
                   key={workspace.id}
                   disclosure={workspaceOpen ? "open" : "closed"}
-                  disclosureLabel={workspaceOpen ? translation("hideWorkspace") : translation("showWorkspace")}
+                  disclosureLabel={
+                    workspaceOpen ? translation("hideWorkspace") : translation("showWorkspace")
+                  }
                   onDisclosureChange={(nextOpen) => {
-                    setWorkspaceOpenOverrides((current) => ({ ...current, [workspace.id]: nextOpen }));
+                    setWorkspaceOpenOverrides((current) => ({
+                      ...current,
+                      [workspace.id]: nextOpen,
+                    }));
                     if (nextOpen) onSwitchWorkspace(workspace.id);
                   }}
                   onActivate={() => onSwitchWorkspace(workspace.id)}
                   glyph={<LuFolderOpen size={13} />}
                   label={
-                    <Tooltip content={tooltipContent} rich openDelay={350} positioning={{ placement: "right" }}>
-                      <Box minW={0} w="full"><Text textStyle="xs" truncate>{label}</Text></Box>
+                    <Tooltip
+                      content={tooltipContent}
+                      rich
+                      openDelay={350}
+                      positioning={{ placement: "right" }}
+                    >
+                      <Box minW={0} w="full">
+                        <Text textStyle="xs" truncate>
+                          {label}
+                        </Text>
+                      </Box>
                     </Tooltip>
                   }
                   actions={workspaceActions}
@@ -394,13 +520,19 @@ export function SessionsSidebar({
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
         title={translation("deleteTitle")}
         confirmLabel={translation("deleteConfirm")}
         danger
-        onConfirm={() => { if (pendingDelete) onDeleteSession(pendingDelete); }}
+        onConfirm={() => {
+          if (pendingDelete) onDeleteSession(pendingDelete);
+        }}
       >
-        {translation("deleteBody", { title: pendingDelete?.title || translation("untitledConversation") })}
+        {translation("deleteBody", {
+          title: pendingDelete?.title || translation("untitledConversation"),
+        })}
       </ConfirmDialog>
 
       {newWorkspaceOpen ? (
@@ -410,7 +542,10 @@ export function SessionsSidebar({
           hostsLoaded={sshHostsLoaded}
           onOpenChange={setNewWorkspaceOpen}
           onCreated={(workspace) => {
-            setWorkspaces((current) => [workspace, ...current.filter((entry) => entry.id !== workspace.id)]);
+            setWorkspaces((current) => [
+              workspace,
+              ...current.filter((entry) => entry.id !== workspace.id),
+            ]);
             onSwitchWorkspace(workspace.id);
           }}
         />
@@ -425,13 +560,17 @@ export function SessionsSidebar({
 
       <ConfirmDialog
         open={pendingWorkspaceDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingWorkspaceDelete(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingWorkspaceDelete(null);
+        }}
         title={translation("deleteWorkspaceTitle")}
         confirmLabel={translation("deleteConfirm")}
         danger
         onConfirm={() => void confirmWorkspaceDelete()}
       >
-        {translation("deleteWorkspaceBody", { workspace: pendingWorkspaceDelete ? workspaceName(pendingWorkspaceDelete) : "" })}
+        {translation("deleteWorkspaceBody", {
+          workspace: pendingWorkspaceDelete ? workspaceName(pendingWorkspaceDelete) : "",
+        })}
       </ConfirmDialog>
     </PanelCard>
   );

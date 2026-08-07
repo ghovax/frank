@@ -4,8 +4,22 @@ import { Box, Flex, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
-  LuActivity, LuFolderGit2, LuGlobe, LuKeyRound, LuLayers, LuMic, LuMonitor,
-  LuPackage, LuPlug, LuScale, LuSearch, LuServer, LuShield, LuSlidersHorizontal, LuUser, LuUsers,
+  LuActivity,
+  LuFolderGit2,
+  LuGlobe,
+  LuKeyRound,
+  LuLayers,
+  LuMic,
+  LuMonitor,
+  LuPackage,
+  LuPlug,
+  LuScale,
+  LuSearch,
+  LuServer,
+  LuShield,
+  LuSlidersHorizontal,
+  LuUser,
+  LuUsers,
 } from "react-icons/lu";
 import { toaster } from "@/components/ui/toaster";
 import { DisclosureLabel, DisclosureRow } from "@/components/ui/disclosure-row";
@@ -85,16 +99,30 @@ function ConfigurationSection({
   const Icon = SECTION_ICONS[section.path] ?? LuSlidersHorizontal;
   const sentence = textAt(about, section.path);
   return (
-    <DisclosureRow icon={<Icon size={13} />} title={<DisclosureLabel>{textAt(names, section.path)}</DisclosureLabel>}>
+    <DisclosureRow
+      icon={<Icon size={13} />}
+      title={<DisclosureLabel>{textAt(names, section.path)}</DisclosureLabel>}
+    >
       <Flex direction="column" gap={4} pt={1} pb={2}>
-        {sentence ? <Text fontSize="xs" color="fg.muted">{sentence}</Text> : null}
+        {sentence ? (
+          <Text fontSize="xs" color="fg.muted">
+            {sentence}
+          </Text>
+        ) : null}
         {[...rowsByGroup.entries()].map(([group, rows]) => (
           <Box key={group}>
             {/* A sub-object gets its own heading only where the section has more than one. */}
             {rowsByGroup.size > 1 ? (
-              <Text textStyle="sectionLabel" mb={1}>{textAt(names, group)}</Text>
+              <Text textStyle="sectionLabel" mb={1}>
+                {textAt(names, group)}
+              </Text>
             ) : null}
-            <Box css={{ "& > *": { borderColor: "var(--chakra-colors-border-muted)" }, "& > *:not(:last-child)": { borderBottomWidth: "1px" } }}>
+            <Box
+              css={{
+                "& > *": { borderColor: "var(--chakra-colors-border-muted)" },
+                "& > *:not(:last-child)": { borderBottomWidth: "1px" },
+              }}
+            >
               {rows.map(renderRow)}
             </Box>
           </Box>
@@ -104,7 +132,9 @@ function ConfigurationSection({
   );
 }
 
-export function useSchemaSettingsPage(renderRow: (row: SettingRowDef) => React.ReactNode): SettingsPage | null {
+export function useSchemaSettingsPage(
+  renderRow: (row: SettingRowDef) => React.ReactNode,
+): SettingsPage | null {
   const translation = useTranslations("SettingsDialog");
   const names = useTranslations("Settings") as unknown as PathTranslator;
   const about = useTranslations("SettingsAbout") as unknown as PathTranslator;
@@ -115,36 +145,45 @@ export function useSchemaSettingsPage(renderRow: (row: SettingRowDef) => React.R
   const load = useCallback(() => {
     fetchSettingsSchema()
       .then(setSections)
-      .catch((caught) => swallowed({ component: "settings-schema", operation: "read the settings schema" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "settings-schema", operation: "read the settings schema" }, caught),
+      );
   }, []);
 
   useEffect(() => {
     load();
     // The same event every settings surface listens to, so a change elsewhere lands without a reload.
-    const unsubscribe = subscribeEvents((event) => { if (event.type === "settings_changed") load(); });
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "settings_changed") load();
+    });
     return unsubscribe;
   }, [load]);
 
-  const apply = useCallback(async (path: string, run: () => Promise<void>) => {
-    setSaving((current) => new Set(current).add(path));
-    try {
-      await run();
-    } catch (caught) {
-      // The daemon's own words: it refused because the schema refused, and that sentence is the useful one.
-      toaster.create({
-        type: "error",
-        title: translation("settingsSchemaError", { reason: caught instanceof Error ? caught.message : String(caught) }),
-        closable: true,
-      });
-    } finally {
-      setSaving((current) => {
-        const next = new Set(current);
-        next.delete(path);
-        return next;
-      });
-      load();
-    }
-  }, [load, translation]);
+  const apply = useCallback(
+    async (path: string, run: () => Promise<void>) => {
+      setSaving((current) => new Set(current).add(path));
+      try {
+        await run();
+      } catch (caught) {
+        // The daemon's own words: it refused because the schema refused, and that sentence is the useful one.
+        toaster.create({
+          type: "error",
+          title: translation("settingsSchemaError", {
+            reason: caught instanceof Error ? caught.message : String(caught),
+          }),
+          closable: true,
+        });
+      } finally {
+        setSaving((current) => {
+          const next = new Set(current);
+          next.delete(path);
+          return next;
+        });
+        load();
+      }
+    },
+    [load, translation],
+  );
 
   return useMemo<SettingsPage | null>(() => {
     if (sections.length === 0) return null;
@@ -167,30 +206,33 @@ export function useSchemaSettingsPage(renderRow: (row: SettingRowDef) => React.R
       id: "configuration",
       label: translation("tabConfiguration"),
       icon: <LuSlidersHorizontal size={14} />,
-      sections: [{
-        title: translation("tabConfiguration"),
-        rows: [],
-        block: (
-          <Flex direction="column" gap={1} w="100%">
-            {sections.map((section) => {
-              const rowsByGroup = new Map<string, SettingRowDef[]>();
-              for (const entry of section.settings) {
-                const group = groupOf(entry.path);
-                const existing = rowsByGroup.get(group);
-                if (existing) existing.push(rowFor(entry)); else rowsByGroup.set(group, [rowFor(entry)]);
-              }
-              return (
-                <ConfigurationSection
-                  key={section.path}
-                  section={section}
-                  rowsByGroup={rowsByGroup}
-                  renderRow={renderRow}
-                />
-              );
-            })}
-          </Flex>
-        ),
-      }],
+      sections: [
+        {
+          title: translation("tabConfiguration"),
+          rows: [],
+          block: (
+            <Flex direction="column" gap={1} w="100%">
+              {sections.map((section) => {
+                const rowsByGroup = new Map<string, SettingRowDef[]>();
+                for (const entry of section.settings) {
+                  const group = groupOf(entry.path);
+                  const existing = rowsByGroup.get(group);
+                  if (existing) existing.push(rowFor(entry));
+                  else rowsByGroup.set(group, [rowFor(entry)]);
+                }
+                return (
+                  <ConfigurationSection
+                    key={section.path}
+                    section={section}
+                    rowsByGroup={rowsByGroup}
+                    renderRow={renderRow}
+                  />
+                );
+              })}
+            </Flex>
+          ),
+        },
+      ],
     };
   }, [sections, saving, apply, names, about, translation, renderRow]);
 }

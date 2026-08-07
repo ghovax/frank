@@ -55,10 +55,16 @@ class SessionWorktreeManager:
         self._root_directory.mkdir(parents=True, exist_ok=True)
         self._lock_path = self._root_directory / ".lock"
 
-    async def prepare(self, session_id: str, source_working_directory: str, strategy: WorktreeStrategy) -> SessionWorktree:
-        return await asyncio.to_thread(self.prepare_sync, session_id, source_working_directory, strategy)
+    async def prepare(
+        self, session_id: str, source_working_directory: str, strategy: WorktreeStrategy
+    ) -> SessionWorktree:
+        return await asyncio.to_thread(
+            self.prepare_sync, session_id, source_working_directory, strategy
+        )
 
-    def prepare_sync(self, session_id: str, source_working_directory: str, strategy: WorktreeStrategy) -> SessionWorktree:
+    def prepare_sync(
+        self, session_id: str, source_working_directory: str, strategy: WorktreeStrategy
+    ) -> SessionWorktree:
         source = Path(source_working_directory or Path.home()).expanduser().resolve(strict=False)
         if not source.is_dir():
             raise FileNotFoundError(f"Working directory does not exist: {source}")
@@ -148,12 +154,18 @@ class SessionWorktreeManager:
             stderr = (result.stderr or result.stdout or "unknown git checkout error").strip()
             raise RuntimeError(f"Could not prepare session branch: {stderr}")
 
-    def _add_worktree(self, repository_root: Path, worktree_root: Path, branch: str, head: str) -> None:
-        result = self._run_git(repository_root, "worktree", "add", "-b", branch, str(worktree_root), head, check=False)
+    def _add_worktree(
+        self, repository_root: Path, worktree_root: Path, branch: str, head: str
+    ) -> None:
+        result = self._run_git(
+            repository_root, "worktree", "add", "-b", branch, str(worktree_root), head, check=False
+        )
         if result.returncode == 0:
             return
         if self._branch_exists(repository_root, branch):
-            result = self._run_git(repository_root, "worktree", "add", str(worktree_root), branch, check=False)
+            result = self._run_git(
+                repository_root, "worktree", "add", str(worktree_root), branch, check=False
+            )
             if result.returncode == 0:
                 return
         stderr = (result.stderr or result.stdout or "unknown git worktree error").strip()
@@ -164,20 +176,25 @@ class SessionWorktreeManager:
         for candidate in ("main", "master"):
             if self._branch_exists(repository_root, candidate):
                 return candidate
-        origin_head = self._git_text(repository_root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+        origin_head = self._git_text(
+            repository_root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"
+        )
         if origin_head:
             return origin_head.replace("refs/remotes/", "", 1)
         return "HEAD"
 
     def _branch_exists(self, repository_root: Path, branch: str) -> bool:
-        return self._run_git(
-            repository_root,
-            "show-ref",
-            "--verify",
-            "--quiet",
-            f"refs/heads/{branch}",
-            check=False,
-        ).returncode == 0
+        return (
+            self._run_git(
+                repository_root,
+                "show-ref",
+                "--verify",
+                "--quiet",
+                f"refs/heads/{branch}",
+                check=False,
+            ).returncode
+            == 0
+        )
 
     def _git_text(self, cwd: Path, *arguments: str) -> str:
         result = self._run_git(cwd, *arguments, check=False)
@@ -199,13 +216,22 @@ class SessionWorktreeManager:
     def _repository_key(self, repository_root: Path) -> str:
         repository_name = repository_root.name or "repository"
         digest = hashlib.sha256(str(repository_root).encode()).hexdigest()[:12]
-        safe_name = "".join(character if character.isalnum() or character in "-_." else "-" for character in repository_name)
+        safe_name = "".join(
+            character if character.isalnum() or character in "-_." else "-"
+            for character in repository_name
+        )
         return f"{safe_name}-{digest}"
 
     def _safe_session_id(self, session_id: str) -> str:
-        safe = "".join(character if character.isalnum() or character in "-_." else "-" for character in session_id)
+        safe = "".join(
+            character if character.isalnum() or character in "-_." else "-"
+            for character in session_id
+        )
         return safe or hashlib.sha256(session_id.encode()).hexdigest()[:16]
 
     def _safe_branch_component(self, session_id: str) -> str:
-        safe = "".join(character if character.isalnum() or character in "-_." else "-" for character in session_id)
+        safe = "".join(
+            character if character.isalnum() or character in "-_." else "-"
+            for character in session_id
+        )
         return safe.strip("-") or hashlib.sha256(session_id.encode()).hexdigest()[:16]

@@ -18,7 +18,10 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
     ? translation("detached", { ref: status.gitShortHead || status.gitBranch || "HEAD" })
     : status.gitBranch || status.gitLabel || "HEAD";
   const changedCount =
-    status.gitStagedCount + status.gitUnstagedCount + status.gitUntrackedCount + status.gitConflictedCount;
+    status.gitStagedCount +
+    status.gitUnstagedCount +
+    status.gitUntrackedCount +
+    status.gitConflictedCount;
 
   const detail = (
     <Box whiteSpace="nowrap">
@@ -28,19 +31,53 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
         <Text fontWeight="semibold">{branchLabel}</Text>
       </Flex>
       <Flex direction="column" ps={2} gap={1}>
-        {status.gitCommitSubject && <InlineField label={translation("commit")}><Text truncate maxW="260px">{status.gitCommitSubject}</Text></InlineField>}
-        {status.gitCommitAuthor && <InlineField label={translation("author")}><Text>{status.gitCommitAuthor}</Text></InlineField>}
-        {status.gitCommitAuthorDate && <InlineField label={translation("date")}><RelativeTime date={status.gitCommitAuthorDate} /></InlineField>}
-        {status.gitUpstream && <InlineField label={translation("upstream")}><Text>{status.gitUpstream}</Text></InlineField>}
+        {status.gitCommitSubject && (
+          <InlineField label={translation("commit")}>
+            <Text truncate maxW="260px">
+              {status.gitCommitSubject}
+            </Text>
+          </InlineField>
+        )}
+        {status.gitCommitAuthor && (
+          <InlineField label={translation("author")}>
+            <Text>{status.gitCommitAuthor}</Text>
+          </InlineField>
+        )}
+        {status.gitCommitAuthorDate && (
+          <InlineField label={translation("date")}>
+            <RelativeTime date={status.gitCommitAuthorDate} />
+          </InlineField>
+        )}
+        {status.gitUpstream && (
+          <InlineField label={translation("upstream")}>
+            <Text>{status.gitUpstream}</Text>
+          </InlineField>
+        )}
       </Flex>
       {changedCount > 0 && (
         <>
           <Separator my={2} />
           <Flex direction="column" ps={2} gap={1}>
-            {status.gitStagedCount > 0 && <InlineField label={translation("staged")}><Text>{status.gitStagedCount}</Text></InlineField>}
-            {status.gitUnstagedCount > 0 && <InlineField label={translation("unstaged")}><Text>{status.gitUnstagedCount}</Text></InlineField>}
-            {status.gitUntrackedCount > 0 && <InlineField label={translation("untracked")}><Text>{status.gitUntrackedCount}</Text></InlineField>}
-            {status.gitConflictedCount > 0 && <InlineField label={translation("conflicted")}><Text color="red.fg">{status.gitConflictedCount}</Text></InlineField>}
+            {status.gitStagedCount > 0 && (
+              <InlineField label={translation("staged")}>
+                <Text>{status.gitStagedCount}</Text>
+              </InlineField>
+            )}
+            {status.gitUnstagedCount > 0 && (
+              <InlineField label={translation("unstaged")}>
+                <Text>{status.gitUnstagedCount}</Text>
+              </InlineField>
+            )}
+            {status.gitUntrackedCount > 0 && (
+              <InlineField label={translation("untracked")}>
+                <Text>{status.gitUntrackedCount}</Text>
+              </InlineField>
+            )}
+            {status.gitConflictedCount > 0 && (
+              <InlineField label={translation("conflicted")}>
+                <Text color="red.fg">{status.gitConflictedCount}</Text>
+              </InlineField>
+            )}
           </Flex>
         </>
       )}
@@ -58,22 +95,44 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
       <Flex align="center" gap={2} flexShrink={0} h={8} px={2} borderRadius="md" color="fg.muted">
         <Flex align="center" gap={1} flexShrink={0} maxW="200px">
           <LuGitBranch size={12} />
-          <Text textStyle="fieldLabel" truncate>{branchLabel}</Text>
+          <Text textStyle="fieldLabel" truncate>
+            {branchLabel}
+          </Text>
         </Flex>
         {status.gitDirty && (
-          <Flex align="center" gap={1} flexShrink={0} color="orange.fg" title={translation("uncommittedChanges")}>
+          <Flex
+            align="center"
+            gap={1}
+            flexShrink={0}
+            color="orange.fg"
+            title={translation("uncommittedChanges")}
+          >
             <LuFileDiff size={12} />
             {changedCount > 0 && <Text textStyle="fieldLabel">{changedCount}</Text>}
           </Flex>
         )}
         {status.gitAhead > 0 && (
-          <Flex align="center" gap={1} flexShrink={0} color="green.fg" title={translation("aheadOfUpstream", { count: status.gitAhead })}>
-            <LuArrowUp size={12} /><Text textStyle="fieldLabel">{status.gitAhead}</Text>
+          <Flex
+            align="center"
+            gap={1}
+            flexShrink={0}
+            color="green.fg"
+            title={translation("aheadOfUpstream", { count: status.gitAhead })}
+          >
+            <LuArrowUp size={12} />
+            <Text textStyle="fieldLabel">{status.gitAhead}</Text>
           </Flex>
         )}
         {status.gitBehind > 0 && (
-          <Flex align="center" gap={1} flexShrink={0} color="blue.fg" title={translation("behindUpstream", { count: status.gitBehind })}>
-            <LuArrowDown size={12} /><Text textStyle="fieldLabel">{status.gitBehind}</Text>
+          <Flex
+            align="center"
+            gap={1}
+            flexShrink={0}
+            color="blue.fg"
+            title={translation("behindUpstream", { count: status.gitBehind })}
+          >
+            <LuArrowDown size={12} />
+            <Text textStyle="fieldLabel">{status.gitBehind}</Text>
           </Flex>
         )}
       </Flex>

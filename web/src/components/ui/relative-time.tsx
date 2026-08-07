@@ -35,7 +35,14 @@ export function useClock(): Date {
 }
 
 // Spelled out in full, since a tooltip is opened by somebody who wants the exact instant.
-const EXACT = { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" } as const;
+const EXACT = {
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+} as const;
 
 function instant(value: string | number | Date): Date | null {
   const date = value instanceof Date ? value : new Date(value);
@@ -58,5 +65,9 @@ export function RelativeTime({ date, ...rest }: { date: string | number | Date }
   const relative = useRelative();
   const at = instant(date);
   if (!at) return null;
-  return <Span title={format.dateTime(at, EXACT)} {...rest}>{relative(at)}</Span>;
+  return (
+    <Span title={format.dateTime(at, EXACT)} {...rest}>
+      {relative(at)}
+    </Span>
+  );
 }

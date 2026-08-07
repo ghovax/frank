@@ -41,7 +41,9 @@ class HookRunner:
             try:
                 returned = await method(messages)
             except Exception:  # noqa: BLE001 — a hook must not fail the turn
-                logger.warning("%s.before_model raised; skipping it", type(hook).__name__, exc_info=True)
+                logger.warning(
+                    "%s.before_model raised; skipping it", type(hook).__name__, exc_info=True
+                )
                 continue
             if isinstance(returned, list):
                 messages = returned
@@ -55,7 +57,9 @@ class HookRunner:
             try:
                 returned = await method(calls)
             except Exception:  # noqa: BLE001
-                logger.warning("%s.before_tools raised; skipping it", type(hook).__name__, exc_info=True)
+                logger.warning(
+                    "%s.before_tools raised; skipping it", type(hook).__name__, exc_info=True
+                )
                 continue
             if isinstance(returned, list):
                 # A hook narrows and never widens, so a careless one cannot become a permission bypass.
@@ -71,7 +75,9 @@ class HookRunner:
             try:
                 await method(summary)
             except Exception:  # noqa: BLE001
-                logger.warning("%s.after_turn raised; skipping it", type(hook).__name__, exc_info=True)
+                logger.warning(
+                    "%s.after_turn raised; skipping it", type(hook).__name__, exc_info=True
+                )
 
 
 __all__ = ["HookRunner", "MaximumToolCalls"]

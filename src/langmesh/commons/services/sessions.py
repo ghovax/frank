@@ -37,7 +37,9 @@ def _session_worktree_from_record(record: SessionRecord) -> SessionWorktree:
     source = cast(str, record.working_directory) or ""
     runtime = cast(str, record.runtime_working_directory) or source
     strategy = cast(str, record.worktree_strategy) or "none"
-    worktree_strategy = cast(WorktreeStrategy, strategy if strategy in {"none", "branch", "worktree"} else "none")
+    worktree_strategy = cast(
+        WorktreeStrategy, strategy if strategy in {"none", "branch", "worktree"} else "none"
+    )
     return SessionWorktree(
         source_working_directory=source,
         runtime_working_directory=runtime,
@@ -73,8 +75,18 @@ def _ensure_session_workspace(
     finally:
         database_session.close()
 
-    requested_strategy = worktree_strategy if worktree_strategy in {"none", "branch", "worktree"} else ""
-    strategy = cast(WorktreeStrategy, requested_strategy or (state.global_configuration.workspace.strategy if state.global_configuration is not None else "none"))
+    requested_strategy = (
+        worktree_strategy if worktree_strategy in {"none", "branch", "worktree"} else ""
+    )
+    strategy = cast(
+        WorktreeStrategy,
+        requested_strategy
+        or (
+            state.global_configuration.workspace.strategy
+            if state.global_configuration is not None
+            else "none"
+        ),
+    )
     if state.worktree_manager is not None:
         workspace = state.worktree_manager.prepare_sync(session_id, source_directory, strategy)
     else:
@@ -103,24 +115,26 @@ def _ensure_session_workspace(
                     database_session.commit()
                 return _session_worktree_from_record(record)
             # No title yet: the session names itself once it has read its first message.
-            database_session.add(SessionRecord(
-                id=session_id,
-                agent=agent,
-                workspace_id=workspace_id,
-                working_directory=workspace.source_working_directory,
-                runtime_working_directory=workspace.runtime_working_directory,
-                worktree_strategy=workspace.strategy,
-                worktree_path=workspace.worktree_path,
-                worktree_branch=workspace.worktree_branch,
-                source_repository_root=workspace.source_repository_root,
-                runtime_repository_root=workspace.runtime_repository_root,
-                worktree_head=workspace.head,
-                worktree_error=workspace.error,
-                permission_mode=_normalize_permission_mode(permission_mode),
-                input_draft="",
-                title="",
-                created_at=datetime.now(timezone.utc).isoformat(),
-            ))
+            database_session.add(
+                SessionRecord(
+                    id=session_id,
+                    agent=agent,
+                    workspace_id=workspace_id,
+                    working_directory=workspace.source_working_directory,
+                    runtime_working_directory=workspace.runtime_working_directory,
+                    worktree_strategy=workspace.strategy,
+                    worktree_path=workspace.worktree_path,
+                    worktree_branch=workspace.worktree_branch,
+                    source_repository_root=workspace.source_repository_root,
+                    runtime_repository_root=workspace.runtime_repository_root,
+                    worktree_head=workspace.head,
+                    worktree_error=workspace.error,
+                    permission_mode=_normalize_permission_mode(permission_mode),
+                    input_draft="",
+                    title="",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
             database_session.commit()
         except Exception:
             database_session.rollback()
@@ -166,7 +180,12 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
     assert state.session_factory is not None
     database_session = state.session_factory()
     try:
-        rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).limit(50).all()
+        rows = (
+            database_session.query(SessionRecord)
+            .order_by(SessionRecord.created_at.desc())
+            .limit(50)
+            .all()
+        )
         return {
             "sessions": [
                 {
@@ -176,7 +195,8 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     "title": row.title,
                     "created_at": row.created_at,
                     "working_directory": row.working_directory,
-                    "runtime_working_directory": row.runtime_working_directory or row.working_directory,
+                    "runtime_working_directory": row.runtime_working_directory
+                    or row.working_directory,
                     "worktree_strategy": row.worktree_strategy or "none",
                     "worktree_path": row.worktree_path or "",
                     "worktree_branch": row.worktree_branch or "",

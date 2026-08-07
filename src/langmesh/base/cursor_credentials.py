@@ -57,7 +57,9 @@ class CursorTokens:
     account: str
     expires_at: float
 
-    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway)) -> bool:
+    def is_expired(
+        self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway)
+    ) -> bool:
         return time.time() >= (self.expires_at - leeway_seconds)
 
 
@@ -92,6 +94,7 @@ def is_signed_in() -> bool:
 
 
 # The verifier is random bytes and the challenge its digest, which is what the login page expects.
+
 
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -149,7 +152,8 @@ def _tokens_from_payload(payload: dict, previous: Optional[CursorTokens] = None)
         raise CursorAuthError("Cursor returned no access token.")
     returned_refresh = payload.get("refreshToken")
     refresh_token = (
-        returned_refresh if _looks_like_jwt(returned_refresh)
+        returned_refresh
+        if _looks_like_jwt(returned_refresh)
         else (previous.refresh_token if previous else str(returned_refresh or ""))
     )
     return CursorTokens(
@@ -178,7 +182,9 @@ async def valid_tokens() -> CursorTokens:
     """A live, non-expired token set, refreshing and re-persisting first when the access token is near expiry."""
     tokens = await asyncio.to_thread(load_tokens)
     if tokens is None:
-        raise CursorAuthError("Not signed in to Cursor. Sign in from Settings to use this provider.")
+        raise CursorAuthError(
+            "Not signed in to Cursor. Sign in from Settings to use this provider."
+        )
     if not tokens.is_expired():
         return tokens
     if not tokens.refresh_token:
@@ -219,7 +225,9 @@ class CursorLoginFlow:
         """One ask of whether the browser has finished, distinguishing pending from refused from unreachable."""
         if self._cancelled:
             raise CursorAuthError("Cursor sign-in was cancelled.")
-        response = await client.get(POLL_URL, params={"uuid": self._uuid, "verifier": self._verifier})
+        response = await client.get(
+            POLL_URL, params={"uuid": self._uuid, "verifier": self._verifier}
+        )
         if response.status_code == 404:
             raise _SignInPending
         if not response.is_success:

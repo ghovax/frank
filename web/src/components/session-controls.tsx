@@ -1,9 +1,34 @@
 "use client";
 
-import { Box, Button, createListCollection, Flex, Portal, Select, Span, Text } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  createListCollection,
+  Flex,
+  Portal,
+  Select,
+  Span,
+  Text,
+} from "@chakra-ui/react";
 import { useMemo, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuBadgeCheck, LuBox, LuCheck, LuCircleSlash, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMic, LuMousePointerClick, LuPackage, LuUser, LuUserSearch, LuZap } from "react-icons/lu";
+import {
+  LuBadgeCheck,
+  LuBox,
+  LuCheck,
+  LuCircleSlash,
+  LuGitBranch,
+  LuGitFork,
+  LuGlobe,
+  LuHand,
+  LuHardDrive,
+  LuMic,
+  LuMousePointerClick,
+  LuPackage,
+  LuUser,
+  LuUserSearch,
+  LuZap,
+} from "react-icons/lu";
 import type { PermissionMode } from "@/lib/api";
 
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
@@ -39,35 +64,55 @@ function fitMarkers(id: string | undefined, labelHidden: boolean, hasArrow: bool
 }
 
 function permissionAppearance(permissionMode: PermissionMode) {
-  return {
-    ask: {
+  return (
+    {
+      ask: {
+        icon: <LuHand size={CONTROL_ICON_SIZE} />,
+        color: "fg.subtle",
+        background: "bg",
+        borderColor: "border",
+        colorPalette: undefined,
+      },
+      automatic: {
+        icon: <LuBadgeCheck size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        colorPalette: "blue",
+      },
+    }[permissionMode] ?? {
       icon: <LuHand size={CONTROL_ICON_SIZE} />,
       color: "fg.subtle",
       background: "bg",
       borderColor: "border",
       colorPalette: undefined,
-    },
-    automatic: {
-      icon: <LuBadgeCheck size={CONTROL_ICON_SIZE} />,
-      color: "blue.fg",
-      background: "blue.subtle",
-      borderColor: "blue.muted",
-      colorPalette: "blue",
-    },
-  }[permissionMode] ?? {
-    icon: <LuHand size={CONTROL_ICON_SIZE} />,
-    color: "fg.subtle",
-    background: "bg",
-    borderColor: "border",
-    colorPalette: undefined,
-  };
+    }
+  );
 }
 
 function worktreeAppearance(worktreeStrategy: WorktreeStrategyValue) {
   return {
-    none: { icon: <LuHardDrive size={CONTROL_ICON_SIZE} />, color: "fg.subtle", background: "bg", borderColor: "border", colorPalette: undefined },
-    branch: { icon: <LuGitBranch size={CONTROL_ICON_SIZE} />, color: "purple.fg", background: "purple.subtle", borderColor: "purple.muted", colorPalette: "purple" },
-    worktree: { icon: <LuGitFork size={CONTROL_ICON_SIZE} />, color: "teal.fg", background: "teal.subtle", borderColor: "teal.muted", colorPalette: "teal" },
+    none: {
+      icon: <LuHardDrive size={CONTROL_ICON_SIZE} />,
+      color: "fg.subtle",
+      background: "bg",
+      borderColor: "border",
+      colorPalette: undefined,
+    },
+    branch: {
+      icon: <LuGitBranch size={CONTROL_ICON_SIZE} />,
+      color: "purple.fg",
+      background: "purple.subtle",
+      borderColor: "purple.muted",
+      colorPalette: "purple",
+    },
+    worktree: {
+      icon: <LuGitFork size={CONTROL_ICON_SIZE} />,
+      color: "teal.fg",
+      background: "teal.subtle",
+      borderColor: "teal.muted",
+      colorPalette: "teal",
+    },
   }[worktreeStrategy];
 }
 
@@ -94,10 +139,11 @@ export function AgentSelectControl({
   const metrics = controlMetrics(layout);
   const markers = fitMarkers(fitted ? "agent" : undefined, labelHidden, true);
   const collection = useMemo(
-    () => createListCollection({
-      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
-    }),
-    [agents]
+    () =>
+      createListCollection({
+        items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
+      }),
+    [agents],
   );
   return (
     <Select.Root
@@ -113,7 +159,12 @@ export function AgentSelectControl({
       maxW="none"
       flexShrink={0}
     >
-      <Select.Control {...markers} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
+      <Select.Control
+        {...markers}
+        w={metrics.width}
+        minW={layout === "field" ? 0 : "max-content"}
+        maxW="none"
+      >
         <Select.Trigger
           {...markers}
           w={metrics.width}
@@ -132,7 +183,14 @@ export function AgentSelectControl({
           whiteSpace="nowrap"
           fontWeight="medium"
         >
-          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color="fg.muted" flexShrink={0}>
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            boxSize="3.5"
+            color="fg.muted"
+            flexShrink={0}
+          >
             <LuUser size={CONTROL_ICON_SIZE} />
           </Box>
           <Select.ValueText
@@ -159,9 +217,23 @@ export function AgentSelectControl({
               return (
                 <Select.Item item={item} key={item.value}>
                   <Flex direction="column" minW={0} flex={1}>
-                    <Text fontSize={metrics.dropdownTitleFontSize} fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
+                    <Text
+                      fontSize={metrics.dropdownTitleFontSize}
+                      fontWeight="medium"
+                      lineHeight="1.2"
+                      whiteSpace="nowrap"
+                    >
+                      {item.label}
+                    </Text>
                     {description ? (
-                      <Text fontSize={metrics.dropdownDescriptionFontSize} color="fg.muted" lineHeight="1.35" truncate>{description}</Text>
+                      <Text
+                        fontSize={metrics.dropdownDescriptionFontSize}
+                        color="fg.muted"
+                        lineHeight="1.35"
+                        truncate
+                      >
+                        {description}
+                      </Text>
                     ) : null}
                   </Flex>
                   <Select.ItemIndicator />
@@ -195,9 +267,26 @@ export function PermissionModeControl({
   unsetLabel?: string;
 }) {
   const translation = useTranslations("SessionControls");
-  const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "orange" }[] = [
-    { value: "ask", label: translation("permissionAskLabel"), description: translation("permissionAskDescription"), icon: <LuHand size={CONTROL_ICON_SIZE} /> },
-    { value: "automatic", label: translation("permissionAutomaticLabel"), description: translation("permissionAutomaticDescription"), icon: <LuBadgeCheck size={CONTROL_ICON_SIZE} />, colorPalette: "blue" },
+  const permissionChoices: {
+    value: PermissionMode;
+    label: string;
+    description: string;
+    icon: ReactNode;
+    colorPalette?: "blue" | "green" | "orange";
+  }[] = [
+    {
+      value: "ask",
+      label: translation("permissionAskLabel"),
+      description: translation("permissionAskDescription"),
+      icon: <LuHand size={CONTROL_ICON_SIZE} />,
+    },
+    {
+      value: "automatic",
+      label: translation("permissionAutomaticLabel"),
+      description: translation("permissionAutomaticDescription"),
+      icon: <LuBadgeCheck size={CONTROL_ICON_SIZE} />,
+      colorPalette: "blue",
+    },
   ];
   const UNSET = "__unset__";
   const permissionItems = [
@@ -208,8 +297,9 @@ export function PermissionModeControl({
   const markers = fitMarkers(fitted ? "permission" : undefined, labelHidden, true);
   const collection = createListCollection({ items: permissionItems });
   const selectedAppearance = permissionAppearance(value ?? "ask");
-  const selectedLabel = permissionItems.find((item) => item.value === (value ?? UNSET))?.label
-    ?? translation("permissionAskLabel");
+  const selectedLabel =
+    permissionItems.find((item) => item.value === (value ?? UNSET))?.label ??
+    translation("permissionAskLabel");
 
   return (
     <Select.Root
@@ -227,7 +317,12 @@ export function PermissionModeControl({
       maxW="none"
       flexShrink={0}
     >
-      <Select.Control {...markers} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
+      <Select.Control
+        {...markers}
+        w={metrics.width}
+        minW={layout === "field" ? 0 : "max-content"}
+        maxW="none"
+      >
         <Select.Trigger
           {...markers}
           w={metrics.width}
@@ -247,7 +342,14 @@ export function PermissionModeControl({
           whiteSpace="nowrap"
           fontWeight="medium"
         >
-          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            boxSize="3.5"
+            color={selectedAppearance.color}
+            flexShrink={0}
+          >
             {selectedAppearance.icon}
           </Box>
           <Text
@@ -274,15 +376,31 @@ export function PermissionModeControl({
               return (
                 <Select.Item item={item} key={item.value}>
                   <Flex align="center" gap={metrics.gap} minW={0}>
-                    <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={choice?.colorPalette ? `${choice.colorPalette}.fg` : "fg.subtle"} flexShrink={0}>
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      boxSize="3.5"
+                      color={choice?.colorPalette ? `${choice.colorPalette}.fg` : "fg.subtle"}
+                      flexShrink={0}
+                    >
                       {choice?.icon}
                     </Box>
                     <Flex direction="column" minW={0}>
-                      <Text fontSize={metrics.dropdownTitleFontSize} fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">
+                      <Text
+                        fontSize={metrics.dropdownTitleFontSize}
+                        fontWeight="medium"
+                        lineHeight="1.2"
+                        whiteSpace="nowrap"
+                      >
                         {choice?.label ?? item.label}
                       </Text>
                       {choice?.description && (
-                        <Text fontSize={metrics.dropdownDescriptionFontSize} color="fg.muted" lineHeight="1.35">
+                        <Text
+                          fontSize={metrics.dropdownDescriptionFontSize}
+                          color="fg.muted"
+                          lineHeight="1.35"
+                        >
                           {choice.description}
                         </Text>
                       )}
@@ -390,10 +508,31 @@ export function SandboxToggleControl({
   const confining = enforce !== "off";
   const enforceable = backend !== "";
   const appearance: ToggleAppearance = !confining
-    ? { label: translation("sandboxGlobal"), icon: <LuGlobe size={CONTROL_ICON_SIZE} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" }
+    ? {
+        label: translation("sandboxGlobal"),
+        icon: <LuGlobe size={CONTROL_ICON_SIZE} />,
+        color: "red.fg",
+        background: "red.subtle",
+        borderColor: "red.muted",
+        hover: "red.muted",
+      }
     : enforceable
-      ? { label: translation("sandboxRestricted"), icon: <LuBox size={CONTROL_ICON_SIZE} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
-      : { label: translation("sandboxUnavailable"), icon: <LuGlobe size={CONTROL_ICON_SIZE} />, color: "orange.fg", background: "orange.subtle", borderColor: "orange.muted", hover: "orange.muted" };
+      ? {
+          label: translation("sandboxRestricted"),
+          icon: <LuBox size={CONTROL_ICON_SIZE} />,
+          color: "green.fg",
+          background: "green.subtle",
+          borderColor: "green.muted",
+          hover: "green.muted",
+        }
+      : {
+          label: translation("sandboxUnavailable"),
+          icon: <LuGlobe size={CONTROL_ICON_SIZE} />,
+          color: "orange.fg",
+          background: "orange.subtle",
+          borderColor: "orange.muted",
+          hover: "orange.muted",
+        };
   return (
     <ToggleControl
       appearance={appearance}
@@ -418,9 +557,25 @@ export function CompactionToggleControl({
 }) {
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: translation("compactionAutomatic"), icon: <LuZap size={CONTROL_ICON_SIZE} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: translation("compactionManual"), icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+    ? {
+        label: translation("compactionAutomatic"),
+        icon: <LuZap size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        hover: "blue.muted",
+      }
+    : {
+        label: translation("compactionManual"),
+        icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />,
+        color: "fg.muted",
+        background: "bg.subtle",
+        borderColor: "border",
+        hover: "bg.muted",
+      };
+  return (
+    <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />
+  );
 }
 
 export function UserContextToggleControl({
@@ -435,9 +590,25 @@ export function UserContextToggleControl({
 }) {
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: translation("userContextOn"), icon: <LuUserSearch size={CONTROL_ICON_SIZE} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: translation("userContextOff"), icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+    ? {
+        label: translation("userContextOn"),
+        icon: <LuUserSearch size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        hover: "blue.muted",
+      }
+    : {
+        label: translation("userContextOff"),
+        icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />,
+        color: "fg.muted",
+        background: "bg.subtle",
+        borderColor: "border",
+        hover: "bg.muted",
+      };
+  return (
+    <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />
+  );
 }
 
 export function DictationToggleControl({
@@ -452,9 +623,25 @@ export function DictationToggleControl({
 }) {
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: translation("dictationOn"), icon: <LuMic size={CONTROL_ICON_SIZE} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: translation("dictationOff"), icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+    ? {
+        label: translation("dictationOn"),
+        icon: <LuMic size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        hover: "blue.muted",
+      }
+    : {
+        label: translation("dictationOff"),
+        icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />,
+        color: "fg.muted",
+        background: "bg.subtle",
+        borderColor: "border",
+        hover: "bg.muted",
+      };
+  return (
+    <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />
+  );
 }
 
 export function ComputerControlToggleControl({
@@ -469,9 +656,25 @@ export function ComputerControlToggleControl({
 }) {
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: translation("computerControlOn"), icon: <LuMousePointerClick size={CONTROL_ICON_SIZE} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: translation("computerControlOff"), icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+    ? {
+        label: translation("computerControlOn"),
+        icon: <LuMousePointerClick size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        hover: "blue.muted",
+      }
+    : {
+        label: translation("computerControlOff"),
+        icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />,
+        color: "fg.muted",
+        background: "bg.subtle",
+        borderColor: "border",
+        hover: "bg.muted",
+      };
+  return (
+    <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />
+  );
 }
 
 export function SettingToggleControl({
@@ -486,9 +689,25 @@ export function SettingToggleControl({
   // The toggle for a setting with no words of its own, where the row says the name and the control says on or off.
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: translation("settingOn"), icon: <LuCheck size={CONTROL_ICON_SIZE} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: translation("settingOff"), icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+    ? {
+        label: translation("settingOn"),
+        icon: <LuCheck size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        hover: "blue.muted",
+      }
+    : {
+        label: translation("settingOff"),
+        icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />,
+        color: "fg.muted",
+        background: "bg.subtle",
+        borderColor: "border",
+        hover: "bg.muted",
+      };
+  return (
+    <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />
+  );
 }
 
 export function ToolboxToggleControl({
@@ -502,9 +721,25 @@ export function ToolboxToggleControl({
 }) {
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: translation("toolboxOn"), icon: <LuPackage size={CONTROL_ICON_SIZE} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: translation("toolboxOff"), icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+    ? {
+        label: translation("toolboxOn"),
+        icon: <LuPackage size={CONTROL_ICON_SIZE} />,
+        color: "blue.fg",
+        background: "blue.subtle",
+        borderColor: "blue.muted",
+        hover: "blue.muted",
+      }
+    : {
+        label: translation("toolboxOff"),
+        icon: <LuCircleSlash size={CONTROL_ICON_SIZE} />,
+        color: "fg.muted",
+        background: "bg.subtle",
+        borderColor: "border",
+        hover: "bg.muted",
+      };
+  return (
+    <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />
+  );
 }
 
 export function WorktreeStrategyControl({
@@ -524,12 +759,42 @@ export function WorktreeStrategyControl({
   title?: string;
 }) {
   const translation = useTranslations("SessionControls");
-  const worktreeChoices: { value: WorktreeStrategyValue; label: string; description: string; title: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
-    { value: "none", label: translation("worktreeNoneLabel"), description: translation("worktreeNoneDescription"), title: translation("worktreeNoneTitle"), icon: <LuHardDrive size={CONTROL_ICON_SIZE} /> },
-    { value: "branch", label: translation("worktreeBranchLabel"), description: translation("worktreeBranchDescription"), title: translation("worktreeBranchTitle"), icon: <LuGitBranch size={CONTROL_ICON_SIZE} />, colorPalette: "purple" },
-    { value: "worktree", label: translation("worktreeCopyLabel"), description: translation("worktreeCopyDescription"), title: translation("worktreeCopyTitle"), icon: <LuGitFork size={CONTROL_ICON_SIZE} />, colorPalette: "teal" },
+  const worktreeChoices: {
+    value: WorktreeStrategyValue;
+    label: string;
+    description: string;
+    title: string;
+    icon: ReactNode;
+    colorPalette?: "purple" | "teal";
+  }[] = [
+    {
+      value: "none",
+      label: translation("worktreeNoneLabel"),
+      description: translation("worktreeNoneDescription"),
+      title: translation("worktreeNoneTitle"),
+      icon: <LuHardDrive size={CONTROL_ICON_SIZE} />,
+    },
+    {
+      value: "branch",
+      label: translation("worktreeBranchLabel"),
+      description: translation("worktreeBranchDescription"),
+      title: translation("worktreeBranchTitle"),
+      icon: <LuGitBranch size={CONTROL_ICON_SIZE} />,
+      colorPalette: "purple",
+    },
+    {
+      value: "worktree",
+      label: translation("worktreeCopyLabel"),
+      description: translation("worktreeCopyDescription"),
+      title: translation("worktreeCopyTitle"),
+      icon: <LuGitFork size={CONTROL_ICON_SIZE} />,
+      colorPalette: "teal",
+    },
   ];
-  const worktreeItems = worktreeChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
+  const worktreeItems = worktreeChoices.map(({ value: itemValue, label }) => ({
+    value: itemValue,
+    label,
+  }));
   const metrics = controlMetrics(layout);
   const collection = createListCollection({ items: worktreeItems });
   const selectedAppearance = worktreeAppearance(value);
@@ -570,10 +835,23 @@ export function WorktreeStrategyControl({
           disabled={disabled}
           title={title ?? selectedChoice?.title ?? translation("worktreeStrategyFallbackTitle")}
         >
-          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            boxSize="3.5"
+            color={selectedAppearance.color}
+            flexShrink={0}
+          >
             {selectedAppearance.icon}
           </Box>
-          <Select.ValueText fontSize={metrics.contentFontSize} maxW={metrics.labelMaximumWidth} overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"} textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"} whiteSpace="nowrap" />
+          <Select.ValueText
+            fontSize={metrics.contentFontSize}
+            maxW={metrics.labelMaximumWidth}
+            overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"}
+            textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"}
+            whiteSpace="nowrap"
+          />
         </Select.Trigger>
         <Select.IndicatorGroup>
           <Select.Indicator />
@@ -586,17 +864,39 @@ export function WorktreeStrategyControl({
               const gitModeUnavailable = item.value !== "none" && !gitWorktreeAvailable;
               const choice = worktreeChoices.find((candidate) => candidate.value === item.value);
               return (
-                <Select.Item item={item} key={item.value} aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
+                <Select.Item
+                  item={item}
+                  key={item.value}
+                  aria-disabled={gitModeUnavailable || undefined}
+                  data-disabled={gitModeUnavailable ? "" : undefined}
+                  opacity={gitModeUnavailable ? 0.4 : undefined}
+                  pointerEvents={gitModeUnavailable ? "none" : undefined}
+                >
                   <Flex align="center" gap={metrics.gap} minW={0}>
-                    <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      boxSize="3.5"
+                      flexShrink={0}
+                    >
                       {choice?.icon}
                     </Box>
                     <Flex direction="column" minW={0}>
-                      <Text fontSize={metrics.dropdownTitleFontSize} fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">
+                      <Text
+                        fontSize={metrics.dropdownTitleFontSize}
+                        fontWeight="medium"
+                        lineHeight="1.2"
+                        whiteSpace="nowrap"
+                      >
                         {choice?.label ?? item.label}
                       </Text>
                       {choice?.description && (
-                        <Text fontSize={metrics.dropdownDescriptionFontSize} color="fg.muted" lineHeight="1.35">
+                        <Text
+                          fontSize={metrics.dropdownDescriptionFontSize}
+                          color="fg.muted"
+                          lineHeight="1.35"
+                        >
                           {choice.description}
                         </Text>
                       )}

@@ -1,4 +1,5 @@
 """The screen as an object a Python program can hold, so a workflow can be a file."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +15,7 @@ def _message(name: str, **variables: str) -> str:
     for key, value in variables.items():
         text = text.replace("{{ " + key + " }}", value)
     return text
+
 
 # How a call reaches the live surface, installed by the runner and unset outside a session.
 _bridge: Optional[Callable[[str, list, dict], Any]] = None

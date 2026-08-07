@@ -93,23 +93,27 @@ async def list_remote_agents():
     manager = state.remote_agent_manager
     agents = []
     for name, agent in configuration.agents.items():
-        health = manager.health(name) if manager is not None else {"health": "unconfigured", "error": ""}
+        health = (
+            manager.health(name) if manager is not None else {"health": "unconfigured", "error": ""}
+        )
         card = manager.card(name) if manager is not None else None
-        agents.append({
-            "name": name,
-            "cardUrl": agent.card_url,
-            "enabled": agent.enabled,
-            "authType": agent.auth.type,
-            "allowedProfiles": agent.allowed_profiles,
-            "allowedHosts": agent.allowed_hosts,
-            "allowPrivate": agent.allow_private,
-            "cardTtlSeconds": agent.card_ttl_seconds,
-            "health": health["health"],
-            "error": health["error"],
-            "resolvedName": card.name if card is not None else "",
-            "resolvedDescription": (card.description if card is not None else "") or "",
-            "skills": [skill.name for skill in (card.skills or [])] if card is not None else [],
-        })
+        agents.append(
+            {
+                "name": name,
+                "cardUrl": agent.card_url,
+                "enabled": agent.enabled,
+                "authType": agent.auth.type,
+                "allowedProfiles": agent.allowed_profiles,
+                "allowedHosts": agent.allowed_hosts,
+                "allowPrivate": agent.allow_private,
+                "cardTtlSeconds": agent.card_ttl_seconds,
+                "health": health["health"],
+                "error": health["error"],
+                "resolvedName": card.name if card is not None else "",
+                "resolvedDescription": (card.description if card is not None else "") or "",
+                "skills": [skill.name for skill in (card.skills or [])] if card is not None else [],
+            }
+        )
     agents.sort(key=lambda entry: entry["name"])
     return {"agents": agents}
 

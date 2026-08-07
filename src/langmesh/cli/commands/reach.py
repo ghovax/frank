@@ -105,9 +105,13 @@ _CONSOLE_LINK = re.compile(r"https://login\.tailscale\.com/\S+")
 def _tailscale(*arguments: str, timeout: float = 15.0) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
-            [_tailscale_command(), *arguments], capture_output=True, text=True,
+            [_tailscale_command(), *arguments],
+            capture_output=True,
+            text=True,
             # Nothing here can answer a prompt, and a command silently waiting on one looks exactly like one that has hung.
-            stdin=subprocess.DEVNULL, timeout=timeout, check=False,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
         )
     except subprocess.TimeoutExpired as error:
         # What it managed to say before the clock ran out, which is usually the whole answer.
@@ -227,18 +231,26 @@ def require_token(application, token: str):
         body = json.dumps(
             {"error": {"code": "unauthorized", "message": "Bad or missing reach token."}},
         ).encode()
-        await send({
-            "type": "http.response.start",
-            "status": 401,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
     def is_preflight(scope) -> bool:
         """A preflight is sent without credentials by specification, so demanding a token rejects the question rather than the request."""
         if scope["type"] != "http" or scope.get("method") != "OPTIONS":
             return False
-        return any(name.lower() == b"access-control-request-method" for name, _ in scope.get("headers") or [])
+        return any(
+            name.lower() == b"access-control-request-method"
+            for name, _ in scope.get("headers") or []
+        )
 
     async def guarded(scope, receive, send):
         if scope["type"] not in {"http", "websocket"}:
@@ -275,7 +287,10 @@ def _setting_cookie(send, token: str):
             message = dict(message)
             # `HttpOnly`, `SameSite=Lax`, `Secure` and session-scoped, so no script reads it, no other site spends it and closing the app ends it.
             cookie = f"{REACH_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax"
-            message["headers"] = [*message.get("headers", []), (b"set-cookie", cookie.encode("latin-1"))]
+            message["headers"] = [
+                *message.get("headers", []),
+                (b"set-cookie", cookie.encode("latin-1")),
+            ]
         await send(message)
 
     return sending
@@ -308,7 +323,7 @@ def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes, bool]:
 
     authorization = headers.get(b"authorization", b"").decode("latin-1")
     if authorization.startswith("Bearer "):
-        return authorization[len("Bearer "):], scope.get("query_string", b""), False
+        return authorization[len("Bearer ") :], scope.get("query_string", b""), False
 
     pairs = parse_qsl(scope.get("query_string", b"").decode("latin-1"), keep_blank_values=True)
     presented = next((value for key, value in pairs if key == "token"), "")
@@ -391,12 +406,15 @@ def _serve(arguments, payload: dict) -> int:
     develop = getattr(arguments, "interface", "") or ""
     interface = None if develop else interface_directory()
     if develop:
-        logger.info(f"langmesh: serving the interface from {develop} — changes reload without a build.")
+        logger.info(
+            f"langmesh: serving the interface from {develop} — changes reload without a build."
+        )
     elif interface is None:
         logger.info(
             "langmesh: the interface has not been built, so this will serve the control plane but no "
             "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
+
     def where_is_the_daemon() -> tuple[str, str]:
         """The daemon's address and token, read fresh, so a daemon restarting beneath this proxy needs nothing re-paired."""
         return (
@@ -405,7 +423,10 @@ def _serve(arguments, payload: dict) -> int:
         )
 
     application = build_application(
-        f"http://127.0.0.1:{daemon_port}", daemon_token, interface, interface_url=develop,
+        f"http://127.0.0.1:{daemon_port}",
+        daemon_token,
+        interface,
+        interface_url=develop,
         rediscover=where_is_the_daemon,
     )
     guarded = require_token(application, payload["token"])
@@ -418,11 +439,16 @@ def _serve(arguments, payload: dict) -> int:
         return 1
 
     _describe(payload)
-    logger.info(f"Serving on {payload['endpoint']}. Scan the code with LangMesh on your phone, or paste the link.")
+    logger.info(
+        f"Serving on {payload['endpoint']}. Scan the code with LangMesh on your phone, or paste the link."
+    )
 
     # No TLS here: Tailscale terminates it with a certificate issued for this machine's tailnet name.
     configuration = uvicorn.Config(
-        guarded, host=host, port=arguments.port, log_level="warning",
+        guarded,
+        host=host,
+        port=arguments.port,
+        log_level="warning",
     )
     uvicorn.Server(configuration).run()
     return 0

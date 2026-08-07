@@ -34,10 +34,12 @@ class ReconcileAction(StrEnum):
     """What restart reconciliation does with a non-terminal task: the two outcomes over kind and state."""
 
     PRESERVE = "preserve"  # a durable pause; leave it for a later answer to resume
-    FAIL = "fail"          # interrupted; mark it failed so nothing stale replays as active
+    FAIL = "fail"  # interrupted; mark it failed so nothing stale replays as active
 
 
-def reconcile_action(kind: Optional[TurnKind], state: str, *, input_required: str) -> ReconcileAction:
+def reconcile_action(
+    kind: Optional[TurnKind], state: str, *, input_required: str
+) -> ReconcileAction:
     """What to do with a non-terminal task after a restart: an `input-required` pause survives, the rest fail."""
     if state == input_required:
         return ReconcileAction.PRESERVE
@@ -109,12 +111,23 @@ class TurnRecord(BaseModel):
             except ValueError:
                 kind = None
         raw_pending = data.get(PENDING_INTERACTION_FIELD)
-        pending = PendingInteraction.model_validate(raw_pending) if isinstance(raw_pending, dict) else None
+        pending = (
+            PendingInteraction.model_validate(raw_pending)
+            if isinstance(raw_pending, dict)
+            else None
+        )
         raw_reference = data.get(REFERENCE_TURN_IDS_FIELD)
-        reference_task_ids = [str(item) for item in raw_reference] if isinstance(raw_reference, list) else []
+        reference_task_ids = (
+            [str(item) for item in raw_reference] if isinstance(raw_reference, list) else []
+        )
         raw_sender = data.get(PEER_SENDER_FIELD)
         peer_sender = raw_sender if isinstance(raw_sender, str) else ""
-        return cls(kind=kind, peer_sender=peer_sender, pending=pending, reference_task_ids=reference_task_ids)
+        return cls(
+            kind=kind,
+            peer_sender=peer_sender,
+            pending=pending,
+            reference_task_ids=reference_task_ids,
+        )
 
     def apply_to(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
         """A metadata copy carrying this record. Everything outside the one key passes through untouched."""

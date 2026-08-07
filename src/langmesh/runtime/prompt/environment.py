@@ -20,16 +20,40 @@ logger = logging.getLogger(__name__)
 
 
 # Command-line wrappers/keywords to skip when finding the real command a history line ran.
-_HISTORY_WRAPPERS = frozenset({
-    "sudo", "doas", "env", "nice", "nohup", "time", "command", "exec", "builtin",
-    "xargs", "then", "do", "else", "elif", "fi", "done", "&&", "||", "!", "{", "}",
-})
+_HISTORY_WRAPPERS = frozenset(
+    {
+        "sudo",
+        "doas",
+        "env",
+        "nice",
+        "nohup",
+        "time",
+        "command",
+        "exec",
+        "builtin",
+        "xargs",
+        "then",
+        "do",
+        "else",
+        "elif",
+        "fi",
+        "done",
+        "&&",
+        "||",
+        "!",
+        "{",
+        "}",
+    }
+)
 
 
 def _is_subcommand_token(token: str) -> bool:
     """A bare word that is safely a sub-command rather than a value like a path, URL or secret."""
-    return bool(token) and token[0].isalpha() and len(token) <= 25 and all(
-        character.isalnum() or character in "_-" for character in token
+    return (
+        bool(token)
+        and token[0].isalpha()
+        and len(token) <= 25
+        and all(character.isalnum() or character in "_-" for character in token)
     )
 
 
@@ -56,7 +80,7 @@ def _parse_history_invocation(line: str) -> tuple[str, str, list[str]] | None:
     subcommands: list[str] = []
     flags: list[str] = []
     seen_flag = False
-    for token in tokens[index + 1:]:
+    for token in tokens[index + 1 :]:
         if token.startswith("-") and token not in ("-", "--"):
             if len(flags) >= 4:
                 break
@@ -100,7 +124,9 @@ def _shell_command_usage(
             flag_counts = command_entry["flags"]
         for flag_name in flag_names:
             flag_counts[flag_name] = flag_counts.get(flag_name, 0) + 1
-    top_commands = sorted(commands, key=lambda name: commands[name]["count"], reverse=True)[:command_limit]
+    top_commands = sorted(commands, key=lambda name: commands[name]["count"], reverse=True)[
+        :command_limit
+    ]
     usage: dict[str, dict] = {}
     for command in top_commands:
         command_entry = commands[command]
@@ -135,34 +161,156 @@ def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
     # A presence-only probe of a broad toolchain, grouped by category and never carrying versions or paths.
     probed = [
         # Language runtimes
-        "python3", "node", "deno", "bun", "ruby", "perl", "php", "go", "rustc",
-        "java", "kotlin", "swift", "dotnet", "gcc", "g++", "clang", "lua", "Rscript",
-        "julia", "dart", "elixir", "erl",
+        "python3",
+        "node",
+        "deno",
+        "bun",
+        "ruby",
+        "perl",
+        "php",
+        "go",
+        "rustc",
+        "java",
+        "kotlin",
+        "swift",
+        "dotnet",
+        "gcc",
+        "g++",
+        "clang",
+        "lua",
+        "Rscript",
+        "julia",
+        "dart",
+        "elixir",
+        "erl",
         # Package and version managers
-        "uv", "uvx", "pip", "pipx", "pipenv", "poetry", "pdm", "rye", "hatch", "conda",
-        "mamba", "pixi", "npm", "pnpm", "yarn", "cargo", "rustup", "gem", "bundle",
-        "composer", "mvn", "gradle", "sdk", "opam", "luarocks", "cabal", "stack",
-        "brew", "port", "nix", "nix-env", "guix", "spack", "asdf", "mise", "volta", "fnm",
-        "apt-get", "dnf", "yum", "zypper", "pacman", "apk", "emerge", "xbps-install",
-        "snap", "flatpak", "pkg", "choco", "scoop", "winget",
+        "uv",
+        "uvx",
+        "pip",
+        "pipx",
+        "pipenv",
+        "poetry",
+        "pdm",
+        "rye",
+        "hatch",
+        "conda",
+        "mamba",
+        "pixi",
+        "npm",
+        "pnpm",
+        "yarn",
+        "cargo",
+        "rustup",
+        "gem",
+        "bundle",
+        "composer",
+        "mvn",
+        "gradle",
+        "sdk",
+        "opam",
+        "luarocks",
+        "cabal",
+        "stack",
+        "brew",
+        "port",
+        "nix",
+        "nix-env",
+        "guix",
+        "spack",
+        "asdf",
+        "mise",
+        "volta",
+        "fnm",
+        "apt-get",
+        "dnf",
+        "yum",
+        "zypper",
+        "pacman",
+        "apk",
+        "emerge",
+        "xbps-install",
+        "snap",
+        "flatpak",
+        "pkg",
+        "choco",
+        "scoop",
+        "winget",
         # Build tools
-        "make", "cmake", "ninja", "meson", "bazel",
+        "make",
+        "cmake",
+        "ninja",
+        "meson",
+        "bazel",
         # Version control
-        "git", "gh", "glab", "hg", "svn",
+        "git",
+        "gh",
+        "glab",
+        "hg",
+        "svn",
         # Search, text, and data
-        "rg", "ag", "fd", "fzf", "grep", "sed", "awk", "jq", "yq", "xmllint", "pandoc",
+        "rg",
+        "ag",
+        "fd",
+        "fzf",
+        "grep",
+        "sed",
+        "awk",
+        "jq",
+        "yq",
+        "xmllint",
+        "pandoc",
         # Network
-        "curl", "wget", "http", "nc", "dig", "nslookup", "ssh", "scp", "rsync", "ping",
-        "ip", "ifconfig", "netstat", "ss", "openssl",
+        "curl",
+        "wget",
+        "http",
+        "nc",
+        "dig",
+        "nslookup",
+        "ssh",
+        "scp",
+        "rsync",
+        "ping",
+        "ip",
+        "ifconfig",
+        "netstat",
+        "ss",
+        "openssl",
         # Containers, cloud, and infrastructure
-        "docker", "docker-compose", "podman", "kubectl", "helm", "terraform", "ansible",
-        "vagrant", "aws", "gcloud", "az", "flyctl",
+        "docker",
+        "docker-compose",
+        "podman",
+        "kubectl",
+        "helm",
+        "terraform",
+        "ansible",
+        "vagrant",
+        "aws",
+        "gcloud",
+        "az",
+        "flyctl",
         # Databases
-        "psql", "mysql", "sqlite3", "redis-cli", "mongosh",
+        "psql",
+        "mysql",
+        "sqlite3",
+        "redis-cli",
+        "mongosh",
         # Media, graphics, and documents
-        "ffmpeg", "convert", "magick", "gs", "sox", "tesseract", "dot", "gnuplot",
+        "ffmpeg",
+        "convert",
+        "magick",
+        "gs",
+        "sox",
+        "tesseract",
+        "dot",
+        "gnuplot",
         # Editors and multiplexers
-        "vim", "nvim", "emacs", "nano", "tmux", "screen", "code",
+        "vim",
+        "nvim",
+        "emacs",
+        "nano",
+        "tmux",
+        "screen",
+        "code",
     ]
     # Resolved against the `PATH` a command will actually run with, so a session-installed tool counts as present.
     lookup = os.pathsep.join(path) if path else os.environ.get(environment_variables.PATH, "")
@@ -190,9 +338,14 @@ def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
         },
         # The user's habitual commands mapped to how they invoke them, with no positional arguments or flag values.
         "frequent_commands": _shell_command_usage(),
-        "editor": os.environ.get(environment_variables.EDITOR) or os.environ.get(environment_variables.VISUAL),
-        "path": list(path) if path else [
-            entry for entry in os.environ.get(environment_variables.PATH, "").split(os.pathsep) if entry
+        "editor": os.environ.get(environment_variables.EDITOR)
+        or os.environ.get(environment_variables.VISUAL),
+        "path": list(path)
+        if path
+        else [
+            entry
+            for entry in os.environ.get(environment_variables.PATH, "").split(os.pathsep)
+            if entry
         ],
     }
     return compact(payload)
@@ -220,11 +373,11 @@ def _iter_history_lines() -> Iterator[str]:
             if fmt == "zsh" and line.startswith(":"):
                 semicolon = line.find(";")
                 if semicolon != -1:
-                    line = line[semicolon + 1:].strip()
+                    line = line[semicolon + 1 :].strip()
             elif fmt == "fish":
                 if not line.startswith("- cmd:"):
                     continue
-                line = line[len("- cmd:"):].strip()
+                line = line[len("- cmd:") :].strip()
             yield line
 
 
@@ -235,7 +388,7 @@ def _home_relative(path: Path | str) -> str:
     if text == home:
         return "~"
     if text.startswith(home + os.sep):
-        return "~" + text[len(home):]
+        return "~" + text[len(home) :]
     return text
 
 
@@ -292,10 +445,18 @@ def _browser_site_activity(
     queries: list[tuple[Path, str, bool]] = []
     for pattern in _CHROMIUM_HISTORY_GLOBS:
         for database in sorted(support.glob(pattern)):
-            queries.append((database, "SELECT url, visit_count, last_visit_time FROM urls WHERE visit_count > 0", True))
+            queries.append(
+                (
+                    database,
+                    "SELECT url, visit_count, last_visit_time FROM urls WHERE visit_count > 0",
+                    True,
+                )
+            )
     safari = Path.home() / "Library" / "Safari" / "History.db"
     if safari.is_file():
-        queries.append((safari, "SELECT url, visit_count FROM history_items WHERE visit_count > 0", False))
+        queries.append(
+            (safari, "SELECT url, visit_count FROM history_items WHERE visit_count > 0", False)
+        )
 
     visit_counts: dict[str, int] = {}
     last_seen: dict[str, float] = {}
@@ -334,7 +495,11 @@ def _browser_site_activity(
 def _installed_applications(limit: int = 48) -> list[str]:
     """Names of installed macOS applications across the standard bundle locations, sorted and deduped."""
     names: set[str] = set()
-    for directory in (Path("/Applications"), Path.home() / "Applications", Path("/System/Applications")):
+    for directory in (
+        Path("/Applications"),
+        Path.home() / "Applications",
+        Path("/System/Applications"),
+    ):
         try:
             for entry in directory.iterdir():
                 if entry.suffix == ".app":
@@ -350,9 +515,14 @@ def _running_applications(limit: int = 30) -> list[str]:
 
     try:
         result = subprocess.run(
-            ["osascript", "-e",
-             'tell application "System Events" to get name of (every process whose background only is false)'],
-            capture_output=True, text=True, timeout=4,
+            [
+                "osascript",
+                "-e",
+                'tell application "System Events" to get name of (every process whose background only is false)',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=4,
         )
     except (OSError, subprocess.SubprocessError):
         return []
@@ -469,8 +639,14 @@ def _login_items(limit: int = 25) -> list[str]:
 
     try:
         result = subprocess.run(
-            ["osascript", "-e", 'tell application "System Events" to get the name of every login item'],
-            capture_output=True, text=True, timeout=5,
+            [
+                "osascript",
+                "-e",
+                'tell application "System Events" to get the name of every login item',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
         return []
@@ -499,7 +675,11 @@ def _editor_extensions(limit: int = 70) -> list[str]:
     for base in (".vscode/extensions", ".cursor/extensions", ".vscode-insiders/extensions"):
         try:
             for entry in os.scandir(Path.home() / base):
-                if entry.is_dir(follow_symlinks=False) and "-" in entry.name and not entry.name.startswith("."):
+                if (
+                    entry.is_dir(follow_symlinks=False)
+                    and "-" in entry.name
+                    and not entry.name.startswith(".")
+                ):
                     # Directory names carry a trailing version, so drop everything from the first `-<digit>` onward.
                     names.add(re.sub(r"-\d.*$", "", entry.name))
         except OSError:
@@ -570,7 +750,8 @@ def _home_dotfiles(limit: int = 64) -> list[str]:
     home = Path.home()
     try:
         return sorted(
-            entry.name for entry in os.scandir(home)
+            entry.name
+            for entry in os.scandir(home)
             if entry.name.startswith(".") and entry.name not in (".", "..")
         )[:limit]
     except OSError:
@@ -641,7 +822,10 @@ def _shell_activity_timeline() -> dict:
     """How the user's commands distribute across the hours and days, plus the span covered and when they were last active."""
     home = Path.home()
     timestamps: list[int] = []
-    for path, fmt in ((home / ".zsh_history", "zsh"), (home / ".local/share/fish/fish_history", "fish")):
+    for path, fmt in (
+        (home / ".zsh_history", "zsh"),
+        (home / ".local/share/fish/fish_history", "fish"),
+    ):
         try:
             if not path.is_file():
                 continue
@@ -664,7 +848,7 @@ def _shell_activity_timeline() -> dict:
                 stripped = line.strip()
                 if stripped.startswith("when:"):
                     try:
-                        timestamps.append(int(stripped[len("when:"):].strip()))
+                        timestamps.append(int(stripped[len("when:") :].strip()))
                     except ValueError:
                         continue
     # A handful of timestamps implies a rhythm that is not there, so the timeline is omitted entirely.
@@ -706,7 +890,7 @@ def _hardware_profile() -> dict:
         profile["cpu_cores"] = int(cores)
     memory = _run_command(["sysctl", "-n", "hw.memsize"])
     if memory.isdigit():
-        profile["memory_gb"] = round(int(memory) / 1024 ** 3)
+        profile["memory_gb"] = round(int(memory) / 1024**3)
     return profile
 
 
@@ -739,11 +923,18 @@ def _hardware_status() -> dict:
         try:
             data = json_module.loads(airport)
             for controller in data.get("SPAirPortDataType", []):
-                interfaces = controller.get("spairport_airport_interfaces", []) if isinstance(controller, dict) else []
+                interfaces = (
+                    controller.get("spairport_airport_interfaces", [])
+                    if isinstance(controller, dict)
+                    else []
+                )
                 current = next(
-                    (interface.get("spairport_current_network_information")
-                     for interface in interfaces
-                     if isinstance(interface, dict) and isinstance(interface.get("spairport_current_network_information"), dict)),
+                    (
+                        interface.get("spairport_current_network_information")
+                        for interface in interfaces
+                        if isinstance(interface, dict)
+                        and isinstance(interface.get("spairport_current_network_information"), dict)
+                    ),
                     None,
                 )
                 if current is None:
@@ -771,8 +962,10 @@ def _hardware_status() -> dict:
             data = json_module.loads(displays_raw)
             names = [
                 screen.get("_name")
-                for gpu in data.get("SPDisplaysDataType", []) if isinstance(gpu, dict)
-                for screen in gpu.get("spdisplays_ndrvs", []) if isinstance(screen, dict) and screen.get("_name")
+                for gpu in data.get("SPDisplaysDataType", [])
+                if isinstance(gpu, dict)
+                for screen in gpu.get("spdisplays_ndrvs", [])
+                if isinstance(screen, dict) and screen.get("_name")
             ]
             if names:
                 status["displays"] = names
@@ -791,7 +984,9 @@ def _hardware_status() -> dict:
                     if not isinstance(item, dict):
                         continue
                     name = item.get("_name")
-                    if name and not any(marker in name for marker in ("Controller", "Bus", "Hub", "Root")):
+                    if name and not any(
+                        marker in name for marker in ("Controller", "Bus", "Hub", "Root")
+                    ):
                         peripherals.append(name)
                     _collect(item.get("_items", []))
 
@@ -833,8 +1028,10 @@ def _git_identity() -> dict:
     """The user's global Git name, email, default branch and editor, so commits match them; empty when unconfigured."""
     identity: dict = {}
     for key, field in (
-        ("user.name", "name"), ("user.email", "email"),
-        ("init.defaultBranch", "default_branch"), ("core.editor", "editor"),
+        ("user.name", "name"),
+        ("user.email", "email"),
+        ("init.defaultBranch", "default_branch"),
+        ("core.editor", "editor"),
     ):
         value = _run_command(["git", "config", "--global", key])
         if value:
@@ -858,14 +1055,32 @@ def _dock_applications(limit: int = 30) -> list[str]:
 
 # Configuration files whose presence reveals a tool the user has set up, mapped to that tool's name.
 _TOOLING_MARKERS = {
-    ".vimrc": "vim", ".config/nvim": "neovim", ".tmux.conf": "tmux",
-    ".config/fish": "fish", ".zshrc": "zsh", ".bashrc": "bash",
-    ".config/starship.toml": "starship", ".p10k.zsh": "powerlevel10k", ".oh-my-zsh": "oh-my-zsh",
+    ".vimrc": "vim",
+    ".config/nvim": "neovim",
+    ".tmux.conf": "tmux",
+    ".config/fish": "fish",
+    ".zshrc": "zsh",
+    ".bashrc": "bash",
+    ".config/starship.toml": "starship",
+    ".p10k.zsh": "powerlevel10k",
+    ".oh-my-zsh": "oh-my-zsh",
     "Library/Application Support/Code/User/settings.json": "vscode",
-    ".cargo": "rust", ".rustup": "rust", ".nvm": "nvm", ".pyenv": "pyenv",
-    ".rbenv": "rbenv", ".config/direnv": "direnv", ".config/nix": "nix", ".nixpkgs": "nix",
-    ".docker": "docker", ".kube": "kubernetes", ".aws": "aws", ".gcloud": "gcloud",
-    ".config/gh": "github-cli", ".ssh/config": "ssh", ".gnupg": "gpg", ".config/direnv/direnvrc": "direnv",
+    ".cargo": "rust",
+    ".rustup": "rust",
+    ".nvm": "nvm",
+    ".pyenv": "pyenv",
+    ".rbenv": "rbenv",
+    ".config/direnv": "direnv",
+    ".config/nix": "nix",
+    ".nixpkgs": "nix",
+    ".docker": "docker",
+    ".kube": "kubernetes",
+    ".aws": "aws",
+    ".gcloud": "gcloud",
+    ".config/gh": "github-cli",
+    ".ssh/config": "ssh",
+    ".gnupg": "gpg",
+    ".config/direnv/direnvrc": "direnv",
 }
 
 
@@ -873,15 +1088,17 @@ def _tooling_preferences() -> dict:
     """The user's shell and editor environment variables plus the tools their configuration files reveal."""
     profile: dict = {}
     # `$EDITOR` is the terminal fallback rather than the real IDE, so it is labelled `cli_editor`.
-    for variable, label in (("EDITOR", "cli_editor"), ("VISUAL", "cli_visual_editor"),
-                            ("PAGER", "pager"), ("TERM_PROGRAM", "terminal")):
+    for variable, label in (
+        ("EDITOR", "cli_editor"),
+        ("VISUAL", "cli_visual_editor"),
+        ("PAGER", "pager"),
+        ("TERM_PROGRAM", "terminal"),
+    ):
         value = os.environ.get(variable)
         if value:
             profile[label] = value
     home = Path.home()
-    configured = {
-        tool for relative, tool in _TOOLING_MARKERS.items() if (home / relative).exists()
-    }
+    configured = {tool for relative, tool in _TOOLING_MARKERS.items() if (home / relative).exists()}
     if configured:
         profile["configured_tools"] = sorted(configured)
     return profile
@@ -892,15 +1109,23 @@ def _spotlight_app_usage(limit: int = 24) -> dict:
     import re
 
     app_paths: list[str] = []
-    for directory in (Path("/Applications"), Path.home() / "Applications", Path("/System/Applications")):
+    for directory in (
+        Path("/Applications"),
+        Path.home() / "Applications",
+        Path("/System/Applications"),
+    ):
         try:
-            app_paths += [entry.path for entry in os.scandir(directory) if entry.name.endswith(".app")]
+            app_paths += [
+                entry.path for entry in os.scandir(directory) if entry.name.endswith(".app")
+            ]
         except OSError:
             continue
     if not app_paths:
         return {}
     # One mdls call for every app; attributes print alphabetically, so FSName precedes UseCount.
-    output = _run_command(["mdls", "-name", "kMDItemFSName", "-name", "kMDItemUseCount", *app_paths], timeout=12)
+    output = _run_command(
+        ["mdls", "-name", "kMDItemFSName", "-name", "kMDItemUseCount", *app_paths], timeout=12
+    )
     if not output:
         return {}
     counts: dict[str, int] = {}
@@ -938,7 +1163,13 @@ def _default_handlers() -> dict:
     """The app set as the default for each kind of file, plus the default browser, as bundle ids from LaunchServices."""
     import json as json_module
 
-    plist = Path.home() / "Library" / "Preferences" / "com.apple.LaunchServices" / "com.apple.launchservices.secure.plist"
+    plist = (
+        Path.home()
+        / "Library"
+        / "Preferences"
+        / "com.apple.LaunchServices"
+        / "com.apple.launchservices.secure.plist"
+    )
     if not plist.is_file():
         return {}
     raw = _run_command(["plutil", "-convert", "json", "-o", "-", str(plist)], timeout=5)
@@ -952,7 +1183,11 @@ def _default_handlers() -> dict:
     for handler in data.get("LSHandlers", []):
         if not isinstance(handler, dict):
             continue
-        role = handler.get("LSHandlerRoleAll") or handler.get("LSHandlerRoleEditor") or handler.get("LSHandlerRoleViewer")
+        role = (
+            handler.get("LSHandlerRoleAll")
+            or handler.get("LSHandlerRoleEditor")
+            or handler.get("LSHandlerRoleViewer")
+        )
         if not role:
             continue
         if handler.get("LSHandlerURLScheme") in ("http", "https"):
@@ -976,7 +1211,12 @@ def _recently_used_files(limit: int = 20) -> list[str]:
         path = path.strip()
         if not path or path.endswith(".app"):
             continue
-        if "/Library/" in path or "/.Trash/" in path or "/node_modules/" in path or "/.git/" in path:
+        if (
+            "/Library/" in path
+            or "/.Trash/" in path
+            or "/node_modules/" in path
+            or "/.git/" in path
+        ):
             continue
         files.append(_home_relative(path))
         if len(files) >= limit:
@@ -986,8 +1226,23 @@ def _recently_used_files(limit: int = 20) -> list[str]:
 
 # Shell-configuration markers, and the tool each one reveals is loaded.
 _SHELL_TOOL_MARKERS = (
-    "nvm", "pyenv", "rbenv", "conda", "direnv", "starship", "zoxide", "fnm", "rustup",
-    "sdkman", "thefuck", "powerlevel10k", "fzf", "atuin", "mise", "asdf", "volta",
+    "nvm",
+    "pyenv",
+    "rbenv",
+    "conda",
+    "direnv",
+    "starship",
+    "zoxide",
+    "fnm",
+    "rustup",
+    "sdkman",
+    "thefuck",
+    "powerlevel10k",
+    "fzf",
+    "atuin",
+    "mise",
+    "asdf",
+    "volta",
 )
 
 
@@ -1005,7 +1260,13 @@ def _shell_setup() -> dict:
         plugins = [plugin for plugin in plugins_match.group(1).split() if plugin]
         if plugins:
             profile["oh_my_zsh_plugins"] = plugins[:30]
-    loaded = sorted({marker for marker in _SHELL_TOOL_MARKERS if re.search(r"\b" + re.escape(marker) + r"\b", text)})
+    loaded = sorted(
+        {
+            marker
+            for marker in _SHELL_TOOL_MARKERS
+            if re.search(r"\b" + re.escape(marker) + r"\b", text)
+        }
+    )
     if loaded:
         profile["loaded_tools"] = loaded
     alias_count = len(re.findall(r"^\s*alias\s+\w", text, re.MULTILINE))
@@ -1074,7 +1335,8 @@ def _build_user_context() -> dict:
 
     try:
         home_layout = sorted(
-            entry.name for entry in os.scandir(home)
+            entry.name
+            for entry in os.scandir(home)
             if entry.is_dir(follow_symlinks=False) and not entry.name.startswith(".")
         )
         if home_layout:
@@ -1085,7 +1347,11 @@ def _build_user_context() -> dict:
     # The standard drop folders plus the directories the user works in: files show editing, sub-directories show focus.
     recent_roots = [home / "Desktop", home / "Downloads", home / "Documents"]
     for relative in frequent_directories:
-        candidate = Path(relative.replace("~", str(home), 1)) if relative.startswith("~") else Path(relative)
+        candidate = (
+            Path(relative.replace("~", str(home), 1))
+            if relative.startswith("~")
+            else Path(relative)
+        )
         if candidate.is_dir() and candidate not in recent_roots:
             recent_roots.append(candidate)
     existing_roots = [root for root in recent_roots if root.is_dir()]

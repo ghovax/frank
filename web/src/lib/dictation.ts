@@ -12,7 +12,10 @@ const CAPTURE_PROCESSOR_URL = "/dictation-capture.worklet.js";
 
 /** A recording that could not be made, named by the catalogue entry that says why. */
 export class DictationRecordingError extends Error {
-  constructor(message: string, readonly values: Record<string, string> = {}) {
+  constructor(
+    message: string,
+    readonly values: Record<string, string> = {},
+  ) {
     super(message);
     this.name = "DictationRecordingError";
   }
@@ -50,7 +53,9 @@ async function startDictationRecording(): Promise<DictationRecording> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     // Naming the cause, because an insecure origin and a missing microphone are fixed in different places.
     const insecure = typeof window !== "undefined" && !window.isSecureContext;
-    throw new DictationRecordingError(insecure ? "dictationInsecureOrigin" : "dictationNoMicrophone");
+    throw new DictationRecordingError(
+      insecure ? "dictationInsecureOrigin" : "dictationNoMicrophone",
+    );
   }
   let stream: MediaStream;
   try {
@@ -58,7 +63,9 @@ async function startDictationRecording(): Promise<DictationRecording> {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (caught) {
     // The one failure worth naming precisely: permission, which the person can fix.
-    const denied = caught instanceof DOMException && (caught.name === "NotAllowedError" || caught.name === "SecurityError");
+    const denied =
+      caught instanceof DOMException &&
+      (caught.name === "NotAllowedError" || caught.name === "SecurityError");
     throw new DictationRecordingError(denied ? "dictationRefused" : "dictationNoDevice");
   }
 
@@ -68,9 +75,11 @@ async function startDictationRecording(): Promise<DictationRecording> {
 
   const release = () => {
     for (const track of stream.getTracks()) track.stop();
-    void audioContext.close().catch((caught) =>
-      expected("a context that will not close has already stopped producing", caught)
-    );
+    void audioContext
+      .close()
+      .catch((caught) =>
+        expected("a context that will not close has already stopped producing", caught),
+      );
   };
 
   try {

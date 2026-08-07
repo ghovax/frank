@@ -13,14 +13,14 @@ from pydantic_core import PydanticUndefined
 
 
 #: What a setting holds, derived from the annotation so a field that changes type cannot keep a stale control.
-KIND_SECTION = "section"    # a place to put things, not a thing itself
+KIND_SECTION = "section"  # a place to put things, not a thing itself
 KIND_BOOLEAN = "boolean"
 KIND_INTEGER = "integer"
 KIND_NUMBER = "number"
 KIND_STRING = "string"
-KIND_CHOICE = "choice"      # a fixed set of values: a Literal or an Enum
-KIND_LIST = "list"          # a list of strings — paths, names, patterns
-KIND_MAP = "map"            # keys the user invents
+KIND_CHOICE = "choice"  # a fixed set of values: a Literal or an Enum
+KIND_LIST = "list"  # a list of strings — paths, names, patterns
+KIND_MAP = "map"  # keys the user invents
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,10 @@ def _model_of(annotation: Any) -> Optional[type[BaseModel]]:
 
 def _is_open_ended_map(annotation: Any) -> bool:
     """A ``dict`` whose keys the user invents, rather than a fixed set of named entries."""
-    return typing.get_origin(annotation) is dict and _model_of(typing.get_args(annotation)[1]) is not None
+    return (
+        typing.get_origin(annotation) is dict
+        and _model_of(typing.get_args(annotation)[1]) is not None
+    )
 
 
 def _unwrapped(annotation: Any) -> tuple[Any, bool]:
@@ -140,7 +143,9 @@ def _tuning_defaults(prefix: str) -> list[Setting]:
             path=f"{prefix}.{tunable.name}",
             default=tunable.default,
             # Every tunable is a number, and the shipped value says which of integer and number it is.
-            kind=KIND_INTEGER if isinstance(tunable.default, int) and not isinstance(tunable.default, bool) else KIND_NUMBER,
+            kind=KIND_INTEGER
+            if isinstance(tunable.default, int) and not isinstance(tunable.default, bool)
+            else KIND_NUMBER,
         )
         for tunable in Tunable
     ]
@@ -156,9 +161,14 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
             settings.extend(_tuning_defaults(path))
             continue
         if _is_open_ended_map(annotation):
-            settings.append(Setting(
-                path=path, default=_field_default(field), open_ended=True, kind=KIND_MAP,
-            ))
+            settings.append(
+                Setting(
+                    path=path,
+                    default=_field_default(field),
+                    open_ended=True,
+                    kind=KIND_MAP,
+                )
+            )
             continue
         nested = _model_of(annotation)
         if nested is not None:
@@ -166,25 +176,45 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
             settings.extend(_walk(nested, path))
             continue
         kind, choices, optional = _kind_of(annotation, _field_default(field))
-        settings.append(Setting(
-            path=path, default=_field_default(field),
-            kind=kind, choices=choices, optional=optional, secret=_is_secret(field),
-        ))
+        settings.append(
+            Setting(
+                path=path,
+                default=_field_default(field),
+                kind=kind,
+                choices=choices,
+                optional=optional,
+                secret=_is_secret(field),
+            )
+        )
     return settings
 
 
 #: The order a person meets the sections in, from what they decide to what they tune.
 SECTION_ORDER = (
     # What the agent may do, and where.
-    "agent", "workspace", "sandbox", "toolbox", "permission_reviewer",
+    "agent",
+    "workspace",
+    "sandbox",
+    "toolbox",
+    "permission_reviewer",
     # What it carries between turns, and what it knows about you.
-    "compaction", "user_context",
+    "compaction",
+    "user_context",
     # The surfaces it can reach for.
-    "computer_control", "dictation",
+    "computer_control",
+    "dictation",
     # Who it talks to, and with what credentials.
-    "providers", "exa", "jina", "firecrawl", "web_fetch", "composio", "mcp", "remote_agents",
+    "providers",
+    "exa",
+    "jina",
+    "firecrawl",
+    "web_fetch",
+    "composio",
+    "mcp",
+    "remote_agents",
     # What is watching, and the numbers underneath everything.
-    "telemetry", "tuning",
+    "telemetry",
+    "tuning",
 )
 
 
@@ -194,17 +224,16 @@ def settings() -> list[Setting]:
 
     walked = _walk(Configuration, "")
     position = {name: index for index, name in enumerate(SECTION_ORDER)}
-    return sorted(walked, key=lambda setting: position.get(setting.path.split(".")[0], len(position)))
+    return sorted(
+        walked, key=lambda setting: position.get(setting.path.split(".")[0], len(position))
+    )
 
 
 def leaf_settings() -> list[Setting]:
     """Only the settings that hold a value, since a section is a place to put things rather than a thing."""
     everything = settings()
     prefixes = {setting.path.rsplit(".", 1)[0] for setting in everything if "." in setting.path}
-    return [
-        setting for setting in everything
-        if setting.path not in prefixes or setting.open_ended
-    ]
+    return [setting for setting in everything if setting.path not in prefixes or setting.open_ended]
 
 
 def setting_for(path: str) -> Optional[Setting]:
@@ -242,7 +271,7 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
             shipped = _field_default(field)
             return Setting(
                 path=full_path,
-                    default=shipped.get(remaining[0]) if isinstance(shipped, dict) else None,
+                default=shipped.get(remaining[0]) if isinstance(shipped, dict) else None,
             )
         # The next segment is the user's own name for an entry, and what follows is that entry's field.
         if not remaining[1:]:

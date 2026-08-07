@@ -1,4 +1,3 @@
-
 "use client";
 
 import { swallowed } from "@/lib/swallowed";
@@ -41,7 +40,11 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
     if (!listenerAttached) {
       listenerAttached = true;
       navigator.serviceWorker.addEventListener("message", (event) => {
-        const payload = event.data as { type?: string; action?: string; data?: { requestId?: string } } | null;
+        const payload = event.data as {
+          type?: string;
+          action?: string;
+          data?: { requestId?: string };
+        } | null;
         if (payload?.type !== "langmesh-notification-click") return;
         const requestId = payload.data?.requestId;
         if (payload.action === APPROVE_ACTION && requestId) actionHandler?.(requestId);
@@ -84,8 +87,14 @@ export async function notifyPermissionRequest({
       requireInteraction: true,
       actions: [{ action: APPROVE_ACTION, title: actionLabel }],
     } as NotificationOptions;
-    await registration.showNotification(title, options)
-      .catch((caught) => swallowed({ component: "notifications", operation: "show a permission notification" }, caught));
+    await registration
+      .showNotification(title, options)
+      .catch((caught) =>
+        swallowed(
+          { component: "notifications", operation: "show a permission notification" },
+          caught,
+        ),
+      );
     return;
   }
   try {

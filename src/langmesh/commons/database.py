@@ -99,7 +99,9 @@ class InterfacePreferenceRecord(Base):
     # The workspace a fresh launch reopens. Empty until one has been opened.
     last_workspace_id: Mapped[str] = mapped_column(String, nullable=False, default="")
     # Set when computer control is asked for without the grant, so the request outlives the process that took it.
-    computer_control_awaiting_grant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    computer_control_awaiting_grant: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
 
 class ScheduleRecord(Base):

@@ -1,4 +1,5 @@
 """The one place every tool's size, count and timing limit is decided, and how each scales with the live context window."""
+
 from __future__ import annotations
 
 import contextvars
@@ -12,7 +13,8 @@ from typing import Callable, Iterable, NamedTuple, Optional, TypeVar
 
 # The live context window for the tool call currently executing, or 0 when it is not yet known.
 current_context_window: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "current_context_window", default=0,
+    "current_context_window",
+    default=0,
 )
 
 
@@ -187,7 +189,7 @@ class Tunable(Enum):
 
 
 # Tokenizer-backed text budgeting, because a fixed characters-per-token ratio is wrong in both directions.
-_ENCODING_NAME = "o200k_base"     # the current-generation general tokenizer; a good cross-model proxy
+_ENCODING_NAME = "o200k_base"  # the current-generation general tokenizer; a good cross-model proxy
 
 _encoding = None
 
@@ -349,14 +351,16 @@ def tuning_from_policy(policy: object, screen_policy: object = None) -> Tuning:
         overrides.pop(name, None)
     share = getattr(policy, "context_share", None)
     settle = getattr(screen_policy, "settle", None)
-    return Tuning(TuningConfiguration(
-        text=float(getattr(share, "text", Scaling.TEXT.value.calibrated)),
-        results=float(getattr(share, "results", Scaling.RESULTS.value.calibrated)),
-        timeout_multiplier=float(getattr(policy, "timeout_multiplier", 1.0)),
-        defaults=overrides,
-        settle_poll_seconds=float(getattr(settle, "poll_seconds", 0.05)),
-        settle_give_up_seconds=float(getattr(settle, "give_up_seconds", 1.5)),
-    ))
+    return Tuning(
+        TuningConfiguration(
+            text=float(getattr(share, "text", Scaling.TEXT.value.calibrated)),
+            results=float(getattr(share, "results", Scaling.RESULTS.value.calibrated)),
+            timeout_multiplier=float(getattr(policy, "timeout_multiplier", 1.0)),
+            defaults=overrides,
+            settle_poll_seconds=float(getattr(settle, "poll_seconds", 0.05)),
+            settle_give_up_seconds=float(getattr(settle, "give_up_seconds", 1.5)),
+        )
+    )
 
 
 def active_tuning() -> Tuning:

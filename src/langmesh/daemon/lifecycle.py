@@ -70,7 +70,10 @@ class SessionLifecycle:
         )
         if not started:
             self._registry.end(
-                record.id, outcome=FAILED, reason="the session could not be built", updated_at=_now()
+                record.id,
+                outcome=FAILED,
+                reason="the session could not be built",
+                updated_at=_now(),
             )
             self._changed()
             return False
@@ -91,11 +94,15 @@ class SessionLifecycle:
             f"reporting back: {outcome}."
         )
         try:
-            await relay_to_session(parent, "message/send", {
-                "id": parent.id,
-                "parts": [{"kind": "text", "text": text}],
-                "metadata": {Metadata.PEER_SENDER: record.id},
-            })
+            await relay_to_session(
+                parent,
+                "message/send",
+                {
+                    "id": parent.id,
+                    "parts": [{"kind": "text", "text": text}],
+                    "metadata": {Metadata.PEER_SENDER: record.id},
+                },
+            )
         except Exception:  # noqa: BLE001 — a notice that cannot be delivered is not a failure
             logger.debug("could not tell %s that %s ended", parent.id, record.id, exc_info=True)
 
@@ -104,7 +111,9 @@ class SessionLifecycle:
         record = self._registry.get(session_id)
         if record is None:
             return 0
-        descendants = [record for record in self._registry.descendants_of(session_id) if record.is_live]
+        descendants = [
+            record for record in self._registry.descendants_of(session_id) if record.is_live
+        ]
         # A goal describes work in progress, so it ends with the session that was pursuing it.
         from langmesh.base import toolbox
         from langmesh.daemon import state as daemon_state
@@ -114,11 +123,15 @@ class SessionLifecycle:
             toolbox.discard(ending.id)
         for descendant in descendants:
             self._registry.end(
-                descendant.id, outcome=EXITED, updated_at=_now(),
+                descendant.id,
+                outcome=EXITED,
+                updated_at=_now(),
                 reason=reason or "parent session was reaped",
             )
         # Stopped together rather than one at a time, since each carries its own grace period.
-        await asyncio.gather(*(self._stop(record.id) for record in descendants), return_exceptions=True)
+        await asyncio.gather(
+            *(self._stop(record.id) for record in descendants), return_exceptions=True
+        )
         reaped = len(descendants)
         if not skip_self and record.is_live:
             self._registry.end(session_id, outcome=EXITED, reason=reason, updated_at=_now())
@@ -145,7 +158,9 @@ class SessionLifecycle:
     async def sleep_all(self) -> int:
         """Drop every executor while keeping every session, which is what a durable registry makes shutdown mean."""
         hosted = self._host.hosted()
-        await asyncio.gather(*(self.sleep(session_id) for session_id in hosted), return_exceptions=True)
+        await asyncio.gather(
+            *(self.sleep(session_id) for session_id in hosted), return_exceptions=True
+        )
         return len(hosted)
 
     async def _stop(self, session_id: str) -> None:

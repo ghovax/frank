@@ -10,15 +10,34 @@ from pathlib import Path
 from typing import Callable, Optional
 
 # Requests whose bodies are streamed, and headers that describe a connection ending here rather than at the daemon.
-_DROPPED_REQUEST_HEADERS = frozenset({
-    "host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "authorization",
-})
+_DROPPED_REQUEST_HEADERS = frozenset(
+    {
+        "host",
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+        "authorization",
+    }
+)
 # `content-encoding` is deliberately kept, since the body is forwarded exactly as it arrived and still compressed.
-_DROPPED_RESPONSE_HEADERS = frozenset({
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "content-length",
-})
+_DROPPED_RESPONSE_HEADERS = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+        "content-length",
+    }
+)
 
 # Served to the page so it addresses the daemon relatively rather than at a build-time default port.
 RUNTIME_PATH = "/__langmesh/runtime.json"
@@ -45,10 +64,16 @@ def interface_directory() -> Optional[Path]:
 
 # What belongs to the interface rather than the daemon, consulted only when the interface is a development server.
 _INTERFACE_PREFIXES = ("/_next/", "/__next", "/fonts/", "/@vite", "/@react-refresh")
-_INTERFACE_PATHS = frozenset({
-    "/", "/favicon.ico", "/icon.png", "/apple-icon.png", "/manifest.json",
-    "/dictation-capture.worklet.js",
-})
+_INTERFACE_PATHS = frozenset(
+    {
+        "/",
+        "/favicon.ico",
+        "/icon.png",
+        "/apple-icon.png",
+        "/manifest.json",
+        "/dictation-capture.worklet.js",
+    }
+)
 
 
 def _wants_interface(path: str) -> bool:
@@ -56,7 +81,10 @@ def _wants_interface(path: str) -> bool:
 
 
 def build_application(
-    daemon_url: str, token: str, directory: Optional[Path], interface_url: str = "",
+    daemon_url: str,
+    token: str,
+    directory: Optional[Path],
+    interface_url: str = "",
     rediscover: Optional[Callable[[], tuple[str, str]]] = None,
 ):
     """The ASGI application: the interface at the root, the daemon behind everything else, rediscovered when it moves."""
@@ -79,19 +107,27 @@ def build_application(
         except Exception:  # noqa: BLE001 — a proxy must not die because a file was mid-write
             logger.debug("could not re-read the daemon's endpoint", exc_info=True)
             return False
-        if not found_url or (found_url == upstream_daemon["url"] and found_token == upstream_daemon["token"]):
+        if not found_url or (
+            found_url == upstream_daemon["url"] and found_token == upstream_daemon["token"]
+        ):
             return False
         logger.info(f"langmesh: the daemon moved to {found_url}; reconnecting.")
         upstream_daemon["url"] = found_url
         upstream_daemon["token"] = found_token
-        previous, client = client, httpx.AsyncClient(base_url=found_url, timeout=None, follow_redirects=False)
+        previous, client = (
+            client,
+            httpx.AsyncClient(base_url=found_url, timeout=None, follow_redirects=False),
+        )
         await previous.aclose()
         return True
+
     interface = (
         httpx.AsyncClient(base_url=interface_url, timeout=None, follow_redirects=False)
-        if interface_url else None
+        if interface_url
+        else None
     )
     root = directory.resolve() if directory is not None else None
+
     async def runtime(_request) -> JSONResponse:
         # An empty base is the whole message: address the daemon relative to this origin.
         return JSONResponse({"apiBase": "", "proxied": True})
@@ -125,7 +161,8 @@ def build_application(
         if request.url.query:
             upstream = f"{upstream}?{request.url.query}"
         headers = {
-            name: value for name, value in request.headers.items()
+            name: value
+            for name, value in request.headers.items()
             if name.lower() not in _DROPPED_REQUEST_HEADERS
         }
         # Ask the upstream for exactly what the caller asked us for, rather than letting httpx add its own encodings.
@@ -135,7 +172,10 @@ def build_application(
         if authorise:
             headers["Authorization"] = f"Bearer {upstream_daemon['token']}"
         outgoing = upstream_client.build_request(
-            request.method, upstream, headers=headers, content=request.stream(),
+            request.method,
+            upstream,
+            headers=headers,
+            content=request.stream(),
         )
         try:
             response = await upstream_client.send(outgoing, stream=True)
@@ -144,12 +184,18 @@ def build_application(
             moved = to_daemon and await find_daemon_again()
             if not moved:
                 return JSONResponse(
-                    {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
+                    {"error": {"code": "daemon_unreachable", "message": str(error)}},
+                    status_code=502,
                 )
             # Retried only when this request's body can be produced again, since a stream re-sent would forward nothing.
             if request.method.upper() not in _REPLAYABLE_METHODS:
                 return JSONResponse(
-                    {"error": {"code": "daemon_moved", "message": "The daemon restarted; try that again."}},
+                    {
+                        "error": {
+                            "code": "daemon_moved",
+                            "message": "The daemon restarted; try that again.",
+                        }
+                    },
                     status_code=503,
                 )
             headers["Authorization"] = f"Bearer {upstream_daemon['token']}"
@@ -158,14 +204,17 @@ def build_application(
                 response = await client.send(retried, stream=True)
             except httpx.HTTPError as retry_error:
                 return JSONResponse(
-                    {"error": {"code": "daemon_unreachable", "message": str(retry_error)}}, status_code=502,
+                    {"error": {"code": "daemon_unreachable", "message": str(retry_error)}},
+                    status_code=502,
                 )
         except httpx.HTTPError as error:
             return JSONResponse(
-                {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
+                {"error": {"code": "daemon_unreachable", "message": str(error)}},
+                status_code=502,
             )
         passed = {
-            name: value for name, value in response.headers.items()
+            name: value
+            for name, value in response.headers.items()
             if name.lower() not in _DROPPED_RESPONSE_HEADERS
         }
         # Streamed rather than read, because the event stream stays open for the life of a session.
@@ -209,6 +258,7 @@ def build_application(
         await websocket.accept()
         try:
             async with websockets_client.connect(target, open_timeout=20) as upstream:
+
                 async def downstream_to_upstream() -> None:
                     while True:
                         message = await websocket.receive()
@@ -246,17 +296,20 @@ def build_application(
                 # Already closed by whichever side went first.
                 pass
 
-    return Starlette(routes=[
-        Route(RUNTIME_PATH, runtime),
-        # Named explicitly rather than caught by the wildcard, since an HTTP catch-all never sees a websocket route.
-        WebSocketRoute("/terminal", proxy_websocket),
-        # The development server's hot-reload channel, which is what lets a change reach the phone without a rebuild.
-        WebSocketRoute("/_next/{path:path}", proxy_interface_websocket),
-        Route(
-            "/{path:path}", serve_or_proxy,
-            methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
-        ),
-    ])
+    return Starlette(
+        routes=[
+            Route(RUNTIME_PATH, runtime),
+            # Named explicitly rather than caught by the wildcard, since an HTTP catch-all never sees a websocket route.
+            WebSocketRoute("/terminal", proxy_websocket),
+            # The development server's hot-reload channel, which is what lets a change reach the phone without a rebuild.
+            WebSocketRoute("/_next/{path:path}", proxy_interface_websocket),
+            Route(
+                "/{path:path}",
+                serve_or_proxy,
+                methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+            ),
+        ]
+    )
 
 
 def _port_is_taken(host: str, port: int) -> bool:
@@ -325,7 +378,9 @@ def run(arguments) -> int:
     application = build_application(f"http://127.0.0.1:{port}", token, directory)
     address = f"http://{arguments.host}:{arguments.port}"
     logger.info(f"langmesh: serving the interface at {address} (daemon on :{port})")
-    logger.info("langmesh: this address carries full control of the daemon — do not expose it beyond loopback.")
+    logger.info(
+        "langmesh: this address carries full control of the daemon — do not expose it beyond loopback."
+    )
 
     # Asked for, never assumed: serving and opening a window are two different acts.
     if arguments.open_browser:
@@ -333,7 +388,10 @@ def run(arguments) -> int:
 
     try:
         configuration = uvicorn.Config(
-            application, host=arguments.host, port=arguments.port, log_level="warning",
+            application,
+            host=arguments.host,
+            port=arguments.port,
+            log_level="warning",
             # This server holds connections that never end on their own, so shutdown needs a deadline or Ctrl-C hangs.
         )
         # SIGTERM needs a handler of its own, because uvicorn restores and re-raises rather than exiting.

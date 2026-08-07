@@ -34,7 +34,13 @@ function ResetAction({ onReset, busy }: { onReset: () => void; busy: boolean }) 
   const translation = useTranslations("SettingsDialog");
   return (
     <Tooltip content={translation("resetSetting")} openDelay={300}>
-      <IconButton aria-label={translation("resetSetting")} variant="ghost" flexShrink={0} onClick={onReset} disabled={busy}>
+      <IconButton
+        aria-label={translation("resetSetting")}
+        variant="ghost"
+        flexShrink={0}
+        onClick={onReset}
+        disabled={busy}
+      >
         <LuRotateCcw size={13} />
       </IconButton>
     </Tooltip>
@@ -47,7 +53,8 @@ function NumberField({ entry, onChange, onReset, busy }: ControlProps) {
     const trimmed = draft.trim();
     // An emptied number is the person saying they no longer have an opinion, which is what putting it back means.
     if (!trimmed) return onReset();
-    const parsed = entry.kind === "integer" ? Number.parseInt(trimmed, 10) : Number.parseFloat(trimmed);
+    const parsed =
+      entry.kind === "integer" ? Number.parseInt(trimmed, 10) : Number.parseFloat(trimmed);
     if (Number.isNaN(parsed)) return setDraft(String(entry.value ?? ""));
     if (parsed !== entry.value) onChange(parsed);
   };
@@ -62,7 +69,9 @@ function NumberField({ entry, onChange, onReset, busy }: ControlProps) {
         placeholder={String(entry.default ?? "")}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
-        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
       />
     </Box>
   );
@@ -87,7 +96,9 @@ function TextField({ entry, onChange, onReset, busy }: ControlProps) {
       placeholder={String(entry.default ?? "")}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
-      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
     />
   );
 }
@@ -106,7 +117,11 @@ function ListField({ entry, onChange, busy }: ControlProps) {
             fontSize="xs"
             value={value}
             disabled={busy}
-            onChange={(event) => write(values.map((item, position) => (position === index ? event.target.value : item)))}
+            onChange={(event) =>
+              write(
+                values.map((item, position) => (position === index ? event.target.value : item)),
+              )
+            }
           />
           <IconButton
             aria-label={translation("removeEntry")}
@@ -120,7 +135,13 @@ function ListField({ entry, onChange, busy }: ControlProps) {
           </IconButton>
         </Flex>
       ))}
-      <Button variant="subtle" colorPalette="blue" justifyContent="flex-start" disabled={busy} onClick={() => onChange([...values, ""])}>
+      <Button
+        variant="subtle"
+        colorPalette="blue"
+        justifyContent="flex-start"
+        disabled={busy}
+        onClick={() => onChange([...values, ""])}
+      >
         <LuPlus size={14} />
         {translation("addEntry")}
       </Button>
@@ -135,7 +156,12 @@ interface ControlProps {
   busy: boolean;
 }
 
-export function SettingControl({ entry, onChange, onReset, busy = false }: {
+export function SettingControl({
+  entry,
+  onChange,
+  onReset,
+  busy = false,
+}: {
   entry: SettingEntry;
   onChange: (value: unknown) => void;
   onReset: () => void;
@@ -154,7 +180,10 @@ export function SettingControl({ entry, onChange, onReset, busy = false }: {
     return (
       <Flex align="center" gap={1.5} justify="flex-end">
         {reset}
-        <SettingToggleControl enabled={entry.value === true} onChange={busy ? undefined : onChange} />
+        <SettingToggleControl
+          enabled={entry.value === true}
+          onChange={busy ? undefined : onChange}
+        />
       </Flex>
     );
   }
@@ -163,11 +192,20 @@ export function SettingControl({ entry, onChange, onReset, busy = false }: {
     // Three settings have a control of their own that states what the choice means rather than the stored word.
     const bespoke =
       entry.path === "agent.permission_mode" ? (
-        <PermissionModeControl value={String(entry.value ?? "") as PermissionMode} onChange={(mode) => onChange(mode)} />
+        <PermissionModeControl
+          value={String(entry.value ?? "") as PermissionMode}
+          onChange={(mode) => onChange(mode)}
+        />
       ) : entry.path === "workspace.strategy" ? (
-        <WorktreeStrategyControl value={String(entry.value ?? "") as WorktreeStrategyValue} onChange={onChange} />
+        <WorktreeStrategyControl
+          value={String(entry.value ?? "") as WorktreeStrategyValue}
+          onChange={onChange}
+        />
       ) : entry.path === "sandbox.enforce" ? (
-        <SandboxToggleControl enforce={String(entry.value ?? "") as "required" | "preferred" | "off"} onChange={onChange} />
+        <SandboxToggleControl
+          enforce={String(entry.value ?? "") as "required" | "preferred" | "off"}
+          onChange={onChange}
+        />
       ) : null;
     return (
       <Flex align="center" gap={1.5} justify="flex-end">
@@ -177,7 +215,9 @@ export function SettingControl({ entry, onChange, onReset, busy = false }: {
             <SimpleSelect
               items={entry.choices.map((choice) => ({
                 value: choice,
-                label: choiceLabel.has(`${entry.path}.${choice}`) ? choiceLabel(`${entry.path}.${choice}`) : choice,
+                label: choiceLabel.has(`${entry.path}.${choice}`)
+                  ? choiceLabel(`${entry.path}.${choice}`)
+                  : choice,
               }))}
               value={String(entry.value ?? "")}
               onValueChange={onChange}

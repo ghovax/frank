@@ -16,6 +16,7 @@ from langmesh.base.serialization import compact
 from langmesh.runtime.tools import context as tool_context
 
 from langmesh.base.configuration import PromptLoader
+
 # What each tool and shared field tells the model, read from `descriptions/*.md` at import rather than inlined here.
 _DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
 
@@ -71,7 +72,8 @@ async def bash(
         # The session's own tools ride in the environment the confinement builds, already on `PATH`.
         spawn = _confinement.spawn_recipe(
             _confinement.first_attempt(profile, workspace=workspace),
-            workspace=workspace, extra_environment=active.child_environment(),
+            workspace=workspace,
+            extra_environment=active.child_environment(),
         )
         process = await asyncio.create_subprocess_exec(
             # Still a shell command; the working directory is the process's own, not a `cd` the model can escape.
@@ -116,7 +118,9 @@ async def bash(
         except asyncio.CancelledError:
             cancel_process()
             try:
-                await asyncio.wait_for(process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace))
+                await asyncio.wait_for(
+                    process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace)
+                )
             except asyncio.TimeoutError:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -134,7 +138,9 @@ async def bash(
                 if output_path.exists()
                 else ""
             )
-            inline_output, output_truncated = clip_to_tokens(output, active_tuning().amount(Tunable.output_tokens))
+            inline_output, output_truncated = clip_to_tokens(
+                output, active_tuning().amount(Tunable.output_tokens)
+            )
             payload = {
                 "code": "bash_cancelled",
                 "status": "error",
@@ -153,8 +159,21 @@ async def bash(
         result_code = "bash_completed" if return_code == 0 else "bash_failed"
         result_status = "ok" if return_code == 0 else "error"
         if not output:
-            return compact({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
-        inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Tunable.output_tokens))
+            return compact(
+                {
+                    "code": result_code,
+                    "status": result_status,
+                    "output": "",
+                    "output_file": str(output_path),
+                    "truncated": False,
+                    "pid": process_id,
+                    "size": 0,
+                    "returncode": return_code,
+                }
+            )
+        inline_output, truncated = clip_to_tokens(
+            output, active_tuning().amount(Tunable.output_tokens)
+        )
         result = {
             "code": result_code,
             "status": result_status,
@@ -169,7 +188,10 @@ async def bash(
 
     jobs = current_background_jobs()
     job_id = jobs.spawn(
-        "bash", run(), output_path=output_path, cancel_callback=cancel_process,
+        "bash",
+        run(),
+        output_path=output_path,
+        cancel_callback=cancel_process,
         arguments={
             "command": command,
             "location": location,
@@ -187,12 +209,14 @@ async def bash(
         settled = await jobs.settle_inline(job_id, active_tuning().scale_timeout(timeout))
         if settled is not None:
             return settled.result
-    return compact({
-        "code": "bash_started",
-        "status": "running",
-        "job_id": job_id,
-        "output_file": str(output_path),
-    })
+    return compact(
+        {
+            "code": "bash_started",
+            "status": "running",
+            "job_id": job_id,
+            "output_file": str(output_path),
+        }
+    )
 
 
 @tool
@@ -205,7 +229,13 @@ async def search_web(
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_web.md."""
     client = tool_context.current().exa_client
     if client is None:
-        return compact({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
+        return compact(
+            {
+                "code": "web_search_error",
+                "status": "error",
+                "message": "Web search is not configured.",
+            }
+        )
 
     # Mint the id up front, so a delivered result can be matched to the search that started it.
     job_id = new_id("search")
@@ -227,52 +257,67 @@ async def search_web(
                 if result.published_date:
                     entry["published_date"] = result.published_date
                 entries.append(entry)
-            payload = compact({
-                "code": "web_search_completed",
-                "status": "ok",
-                "job_id": job_id,
-                "query": query,
-                "results": entries,
-            })
+            payload = compact(
+                {
+                    "code": "web_search_completed",
+                    "status": "ok",
+                    "job_id": job_id,
+                    "query": query,
+                    "results": entries,
+                }
+            )
             await asyncio.to_thread(output_path.write_text, payload)
             return payload
         except Exception as exception:
-            payload = compact({
-                "code": "web_search_error",
-                "status": "error",
-                "job_id": job_id,
-                "message": str(exception),
-            })
+            payload = compact(
+                {
+                    "code": "web_search_error",
+                    "status": "error",
+                    "job_id": job_id,
+                    "message": str(exception),
+                }
+            )
             await asyncio.to_thread(output_path.write_text, payload)
             return payload
 
     jobs = current_background_jobs()
     jobs.spawn(
-        "search_web", run(), identifier=job_id, output_path=output_path,
+        "search_web",
+        run(),
+        identifier=job_id,
+        output_path=output_path,
         arguments={"query": query, "explanation": explanation, "result_count": result_count},
         # A search outliving the turn keeps running, so its result still lands and wakes the agent.
         detached=True,
     )
     # A short inline window, so the common case returns results rather than a pending handle.
-    settled = await jobs.settle_inline(job_id, active_tuning().duration(Tunable.web_search_sync_window))
+    settled = await jobs.settle_inline(
+        job_id, active_tuning().duration(Tunable.web_search_sync_window)
+    )
     if settled is not None:
         return settled.result
     # No path or fetch-looking handle in the acknowledgement: the id is the only thing the model needs.
-    return compact({
-        "code": "web_search_started",
-        "status": "running",
-        "job_id": job_id,
-    })
+    return compact(
+        {
+            "code": "web_search_started",
+            "status": "running",
+            "job_id": job_id,
+        }
+    )
 
 
 @tool
-async def list_mcp_tools(*, explanation: str = Field(..., description=EXPLANATION), server: str = "") -> str:
+async def list_mcp_tools(
+    *, explanation: str = Field(..., description=EXPLANATION), server: str = ""
+) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_tools.md."""
     try:
         result = await _require_mcp_client_manager().list_tools(server)
         return compact(result)
     except Exception as exception:
-        return compact({"code": "mcp_list_tools_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "mcp_list_tools_error", "status": "error", "message": str(exception)}
+        )
 
 
 @tool
@@ -289,7 +334,9 @@ async def call_mcp_tool(
         result = await _require_mcp_client_manager().call_tool(server, tool_name, arguments or {})
         return compact(result)
     except Exception as exception:
-        return compact({"code": "mcp_call_tool_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "mcp_call_tool_error", "status": "error", "message": str(exception)}
+        )
 
 
 async def call_mcp_tool_with_events(
@@ -307,23 +354,31 @@ async def call_mcp_tool_with_events(
 
 
 @tool
-async def list_mcp_resources(*, explanation: str = Field(..., description=EXPLANATION), server: str = "") -> str:
+async def list_mcp_resources(
+    *, explanation: str = Field(..., description=EXPLANATION), server: str = ""
+) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_resources.md."""
     try:
         result = await _require_mcp_client_manager().list_resources(server)
         return compact(result)
     except Exception as exception:
-        return compact({"code": "mcp_list_resources_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "mcp_list_resources_error", "status": "error", "message": str(exception)}
+        )
 
 
 @tool
-async def read_mcp_resource(*, explanation: str = Field(..., description=EXPLANATION), server: str, uri: str) -> str:
+async def read_mcp_resource(
+    *, explanation: str = Field(..., description=EXPLANATION), server: str, uri: str
+) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_mcp_resource.md."""
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
         return compact(result)
     except Exception as exception:
-        return compact({"code": "mcp_read_resource_error", "status": "error", "message": str(exception)})
+        return compact(
+            {"code": "mcp_read_resource_error", "status": "error", "message": str(exception)}
+        )
 
 
 @tool
@@ -349,7 +404,9 @@ def set_tasks(*, explanation: str = Field(..., description=EXPLANATION), tasks: 
 
 
 @tool
-def update_tasks(*, explanation: str = Field(..., description=EXPLANATION), updates: list[dict]) -> str:
+def update_tasks(
+    *, explanation: str = Field(..., description=EXPLANATION), updates: list[dict]
+) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -431,13 +488,29 @@ def tool_description(tool_name: str) -> str:
     """One tool's model-facing description, for a tool built too late to be given one at import."""
     text = _DESCRIPTIONS.load(tool_name, {}).strip()
     if not text:
-        raise ValueError(f"No description file in runtime/tools/descriptions for the {tool_name!r} tool.")
+        raise ValueError(
+            f"No description file in runtime/tools/descriptions for the {tool_name!r} tool."
+        )
     return text
 
+
 _DESCRIBED = (
-    bash, search_web, list_mcp_tools, call_mcp_tool, list_mcp_resources, read_mcp_resource,
-    wait_for, read_turn, set_tasks, update_tasks, update_goal,
-    fetch_url, download_file, control_screen, ask_user, load_skill,
+    bash,
+    search_web,
+    list_mcp_tools,
+    call_mcp_tool,
+    list_mcp_resources,
+    read_mcp_resource,
+    wait_for,
+    read_turn,
+    set_tasks,
+    update_tasks,
+    update_goal,
+    fetch_url,
+    download_file,
+    control_screen,
+    ask_user,
+    load_skill,
 )
 
 

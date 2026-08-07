@@ -184,14 +184,16 @@ class BackgroundJobs:
         for record in self._jobs.values():
             if record.task.done():
                 continue
-            snapshots.append({
-                "job_id": record.identifier,
-                "kind": record.kind,
-                "tool_call_id": record.tool_call_identifier,
-                "arguments": dict(record.arguments),
-                "started_at": record.started_at.isoformat(),
-                "detached": record.detached,
-            })
+            snapshots.append(
+                {
+                    "job_id": record.identifier,
+                    "kind": record.kind,
+                    "tool_call_id": record.tool_call_identifier,
+                    "arguments": dict(record.arguments),
+                    "started_at": record.started_at.isoformat(),
+                    "detached": record.detached,
+                }
+            )
         return snapshots
 
     def active_by_context_key(self) -> dict[str, list[str]]:
@@ -224,7 +226,11 @@ class BackgroundJobs:
             for waiter in waiters:
                 waiter.cancel()
         # Put a pulled id back so `drain_completed` sees it; a wake for anything else cancels the getter and loses nothing.
-        if completion_getter.done() and not completion_getter.cancelled() and completion_getter.exception() is None:
+        if (
+            completion_getter.done()
+            and not completion_getter.cancelled()
+            and completion_getter.exception() is None
+        ):
             self._completed_identifiers.put_nowait(completion_getter.result())
 
     async def settle_inline(self, identifier: str, timeout: float) -> BackgroundCompletion | None:
@@ -358,11 +364,13 @@ class BackgroundJobs:
         except asyncio.CancelledError:
             result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
         except Exception as exception:
-            result = compact({
-                "code": f"{record.kind}_error",
-                "job_id": record.identifier,
-                "message": str(exception),
-            })
+            result = compact(
+                {
+                    "code": f"{record.kind}_error",
+                    "job_id": record.identifier,
+                    "message": str(exception),
+                }
+            )
         if not isinstance(result, str):
             result = compact(result)
         return result
@@ -423,6 +431,7 @@ def unbind_tool_call_id(token: contextvars.Token) -> None:
 
 def current_tool_call_id() -> str:
     return _current_tool_call_id.get()
+
 
 #: Set by whoever hosts sessions, so a tool child's process group can be attributed back to its session.
 note_child_group = None

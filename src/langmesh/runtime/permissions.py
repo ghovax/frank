@@ -1,4 +1,5 @@
 """Carrying out the boundary's verdict: raising gates, reviewing them, recording grants, offering retries."""
+
 from __future__ import annotations
 
 from langmesh.runtime.internals import (
@@ -28,12 +29,22 @@ from langmesh.base.tuning import Tunable, active_tuning
 logger = logging.getLogger(__name__)
 
 # The screen primitives that change something. The set the gate is about, and the one the bridge sends.
-MUTATING_SCREEN_PRIMITIVES = frozenset({
-    "click", "type", "choose", "upload", "drag",
-    "evaluate", "press", "navigate",
-    "new_tab", "close_tab",
-    "caret", "select",
-})
+MUTATING_SCREEN_PRIMITIVES = frozenset(
+    {
+        "click",
+        "type",
+        "choose",
+        "upload",
+        "drag",
+        "evaluate",
+        "press",
+        "navigate",
+        "new_tab",
+        "close_tab",
+        "caret",
+        "select",
+    }
+)
 
 
 def _screen_primitive(func: ast.expr) -> str:
@@ -89,30 +100,38 @@ class _DecidesPermissions:
 
     async def _review(self, gate: _PreflightGate) -> PermissionDecision:
         """The reviewer's verdict on one gate. Takes a gate, so it cannot reach a call that raised none."""
-        context = compact({
-            "tool": gate.tool_name,
-            "working_directory": self._working_directory,
-            "command": gate.command,
-            "arguments": gate.arguments,
-            "requested_access": {
-                "reads": list(gate.escape.reads),
-                "writes": list(gate.escape.writes),
-                "network": gate.escape.network,
-                "whole_disk": gate.whole_disk,
+        context = compact(
+            {
+                "tool": gate.tool_name,
+                "working_directory": self._working_directory,
+                "command": gate.command,
+                "arguments": gate.arguments,
+                "requested_access": {
+                    "reads": list(gate.escape.reads),
+                    "writes": list(gate.escape.writes),
+                    "network": gate.escape.network,
+                    "whole_disk": gate.whole_disk,
+                },
+                "model_explanation": gate.arguments.get("explanation", "") or gate.explanation,
+                "confinement": self._sandbox.describe(workspace=self._working_directory),
+                # Only on a second run, so the reviewer knows the command hit a wall rather than merely failed.
+                **(
+                    {"refused_by_the_sandbox": gate.denial_evidence} if gate.denial_evidence else {}
+                ),
+                "allowed_actions": ["allow", "deny"],
+            }
+        )
+        prompt = self._prompt_loader.load(
+            "permission_reviewer",
+            {
+                "thinking_language": self._prompt_loader.load("thinking_language", {}).strip(),
+                "toolbox": (
+                    self._prompt_loader.load("reviewer_toolbox", {})
+                    if getattr(self._tool_context, "toolbox", None) is not None
+                    else ""
+                ),
             },
-            "model_explanation": gate.arguments.get("explanation", "") or gate.explanation,
-            "confinement": self._sandbox.describe(workspace=self._working_directory),
-            # Only on a second run, so the reviewer knows the command hit a wall rather than merely failed.
-            **({"refused_by_the_sandbox": gate.denial_evidence} if gate.denial_evidence else {}),
-            "allowed_actions": ["allow", "deny"],
-        })
-        prompt = self._prompt_loader.load("permission_reviewer", {
-            "thinking_language": self._prompt_loader.load("thinking_language", {}).strip(),
-            "toolbox": (
-                self._prompt_loader.load("reviewer_toolbox", {})
-                if getattr(self._tool_context, "toolbox", None) is not None else ""
-            ),
-        })
+        )
         # Instructions and subject as separate messages: some providers reject a request with no input.
         model = self._reviewer_model().bind_tools([PermissionDecision], tool_choice="auto")
         request = [SystemMessage(content=prompt), HumanMessage(content=context)]
@@ -123,13 +142,16 @@ class _DecidesPermissions:
             except Exception:  # noqa: BLE001 — one dropped call is not a verdict
                 logger.warning(
                     "the permission reviewer could not be reached (attempt %d of %d)",
-                    attempt, attempts, exc_info=True,
+                    attempt,
+                    attempts,
+                    exc_info=True,
                 )
                 continue
             if not response.tool_calls:
                 logger.warning(
                     "the permission reviewer answered without a decision (attempt %d of %d)",
-                    attempt, attempts,
+                    attempt,
+                    attempts,
                 )
                 continue
             try:
@@ -137,14 +159,17 @@ class _DecidesPermissions:
             except Exception:  # noqa: BLE001 — a malformed verdict is not a verdict either
                 logger.warning(
                     "the permission reviewer returned a malformed decision (attempt %d of %d)",
-                    attempt, attempts, exc_info=True,
+                    attempt,
+                    attempts,
+                    exc_info=True,
                 )
                 continue
             # A verdict with no reason cannot be acted on. A failed attempt, not a refusal — the next may supply it.
             if not decision.explanation.strip():
                 logger.warning(
                     "the permission reviewer gave no reason for its decision (attempt %d of %d)",
-                    attempt, attempts,
+                    attempt,
+                    attempts,
                 )
                 continue
             return decision
@@ -160,11 +185,17 @@ class _DecidesPermissions:
     def _record_grant(self, grant: Grant) -> None:
         """Remember an approved widening for the session, so one grant is not re-asked on every command."""
         self._access_grants.append(grant)
-        self._record_event("access_granted", {
-            "reads": list(grant.reads), "writes": list(grant.writes),
-            "network": grant.network, "whole_disk": grant.whole_disk,
-            "purpose": grant.purpose, "approved_by": grant.approved_by,
-        })
+        self._record_event(
+            "access_granted",
+            {
+                "reads": list(grant.reads),
+                "writes": list(grant.writes),
+                "network": grant.network,
+                "whole_disk": grant.whole_disk,
+                "purpose": grant.purpose,
+                "approved_by": grant.approved_by,
+            },
+        )
 
     def _granted_profile(self):
         """The session's confinement with every standing grant folded in. What an escape is measured against."""
@@ -197,7 +228,9 @@ class _DecidesPermissions:
         pending: list[_PreflightGate] = []
         for tool_call_data in tool_calls:
             plan = await self._plan_call(
-                tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
+                tool_call_data["name"],
+                tool_call_data["args"],
+                tool_call_data["id"],
             )
             # A gate is raised before its call is announced, so it carries what is being asked for.
             for gate in plan.gates:
@@ -208,7 +241,10 @@ class _DecidesPermissions:
         return plans, pending
 
     async def _plan_call(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
     ) -> _ToolPlan:
         """The verdict for one call. One path for every tool; only the rule table and the escape differ."""
         plan = _ToolPlan(tool_call_id=tool_call_identifier)
@@ -234,11 +270,14 @@ class _DecidesPermissions:
             if not policy.asks:
                 plan.refusal = self._refusal(self._prompt_loader.load("nobody_to_ask", {}))
                 return plan
-            plan.gates.append(_PreflightGate(
-                request_id=self._new_question_request_id(tool_call_identifier),
-                tool_call_id=tool_call_identifier, kind="question",
-                questions=tool_arguments.get("questions", []) or [],
-            ))
+            plan.gates.append(
+                _PreflightGate(
+                    request_id=self._new_question_request_id(tool_call_identifier),
+                    tool_call_id=tool_call_identifier,
+                    kind="question",
+                    questions=tool_arguments.get("questions", []) or [],
+                )
+            )
             return plan
 
         subject, rule = self._rule_for(tool_name, tool_arguments)
@@ -255,7 +294,10 @@ class _DecidesPermissions:
                 plan.screen_mutations = True
 
         verdict = verdict_for(
-            escape=escape, rule=rule, profile=profile, workspace=policy.working_directory,
+            escape=escape,
+            rule=rule,
+            profile=profile,
+            workspace=policy.working_directory,
         )
         if verdict.kind == "refuse":
             plan.refusal = self._refusal(verdict.message, reason=verdict.reason, subject=subject)
@@ -266,12 +308,15 @@ class _DecidesPermissions:
 
         gate = _PreflightGate(
             request_id=self._new_permission_request_id(tool_call_identifier),
-            tool_call_id=tool_call_identifier, kind="permission",
+            tool_call_id=tool_call_identifier,
+            kind="permission",
             command=self._command_of(tool_name, tool_arguments) or subject,
             explanation=escape.summary(explanation) if escape else explanation,
-            reason=verdict.reason or (
+            reason=verdict.reason
+            or (
                 PermissionReason(kind="changes_the_screen", paths=list(mutations))
-                if mutations else PermissionReason(kind="asked_for_by_rule")
+                if mutations
+                else PermissionReason(kind="asked_for_by_rule")
             ),
             escape=escape,
             grants_screen_mutations=bool(mutations),
@@ -283,18 +328,32 @@ class _DecidesPermissions:
             decision = await self._review(gate)
             if decision.action == "allow":
                 self._approve(gate, by=confinement.APPROVED_BY_REVIEWER, plan=plan)
-                self._record_event("access_allowed", {
-                    "tool": tool_name, "reason": decision.explanation, "risk": decision.risk,
-                })
+                self._record_event(
+                    "access_allowed",
+                    {
+                        "tool": tool_name,
+                        "reason": decision.explanation,
+                        "risk": decision.risk,
+                    },
+                )
                 return plan
             plan.refusal = self._refusal(
-                self._prompt_loader.load("reviewer_denied", {
-                    "reason": decision.explanation or "the safety check would not vouch for this",
-                }),
+                self._prompt_loader.load(
+                    "reviewer_denied",
+                    {
+                        "reason": decision.explanation
+                        or "the safety check would not vouch for this",
+                    },
+                ),
             )
-            self._record_event("access_refused", {
-                "tool": tool_name, "reason": decision.explanation, "risk": decision.risk,
-            })
+            self._record_event(
+                "access_refused",
+                {
+                    "tool": tool_name,
+                    "reason": decision.explanation,
+                    "risk": decision.risk,
+                },
+            )
             return plan
         plan.gates.append(gate)
         return plan
@@ -311,7 +370,9 @@ class _DecidesPermissions:
         if tool_name == "control_screen":
             mutations = _screen_mutations(str(tool_arguments.get("script", "") or ""))
             subject = mutations[0] if mutations else "read"
-            return subject, tools.screen.decide(subject, unmatched=RULE_ASK if mutations else RULE_ALLOW)
+            return subject, tools.screen.decide(
+                subject, unmatched=RULE_ASK if mutations else RULE_ALLOW
+            )
         if tool_name in self._extra_tools:
             # A supplied tool is unknown to the engine, so it is asked about unless the caller said otherwise.
             return tool_name, RULE_ALLOW if self._supplied_tool_gate == "none" else RULE_ASK
@@ -336,11 +397,17 @@ class _DecidesPermissions:
         return f"{tool_name} was not approved."
 
     def _refusal(
-        self, message: str, *, reason: Optional[PermissionReason] = None, subject: str = "",
+        self,
+        message: str,
+        *,
+        reason: Optional[PermissionReason] = None,
+        subject: str = "",
     ) -> dict:
         """A hard refusal, in the shape the dispatcher surfaces."""
         return {
-            "code": "", "message": message, "denied_injection": bool(subject),
+            "code": "",
+            "message": message,
+            "denied_injection": bool(subject),
             "raw_command": subject,
             "reason": reason.model_dump() if reason is not None else None,
         }
@@ -348,15 +415,19 @@ class _DecidesPermissions:
     def _approve(self, gate: _PreflightGate, *, by: str, plan: Optional[_ToolPlan] = None) -> None:
         """Carry out what approving a gate means, in one place, since it can grant two different things."""
         if gate.escape or gate.whole_disk:
-            self._record_grant(confinement.approved(
-                confinement.AccessRequest(
-                    mutates=True, reads=gate.escape.reads, writes=gate.escape.writes,
-                    network=gate.escape.network,
-                ),
-                by=by,
-                purpose=gate.arguments.get("explanation", "") or gate.explanation,
-                whole_disk=gate.whole_disk,
-            ))
+            self._record_grant(
+                confinement.approved(
+                    confinement.AccessRequest(
+                        mutates=True,
+                        reads=gate.escape.reads,
+                        writes=gate.escape.writes,
+                        network=gate.escape.network,
+                    ),
+                    by=by,
+                    purpose=gate.arguments.get("explanation", "") or gate.explanation,
+                    whole_disk=gate.whole_disk,
+                )
+            )
         if gate.grants_screen_mutations and plan is not None:
             plan.screen_mutations = True
 
@@ -390,8 +461,10 @@ class _DecidesPermissions:
                         break
                     decision.approved = False
                     decision.denial = {
-                        "code": "", "message": gate.deny_message,
-                        "denied_injection": False, "raw_command": gate.command,
+                        "code": "",
+                        "message": gate.deny_message,
+                        "denied_injection": False,
+                        "raw_command": gate.command,
                         "reason": None,
                     }
                     break
@@ -411,13 +484,22 @@ class _DecidesPermissions:
     # ---- the second run -----------------------------------------------------------------
 
     def retry_gate(
-        self, *, tool_call_id: str, command: str, denial: confinement.Denial, explanation: str,
+        self,
+        *,
+        tool_call_id: str,
+        command: str,
+        denial: confinement.Denial,
+        explanation: str,
     ) -> _PreflightGate:
         """The gate a refused command raises. The offer is whole-disk because no backend reports the path."""
         return _PreflightGate(
             request_id=self._new_retry_request_id(tool_call_id),
-            tool_call_id=tool_call_id, kind="permission", command=command,
-            explanation=explanation, is_bash=True, whole_disk=True,
+            tool_call_id=tool_call_id,
+            kind="permission",
+            command=command,
+            explanation=explanation,
+            is_bash=True,
+            whole_disk=True,
             reason=PermissionReason(kind="refused_by_confinement", paths=[denial.kind]),
             denial_evidence=denial.evidence,
             deny_message="The command was refused by the sandbox and was not re-run.",
@@ -431,9 +513,9 @@ class _DecidesPermissions:
         if gate.kind == "question":
             # A reviewer cannot answer for the person an `ask_user` was addressed to.
             return "deny"
-        decision = await self._review(_PreflightGate.from_dict(
-            gate.to_dict() if hasattr(gate, "to_dict") else vars(gate)
-        ))
+        decision = await self._review(
+            _PreflightGate.from_dict(gate.to_dict() if hasattr(gate, "to_dict") else vars(gate))
+        )
         return "allow" if decision.action == "allow" else "deny"
 
     async def decide_retry(self, gate: _PreflightGate) -> tuple[str, Optional[Grant]]:
@@ -442,13 +524,23 @@ class _DecidesPermissions:
             return "ask", None
         decision = await self._review(gate)
         if decision.action != "allow":
-            self._record_event("retry_refused", {
-                "command": gate.command, "reason": decision.explanation,
-            })
+            self._record_event(
+                "retry_refused",
+                {
+                    "command": gate.command,
+                    "reason": decision.explanation,
+                },
+            )
             return "refuse", None
-        self._record_event("retry_allowed", {
-            "command": gate.command, "reason": decision.explanation,
-        })
+        self._record_event(
+            "retry_allowed",
+            {
+                "command": gate.command,
+                "reason": decision.explanation,
+            },
+        )
         return "run", confinement.approved(
-            by=confinement.APPROVED_BY_REVIEWER, purpose=gate.explanation, whole_disk=True,
+            by=confinement.APPROVED_BY_REVIEWER,
+            purpose=gate.explanation,
+            whole_disk=True,
         )

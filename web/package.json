@@ -12,7 +12,9 @@
     "tauri": "cargo tauri",
     "tauri:dev": "cargo tauri dev",
     "tauri:build": "cargo tauri build --bundles app",
-    "tauri:dmg": "cargo tauri build"
+    "tauri:dmg": "cargo tauri build",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"../shared/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"../shared/**/*.ts\""
   },
   "dependencies": {
     "@chakra-ui/react": "^3.36.0",

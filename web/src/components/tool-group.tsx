@@ -13,7 +13,14 @@ import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
 import type { ToolEvent } from "@/lib/tool-event";
 import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
-import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolAccessBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
+import {
+  ToolCall,
+  ToolCallDetail,
+  ToolLocationBadge,
+  ToolAccessBadges,
+  collapsedHeadingLocation,
+  toolCallDetail,
+} from "./tool-call";
 
 // The grouped, collapsible run of contiguous tool calls, and the single source of truth for how a batch reads.
 
@@ -61,16 +68,16 @@ interface ToolGroupProps {
   keepOpen?: boolean;
 }
 
-export const ToolGroup = memo(function ToolGroup({
-  tools,
-  keepOpen = false,
-}: ToolGroupProps) {
+export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: ToolGroupProps) {
   const translation = useTranslations("ToolGroup");
   const backgroundCount = tools.filter(
     (tool) => toolStatus(tool.status) === "running" && hasBackgroundJobId(tool.result),
   ).length;
-  const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length - backgroundCount;
-  const inputRequiredCount = tools.filter((tool) => toolStatus(tool.status) === "input_required").length;
+  const runningCount =
+    tools.filter((tool) => toolStatus(tool.status) === "running").length - backgroundCount;
+  const inputRequiredCount = tools.filter(
+    (tool) => toolStatus(tool.status) === "input_required",
+  ).length;
   const inputRequired = inputRequiredCount > 0;
   const failedCount = tools.filter((tool) => toolStatus(tool.status) === "failed").length;
   const active = runningCount > 0 || backgroundCount > 0 || inputRequired || keepOpen;
@@ -87,26 +94,53 @@ export const ToolGroup = memo(function ToolGroup({
     () => [...tools].reverse().find((tool) => getToolCallDisplay(tool.name, tool.arguments).label),
     [tools],
   );
-  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments) : null;
+  const headingDisplay = latestTool
+    ? getToolCallDisplay(latestTool.name, latestTool.arguments)
+    : null;
   const HeadingIcon = headingDisplay?.icon ?? LuBrain;
   const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // Badge the collapsed heading when the batch touched a single remote place, since local is the implied default.
-  const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
-  const latestLabel = labelledTool ? getToolCallDisplay(labelledTool.name, labelledTool.arguments).label : "";
+  const groupLocation = useMemo(
+    () => collapsedHeadingLocation(tools.map((tool) => tool.arguments)),
+    [tools],
+  );
+  const latestLabel = labelledTool
+    ? getToolCallDisplay(labelledTool.name, labelledTool.arguments).label
+    : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
-  const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
+  const headingText =
+    latestLabel ||
+    (thinkingOnly
+      ? translation("thinking")
+      : active
+        ? translation("working")
+        : translation("actionsTaken"));
   // A group of one skips the per-call line and opens straight onto that call's detail.
   const soleTool = tools.length === 1 ? tools[0] : null;
-  const soleDetail = soleTool ? toolCallDetail(soleTool.name, soleTool.arguments, soleTool.result, soleTool.status) : null;
+  const soleDetail = soleTool
+    ? toolCallDetail(soleTool.name, soleTool.arguments, soleTool.result, soleTool.status)
+    : null;
   // Any call can be opened, including a single one, since the row carries the label rather than the arguments.
   const interactive = soleTool ? !!soleDetail?.collapsible : tools.length > 0;
 
   // Status chips surface only the states needing attention; running and completed calls speak for themselves.
   const statusChips = [
-    inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: translation("inputRequired") },
-    failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: translation("failedCount", { count: failedCount }) },
-    backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: translation("backgroundCount", { count: backgroundCount }) },
+    inputRequiredCount > 0 && {
+      kind: "input_required" as StatusKind,
+      count: inputRequiredCount,
+      title: translation("inputRequired"),
+    },
+    failedCount > 0 && {
+      kind: "failed" as StatusKind,
+      count: failedCount,
+      title: translation("failedCount", { count: failedCount }),
+    },
+    backgroundCount > 0 && {
+      kind: "background" as StatusKind,
+      count: backgroundCount,
+      title: translation("backgroundCount", { count: backgroundCount }),
+    },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
   // The animated label slot, with both labels in one grid cell so nothing reflows as they crossfade.
@@ -128,15 +162,19 @@ export const ToolGroup = memo(function ToolGroup({
           overflow="hidden"
           textOverflow="ellipsis"
         >
-          {labelledTool ? <ToolCallLabel name={labelledTool.name} args={labelledTool.arguments} /> : headingText}
+          {labelledTool ? (
+            <ToolCallLabel name={labelledTool.name} args={labelledTool.arguments} />
+          ) : (
+            headingText
+          )}
         </Text>
       </Box>
     </Box>
   );
 
   // The heading's chip cluster: tallies, file changes, the remote badge and status chips, all animated.
-  const hasBadges = tally.order.length > 0 || statusChips.length > 0
-    || !!groupLocation || !!soleTool;
+  const hasBadges =
+    tally.order.length > 0 || statusChips.length > 0 || !!groupLocation || !!soleTool;
   const badgeSlot = (
     <>
       {/* The write and access markers of a lone call move up to the heading rather than disappearing with its line. */}
@@ -155,7 +193,13 @@ export const ToolGroup = memo(function ToolGroup({
               transition={{ duration: 0.12, ease: "easeOut" }}
               style={{ display: "inline-flex", alignItems: "center" }}
             >
-              <TallyBadge title={display.label} count={count} colorPalette={paletteFromIconColor(display.iconColor)} icon={<ToolIcon />} alwaysShowCount />
+              <TallyBadge
+                title={display.label}
+                count={count}
+                colorPalette={paletteFromIconColor(display.iconColor)}
+                icon={<ToolIcon />}
+                alwaysShowCount
+              />
             </motion.div>
           );
         })}
@@ -191,11 +235,19 @@ export const ToolGroup = memo(function ToolGroup({
     <Box alignSelf="flex-start" w="100%" minW={0}>
       <DisclosureRow
         open={bodyOpen}
-        onOpenChange={interactive ? () => setManualOverride((current) => (current === null ? true : !current)) : undefined}
+        onOpenChange={
+          interactive
+            ? () => setManualOverride((current) => (current === null ? true : !current))
+            : undefined
+        }
         tone={active ? "active" : "muted"}
         maxH={80}
         followTailKey={tools.length}
-        icon={<Box color={headingIconColor}><HeadingIcon /></Box>}
+        icon={
+          <Box color={headingIconColor}>
+            <HeadingIcon />
+          </Box>
+        }
         title={titleSlot}
         // `undefined` rather than an empty fragment, which is truthy and would render an empty badge row.
         badges={hasBadges ? badgeSlot : undefined}

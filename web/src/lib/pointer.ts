@@ -19,7 +19,10 @@ export function useCoarsePointer(): boolean {
       query.addEventListener("change", onChange);
       return () => query.removeEventListener("change", onChange);
     },
-    () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(hover: none)").matches,
+    () =>
+      typeof window !== "undefined" &&
+      !!window.matchMedia &&
+      window.matchMedia("(hover: none)").matches,
     // Pointer-driven renders first, since the other way round would briefly show controls built for a thumb.
     () => false,
   );

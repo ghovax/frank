@@ -15,7 +15,16 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuBot, LuCheck, LuChevronDown, LuChevronRight, LuEye, LuEyeOff, LuImage, LuPaperclip } from "react-icons/lu";
+import {
+  LuBot,
+  LuCheck,
+  LuChevronDown,
+  LuChevronRight,
+  LuEye,
+  LuEyeOff,
+  LuImage,
+  LuPaperclip,
+} from "react-icons/lu";
 import {
   fetchSettings,
   saveSettings,
@@ -62,14 +71,28 @@ interface ModelItem {
 }
 
 // The capability icons for a model, from its catalog flags, with a text-only model showing nothing.
-export function ModelCapabilityBadges({ model, size = 12 }: { model?: ModelOption | null; size?: number }) {
+export function ModelCapabilityBadges({
+  model,
+  size = 12,
+}: {
+  model?: ModelOption | null;
+  size?: number;
+}) {
   const translation = useTranslations("ModelSelect");
   if (!model) return null;
   const badges: { key: string; icon: React.ReactNode; label: string }[] = [];
   if (model.vision) {
-    badges.push({ key: "vision", icon: <LuImage size={size} />, label: translation("visionBadge") });
+    badges.push({
+      key: "vision",
+      icon: <LuImage size={size} />,
+      label: translation("visionBadge"),
+    });
   } else if (model.attachment) {
-    badges.push({ key: "attachment", icon: <LuPaperclip size={size} />, label: translation("attachmentBadge") });
+    badges.push({
+      key: "attachment",
+      icon: <LuPaperclip size={size} />,
+      label: translation("attachmentBadge"),
+    });
   }
   if (badges.length === 0) return null;
   return (
@@ -130,13 +153,25 @@ function providerPlaceholder(providerId: string): string {
 
 function keyByProvider(settings: Settings): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(settings.providers).map(([identifier, credential]) => [identifier, credential.api_key ?? ""])
+    Object.entries(settings.providers).map(([identifier, credential]) => [
+      identifier,
+      credential.api_key ?? "",
+    ]),
   );
 }
 
 export function ModelSelect({
-  models, providers, value, onChange, recent = [], fallbackModelId = "", compact,
-  fitted = false, providerHidden = false, capabilitiesHidden = false, labelHidden = false,
+  models,
+  providers,
+  value,
+  onChange,
+  recent = [],
+  fallbackModelId = "",
+  compact,
+  fitted = false,
+  providerHidden = false,
+  capabilitiesHidden = false,
+  labelHidden = false,
 }: ModelSelectProps) {
   const translation = useTranslations("ModelSelect");
   const tc = useTranslations("Common");
@@ -146,23 +181,30 @@ export function ModelSelect({
   const [selectedProvider, setSelectedProvider] = useState(() => providerForModel(value, models));
   const [selectedModel, setSelectedModel] = useState(value);
   const [modelSuffix, setModelSuffix] = useState(() => suffixForModel(value));
-  const [customMode, setCustomMode] = useState(() => !!value && !models.some((model) => model.id === value));
+  const [customMode, setCustomMode] = useState(
+    () => !!value && !models.some((model) => model.id === value),
+  );
   // The endpoint for the custom provider, edited here because it belongs with the model choice.
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [saving, setSaving] = useState(false);
 
   const providerItems = useMemo<ProviderItem[]>(
     () => providers.map((provider) => ({ value: provider.id, label: provider.name })),
-    [providers]
+    [providers],
   );
-  const providerCollection = useMemo(() => createListCollection({ items: providerItems }), [providerItems]);
+  const providerCollection = useMemo(
+    () => createListCollection({ items: providerItems }),
+    [providerItems],
+  );
 
   const providerIsCustom = selectedProvider === "custom";
   // The two subscription providers sign in over OAuth, so each swaps the key field for its own control.
   const providerIsChatGPT = selectedProvider === "chatgpt";
   const providerIsCursor = selectedProvider === "cursor";
   const providerIsSubscription = providerIsChatGPT || providerIsCursor;
-  const credentialId = providers.find((provider) => provider.id === selectedProvider)?.credential_id ?? selectedProvider;
+  const credentialId =
+    providers.find((provider) => provider.id === selectedProvider)?.credential_id ??
+    selectedProvider;
   const providerKey = providerKeys[credentialId] ?? "";
   const keyEntered = providerKey.trim().length > 0;
 
@@ -183,7 +225,9 @@ export function ModelSelect({
     // A key typed into this dialog counts before it is applied, unlocking its provider's models at once.
     const unlockedByTyping = keyEntered && !providerIsSubscription;
     const items = providerModels.map((model) => ({
-      value: model.id, label: model.name, available: model.available || unlockedByTyping,
+      value: model.id,
+      label: model.name,
+      available: model.available || unlockedByTyping,
     }));
     items.push({ value: CUSTOM_MODEL, label: translation("selectUnlisted"), available: true });
     return items;
@@ -199,7 +243,8 @@ export function ModelSelect({
   const customModelItem = modelItems.find((item) => item.value === CUSTOM_MODEL) ?? null;
   // The custom provider has no catalog models, so it goes straight to a free-form id and an endpoint.
   const inCustomMode = customMode || providerIsCustom;
-  const modelIsInProvider = !!selectedModel && providerForModel(selectedModel, models) === selectedProvider;
+  const modelIsInProvider =
+    !!selectedModel && providerForModel(selectedModel, models) === selectedProvider;
   const typedModel = modelSuffix.trim() ? `${selectedProvider}/${modelSuffix.trim()}` : "";
   const activeSelectedModel = inCustomMode
     ? typedModel
@@ -207,15 +252,25 @@ export function ModelSelect({
       ? selectedModel
       : firstKnownModel;
   const effectiveModelId = value || fallbackModelId;
-  const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : translation("model");
-  const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
-  const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
-  const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;
+  const chipModelName = effectiveModelId
+    ? displayModelName(effectiveModelId, models)
+    : translation("model");
+  const chipNameIsFallback = effectiveModelId
+    ? modelNameIsFallbackId(effectiveModelId, models)
+    : true;
+  const chipProviderLabel = effectiveModelId
+    ? providerName(providerForModel(effectiveModelId, models), providers)
+    : "";
+  const chipModel = effectiveModelId
+    ? (models.find((model) => model.id === effectiveModelId) ?? null)
+    : null;
   const providerLabel = providerName(selectedProvider, providers);
 
   // Whether Apply is allowed: a model is picked and its provider can actually serve it.
   const activeModelOption = models.find((model) => model.id === activeSelectedModel);
-  const providerUnlocked = models.some((model) => model.provider === selectedProvider && model.available);
+  const providerUnlocked = models.some(
+    (model) => model.provider === selectedProvider && model.available,
+  );
   const canApply = (() => {
     if (!activeSelectedModel) return false;
     if (providerIsCustom) return true;
@@ -231,7 +286,9 @@ export function ModelSelect({
     setSelectedProvider(provider);
     setCustomMode(!!base && !known);
     setSelectedModel(base || models.find((model) => model.provider === provider)?.id || "");
-    setModelSuffix(suffixForModel(base || models.find((model) => model.provider === provider)?.id || ""));
+    setModelSuffix(
+      suffixForModel(base || models.find((model) => model.provider === provider)?.id || ""),
+    );
     setOpen(true);
   }
 
@@ -245,7 +302,9 @@ export function ModelSelect({
         setProviderKeys(keyByProvider(loaded));
         setCustomBaseUrl(loaded.providers?.custom?.base_url ?? "");
       })
-      .catch((caught) => swallowed({ component: "model-select", operation: "read the settings" }, caught));
+      .catch((caught) =>
+        swallowed({ component: "model-select", operation: "read the settings" }, caught),
+      );
     return () => {
       cancelled = true;
     };
@@ -259,9 +318,7 @@ export function ModelSelect({
           exa_api_key: settings.exa_api_key,
           composio_api_key: settings.composio_api_key,
           // A subscription provider's credential is its sign-in, so never write a provider key for one.
-          provider_keys: providerIsSubscription
-            ? {}
-            : { [credentialId]: providerKey.trim() },
+          provider_keys: providerIsSubscription ? {} : { [credentialId]: providerKey.trim() },
           provider_base_urls: providerIsCustom ? { custom: customBaseUrl.trim() } : {},
           worktree_strategy: settings.worktree_strategy,
         });
@@ -283,7 +340,13 @@ export function ModelSelect({
         bg="bg"
         borderColor="border"
         // With every word gone this is an icon and an arrow, sized to match the pickers beside it.
-        {...(fitted ? { "data-fit-control": "model", "data-fit-arrow": "", ...(labelHidden ? { "data-fit-collapsed": "" } : {}) } : {})}
+        {...(fitted
+          ? {
+              "data-fit-control": "model",
+              "data-fit-arrow": "",
+              ...(labelHidden ? { "data-fit-collapsed": "" } : {}),
+            }
+          : {})}
         minW={compact ? "max-content" : undefined}
         maxW={fitted ? "none" : compact ? "220px" : "100%"}
         flexShrink={0}
@@ -318,7 +381,11 @@ export function ModelSelect({
             >
               <LuChevronRight size={compact ? 11 : 13} />
             </Span>
-            <Span truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
+            <Span
+              truncate
+              fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined}
+              fontSize={chipNameIsFallback ? "xs" : undefined}
+            >
               {chipModelName}
             </Span>
           </Span>
@@ -370,7 +437,8 @@ export function ModelSelect({
                         if (next) {
                           setSelectedProvider(next);
                           setCustomMode(false);
-                          const firstModel = models.find((model) => model.provider === next)?.id ?? "";
+                          const firstModel =
+                            models.find((model) => model.provider === next)?.id ?? "";
                           setSelectedModel(firstModel);
                           setModelSuffix(suffixForModel(firstModel));
                         }
@@ -401,84 +469,104 @@ export function ModelSelect({
                   </Box>
 
                   {providerIsCustom ? null : (
-                  <Box>
-                    <Text textStyle="fieldLabel" mb={1}>
-                      {translation("model")}
-                    </Text>
-                    <Select.Root
-                      collection={modelCollection}
-                      value={customMode ? [CUSTOM_MODEL] : activeSelectedModel ? [activeSelectedModel] : []}
-                      onValueChange={(details) => {
-                        const next = details.value[0];
-                        if (!next) return;
-                        if (next === CUSTOM_MODEL) {
-                          setCustomMode(true);
-                          setModelSuffix("");
-                          return;
+                    <Box>
+                      <Text textStyle="fieldLabel" mb={1}>
+                        {translation("model")}
+                      </Text>
+                      <Select.Root
+                        collection={modelCollection}
+                        value={
+                          customMode
+                            ? [CUSTOM_MODEL]
+                            : activeSelectedModel
+                              ? [activeSelectedModel]
+                              : []
                         }
-                        setCustomMode(false);
-                        setSelectedModel(next);
-                        setModelSuffix(suffixForModel(next));
-                      }}
-                      size="xs"
-                    >
-                      <Select.Control>
-                        <Select.Trigger>
-                          <Select.ValueText placeholder={translation("chooseModel")} />
-                        </Select.Trigger>
-                        <Select.IndicatorGroup>
-                          <Select.Indicator />
-                        </Select.IndicatorGroup>
-                      </Select.Control>
-                      <Portal>
-                        <Select.Positioner>
-                          <Select.Content maxH="320px" overflowY="auto">
-                            {modelItems
-                              .filter((model) => model.value !== CUSTOM_MODEL)
-                              .map((model) => (
-                                <Select.Item item={model} key={model.value} color={model.available ? undefined : "fg.subtle"}>
-                                  <Flex align="center" gap={2} w="100%">
-                                    {suffixForModel(model.value) !== model.label ? (
-                                      <Text flex={1}>{model.label}</Text>
-                                    ) : (
-                                      <Text flex={1} fontFamily="var(--app-font-mono)" fontSize="xs">
-                                        {model.label}
-                                      </Text>
-                                    )}
-                                    <ModelCapabilityBadges model={models.find((candidate) => candidate.id === model.value) ?? null} />
-                                    {model.available && recentIds.has(model.value) ? (
-                                      <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
-                                        {translation("recent")}
-                                      </Text>
-                                    ) : null}
-                                  </Flex>
-                                  <Select.ItemIndicator />
-                                </Select.Item>
-                              ))}
-                            {customModelItem ? (
-                              <>
-                                {/* Only divide from the model list when there is one. */}
-                                {modelItems.some((model) => model.value !== CUSTOM_MODEL) ? (
-                                  <Box borderTop="1px solid" borderColor="border" my={1} />
-                                ) : null}
-                                <Select.Item
-                                  item={customModelItem}
-                                  key={customModelItem.value}
-                                  bg="blue.subtle"
-                                  color="blue.fg"
-                                  borderColor="border"
-                                  _hover={{ bg: "blue.muted" }}
-                                >
-                                  {customModelItem.label}
-                                  <Select.ItemIndicator />
-                                </Select.Item>
-                              </>
-                            ) : null}
-                          </Select.Content>
-                        </Select.Positioner>
-                      </Portal>
-                    </Select.Root>
-                  </Box>
+                        onValueChange={(details) => {
+                          const next = details.value[0];
+                          if (!next) return;
+                          if (next === CUSTOM_MODEL) {
+                            setCustomMode(true);
+                            setModelSuffix("");
+                            return;
+                          }
+                          setCustomMode(false);
+                          setSelectedModel(next);
+                          setModelSuffix(suffixForModel(next));
+                        }}
+                        size="xs"
+                      >
+                        <Select.Control>
+                          <Select.Trigger>
+                            <Select.ValueText placeholder={translation("chooseModel")} />
+                          </Select.Trigger>
+                          <Select.IndicatorGroup>
+                            <Select.Indicator />
+                          </Select.IndicatorGroup>
+                        </Select.Control>
+                        <Portal>
+                          <Select.Positioner>
+                            <Select.Content maxH="320px" overflowY="auto">
+                              {modelItems
+                                .filter((model) => model.value !== CUSTOM_MODEL)
+                                .map((model) => (
+                                  <Select.Item
+                                    item={model}
+                                    key={model.value}
+                                    color={model.available ? undefined : "fg.subtle"}
+                                  >
+                                    <Flex align="center" gap={2} w="100%">
+                                      {suffixForModel(model.value) !== model.label ? (
+                                        <Text flex={1}>{model.label}</Text>
+                                      ) : (
+                                        <Text
+                                          flex={1}
+                                          fontFamily="var(--app-font-mono)"
+                                          fontSize="xs"
+                                        >
+                                          {model.label}
+                                        </Text>
+                                      )}
+                                      <ModelCapabilityBadges
+                                        model={
+                                          models.find(
+                                            (candidate) => candidate.id === model.value,
+                                          ) ?? null
+                                        }
+                                      />
+                                      {model.available && recentIds.has(model.value) ? (
+                                        <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
+                                          {translation("recent")}
+                                        </Text>
+                                      ) : null}
+                                    </Flex>
+                                    <Select.ItemIndicator />
+                                  </Select.Item>
+                                ))}
+                              {customModelItem ? (
+                                <>
+                                  {/* Only divide from the model list when there is one. */}
+                                  {modelItems.some((model) => model.value !== CUSTOM_MODEL) ? (
+                                    <Box borderTop="1px solid" borderColor="border" my={1} />
+                                  ) : null}
+                                  <Select.Item
+                                    item={customModelItem}
+                                    key={customModelItem.value}
+                                    bg="blue.subtle"
+                                    color="blue.fg"
+                                    borderColor="border"
+                                    _hover={{ bg: "blue.muted" }}
+                                  >
+                                    {customModelItem.label}
+                                    <Select.ItemIndicator />
+                                  </Select.Item>
+                                </>
+                              ) : null}
+                            </Select.Content>
+                          </Select.Positioner>
+                        </Portal>
+                      </Select.Root>
+                    </Box>
                   )}
 
                   {inCustomMode ? (
@@ -514,7 +602,9 @@ export function ModelSelect({
                         placeholder={providerPlaceholder(selectedProvider)}
                         value={providerKey}
                         disabled={saving}
-                        onChange={(next) => setProviderKeys((current) => ({ ...current, [credentialId]: next }))}
+                        onChange={(next) =>
+                          setProviderKeys((current) => ({ ...current, [credentialId]: next }))
+                        }
                       />
                     )}
                   </Box>
@@ -540,7 +630,12 @@ export function ModelSelect({
                 <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                   {tc("cancel")}
                 </Button>
-                <Button colorPalette="blue" onClick={handleApply} loading={saving} disabled={!canApply}>
+                <Button
+                  colorPalette="blue"
+                  onClick={handleApply}
+                  loading={saving}
+                  disabled={!canApply}
+                >
                   <LuCheck size={14} />
                   {translation("apply")}
                 </Button>

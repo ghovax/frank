@@ -15,9 +15,21 @@ from langmesh.commons import state
 from langmesh.commons.services import workspaces as _workspaces
 from langmesh.commons.services.broadcast import _publish_broadcast
 from langmesh.commons.services.locations import _workspace_id_for_location
-from langmesh.commons.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _remember_last_session, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
+from langmesh.commons.services.workspaces import (
+    _create_location,
+    _create_workspace,
+    _delete_location,
+    _delete_workspace,
+    _hosts_payload,
+    _remember_last_session,
+    _workspace_name,
+    _workspace_payload,
+    _workspaces_payload,
+    _update_location,
+)
 
 router = APIRouter()
+
 
 @router.get("/home")
 async def home_directory():
@@ -35,6 +47,7 @@ async def list_hosts():
 @router.get("/hosts/{alias}/home")
 async def host_home_directory(alias: str):
     """Best-effort home directory of a host, for prefilling a base directory, empty when it cannot be reached."""
+
     def _resolve() -> str:
         if not host_is_defined(alias):
             return ""
@@ -43,6 +56,7 @@ async def host_home_directory(alias: str):
             return result.stdout.strip() if result.returncode == 0 else ""
         except Exception:
             return ""
+
     return {"alias": alias, "path": await asyncio.to_thread(_resolve)}
 
 

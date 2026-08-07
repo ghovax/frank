@@ -46,7 +46,9 @@ class SessionHost:
         held = self._sessions.get(session_id)
         return held.executor if held is not None else None
 
-    async def start(self, record: SessionRecord, locations: Any = None, daemon_token: str = "") -> bool:
+    async def start(
+        self, record: SessionRecord, locations: Any = None, daemon_token: str = ""
+    ) -> bool:
         """Build this session's executor and hold it, which is the whole of starting a session."""
         lock = self._starting.setdefault(record.id, asyncio.Lock())
         async with lock:
@@ -62,7 +64,8 @@ class SessionHost:
                     session_id=record.id,
                     agent_name=record.agent,
                     working_directory=record.working_directory,
-                    runtime_working_directory=record.runtime_working_directory or record.working_directory,
+                    runtime_working_directory=record.runtime_working_directory
+                    or record.working_directory,
                     permission_mode=record.permission_mode,
                     sandbox=record.sandbox or {},
                     workspace_id=record.workspace_id,
@@ -93,7 +96,9 @@ class SessionHost:
             raise RuntimeError(f"Session {session_id} has no verb {method!r}.")
         # Bound per call, not at start: a task inherits the context it was created in, and this is that task.
         set_tuning(held.tuning)
-        return await handler(held.executor, {key: value for key, value in params.items() if key != "id"})
+        return await handler(
+            held.executor, {key: value for key, value in params.items() if key != "id"}
+        )
 
     def note_child_group(self, session_id: str, group: int) -> None:
         """Remember a process group a session's tool child leads, in both directions."""

@@ -5,8 +5,15 @@ import { swallowed } from "@/lib/swallowed";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
-  createLocation, deleteLocation, getWorkspace, listSshHosts, updateLocation,
-  type Location, type LocationInput, type SshHost, subscribeEvents,
+  createLocation,
+  deleteLocation,
+  getWorkspace,
+  listSshHosts,
+  updateLocation,
+  type Location,
+  type LocationInput,
+  type SshHost,
+  subscribeEvents,
 } from "@/lib/api";
 import { LocationEditorList, emptyLocation, locationConflict } from "./location-form";
 import { toaster } from "./ui/toaster";
@@ -64,7 +71,16 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
     // Only re-read hosts live, so a workspaces_changed event never clobbers an in-progress edit.
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "hosts_changed") {
-        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed({ component: "workspace-locations", operation: "list the SSH hosts" }, caught));
+        listSshHosts()
+          .then((nextHosts) => {
+            if (!cancelled) setHosts(nextHosts);
+          })
+          .catch((caught) =>
+            swallowed(
+              { component: "workspace-locations", operation: "list the SSH hosts" },
+              caught,
+            ),
+          );
       }
     });
     return () => {
@@ -74,12 +90,16 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
   }, [workspaceId]);
 
   const updateDraft = (index: number, value: LocationInput) =>
-    setDrafts((current) => current.map((draft, position) => (position === index ? { ...draft, value } : draft)));
+    setDrafts((current) =>
+      current.map((draft, position) => (position === index ? { ...draft, value } : draft)),
+    );
   const addDraft = () => setDrafts((current) => [...current, { id: null, value: emptyLocation() }]);
-  const removeDraft = (index: number) => setDrafts((current) => current.filter((_, position) => position !== index));
+  const removeDraft = (index: number) =>
+    setDrafts((current) => current.filter((_, position) => position !== index));
 
   const draftValid = (draft: LocationDraft) =>
-    draft.value.base_directory.trim().length > 0 && (draft.value.kind === "local" || (draft.value.host_alias ?? "").length > 0);
+    draft.value.base_directory.trim().length > 0 &&
+    (draft.value.kind === "local" || (draft.value.host_alias ?? "").length > 0);
   const conflict = locationConflict(drafts.map((draft) => draft.value));
   const dirty = JSON.stringify(drafts) !== JSON.stringify(draftsFrom(original));
   const canSave = drafts.length > 0 && drafts.every(draftValid) && !conflict && dirty;
@@ -103,7 +123,12 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
       }
       await loadWorkspace();
     } catch (error) {
-      toaster.create({ type: "error", title: translation("saveError"), description: errorMessage(error), closable: true });
+      toaster.create({
+        type: "error",
+        title: translation("saveError"),
+        description: errorMessage(error),
+        closable: true,
+      });
     } finally {
       setSaving(false);
     }
@@ -112,7 +137,9 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
   return (
     <Flex direction="column" gap={3} w="100%">
       {failedWorkspaceId === workspaceId ? (
-        <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>
+        <Text fontSize="sm" color="red.fg">
+          {translation("loadError")}
+        </Text>
       ) : (
         <>
           <LocationEditorList
@@ -125,8 +152,13 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
             loading={loadedWorkspaceId !== workspaceId}
           />
           {loadedWorkspaceId === workspaceId ? (
-      <Flex justify="flex-end" mt={1}>
-              <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
+            <Flex justify="flex-end" mt={1}>
+              <Button
+                colorPalette="blue"
+                disabled={!canSave || saving}
+                loading={saving}
+                onClick={handleSave}
+              >
                 {translation("saveChanges")}
               </Button>
             </Flex>

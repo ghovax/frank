@@ -65,7 +65,9 @@ def _checksum(access_token: str) -> str:
         previous = obfuscated[index]
     prefix = base64.urlsafe_b64encode(bytes(obfuscated)).rstrip(b"=").decode()
     segments = access_token.split(".")
-    payload_digest = hashlib.sha256(segments[1].encode()).hexdigest()[:8] if len(segments) > 1 else "00000000"
+    payload_digest = (
+        hashlib.sha256(segments[1].encode()).hexdigest()[:8] if len(segments) > 1 else "00000000"
+    )
     token_digest = hashlib.sha256(access_token.encode()).hexdigest()[:8]
     return f"{prefix}{payload_digest}/{token_digest}"
 
@@ -103,6 +105,7 @@ def record_context_window(model_id: str, maximum_tokens: int) -> None:
     """Remember a window the server reported, keeping the largest seen for a model."""
     if maximum_tokens > _observed_context_windows.get(model_id, 0):
         _observed_context_windows[model_id] = maximum_tokens
+
 
 def observed_context_window(model_id: str) -> int:
     """The largest window the server reported for a model, or 0, as an accessor rather than a shared dictionary."""
@@ -166,8 +169,13 @@ async def _fetch_variants(tokens: CursorTokens) -> dict[str, _Variant]:
     """Every model variant the account can reach, which is the only place both the window and the selection are stated."""
     payload = await _connect_json(
         AVAILABLE_MODELS_URL,
-        {"isNightly": False, "excludeMaxNamedModels": True, "additionalModelNames": [],
-         "useModelParameters": True, "useReactModelPicker": True},
+        {
+            "isNightly": False,
+            "excludeMaxNamedModels": True,
+            "additionalModelNames": [],
+            "useModelParameters": True,
+            "useReactModelPicker": True,
+        },
         tokens,
     )
     variants: dict[str, _Variant] = {}
@@ -239,7 +247,9 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
                 result[model_id] = {
                     "name": _display_name(entry, model_id),
                     "context": variant.context if variant else 0,
-                    "variant": None if variant is None else {
+                    "variant": None
+                    if variant is None
+                    else {
                         "server_model": variant.server_model,
                         "maximum_mode": variant.maximum_mode,
                         "parameters": variant.parameters,

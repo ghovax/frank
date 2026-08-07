@@ -19,6 +19,7 @@ TRAILER_FLAG = 0x80
 
 # Encoding.
 
+
 def _varint(value: int) -> bytes:
     out = bytearray()
     while value > 0x7F:
@@ -56,6 +57,7 @@ def text(number: int, value: str) -> bytes:
 
 
 # Decoding.
+
 
 @dataclass(frozen=True)
 class Field:
@@ -96,14 +98,14 @@ def parse(data: bytes) -> list[Field]:
         number, wire_type = tag >> 3, tag & 0x7
         if wire_type == _LENGTH_DELIMITED:
             length, offset = _read_varint(data, offset)
-            fields.append(Field(number, wire_type, data=data[offset:offset + length]))
+            fields.append(Field(number, wire_type, data=data[offset : offset + length]))
             offset += length
         elif wire_type == _VARINT:
             value, offset = _read_varint(data, offset)
             fields.append(Field(number, wire_type, number_value=value))
         elif wire_type in (_FIXED64, _FIXED32):
             width = 8 if wire_type == _FIXED64 else 4
-            fields.append(Field(number, wire_type, data=data[offset:offset + width]))
+            fields.append(Field(number, wire_type, data=data[offset : offset + width]))
             offset += width
         else:
             break  # a wire type we cannot skip; anything past here is unreadable
@@ -126,6 +128,7 @@ def message_at(fields: list[Field], number: int) -> Optional[list[Field]]:
 
 # Cursor carries JSON-shaped data as a `google.protobuf.Value`, which these two conversions cross in each direction.
 
+
 def encode_value(value: Any) -> bytes:
     if value is None:
         return _tag(1, _VARINT) + b"\x00"  # NullValue is enum 0, so it must be explicit
@@ -139,8 +142,7 @@ def encode_value(value: Any) -> bytes:
         return blob(6, b"".join(blob(1, encode_value(item)) for item in value))
     if isinstance(value, dict):
         entries = b"".join(
-            blob(1, text(1, str(key)) + blob(2, encode_value(item)))
-            for key, item in value.items()
+            blob(1, text(1, str(key)) + blob(2, encode_value(item))) for key, item in value.items()
         )
         return blob(5, entries)
     return text(3, str(value))
@@ -180,6 +182,7 @@ def _decode_struct(data: bytes) -> dict[str, Any]:
 
 # Connect / gRPC-web framing.
 
+
 def frame(payload: bytes, flags: int = 0) -> bytes:
     return bytes([flags]) + struct.pack(">I", len(payload)) + payload
 
@@ -197,8 +200,8 @@ class Deframer:
             if len(self._buffer) < 5 + length:
                 return
             flags = self._buffer[0]
-            payload = bytes(self._buffer[5:5 + length])
-            del self._buffer[:5 + length]
+            payload = bytes(self._buffer[5 : 5 + length])
+            del self._buffer[: 5 + length]
             yield flags, payload
 
 
@@ -367,7 +370,9 @@ def client_message_run(run_request: bytes) -> bytes:
     return blob(1, run_request)
 
 
-def client_message_exec_result(exec_id_number: int, exec_id: str, result_field: int, result: bytes) -> bytes:
+def client_message_exec_result(
+    exec_id_number: int, exec_id: str, result_field: int, result: bytes
+) -> bytes:
     """An `AgentClientMessage` carrying an exec result, whose field number says which kind of result it is."""
     exec_message = scalar(1, exec_id_number) + text(15, exec_id) + blob(result_field, result)
     return blob(2, exec_message)
@@ -385,7 +390,9 @@ def client_message_kv(kv_id: int, result_field: int, result: bytes) -> bytes:
 
 def mcp_success_result(body: str, is_error: bool) -> bytes:
     """A successful MCP result as one text item, where `is_error` means the call ran and the tool reported failure."""
-    content_item = blob(1, text(1, body))  # McpToolResultContentItem.text carries McpTextContent.text
+    content_item = blob(
+        1, text(1, body)
+    )  # McpToolResultContentItem.text carries McpTextContent.text
     return blob(1, blob(1, content_item) + boolean(2, is_error))
 
 
@@ -448,6 +455,7 @@ def refused_result(builtin: BuiltinExec, arguments: list[str], reason: str) -> b
 
 
 # Parsing the server's side.
+
 
 @dataclass
 class ToolCall:

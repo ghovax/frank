@@ -44,6 +44,7 @@ from langmesh.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
+
 class SessionExecutor(AgentExecutor):
     """The live half of one session. The machinery still speaks in contexts, but a worker only ever has one."""
 
@@ -67,7 +68,9 @@ class SessionExecutor(AgentExecutor):
         self._session_id = session_id
         self._agent_name = agent_name
         # A worker is a process a restart happens to, so its jobs want the durable store. Injectable all the same.
-        self._job_store: JobStore = job_store if job_store is not None else get_background_job_store()
+        self._job_store: JobStore = (
+            job_store if job_store is not None else get_background_job_store()
+        )
         self._working_directory = working_directory
         # Where tools actually run, resolved by the daemon: a worktree workspace is not the project directory.
         self._runtime_working_directory = runtime_working_directory or working_directory
@@ -129,16 +132,26 @@ class SessionExecutor(AgentExecutor):
 
     def _publish_stream_event(self, session_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Fire-and-forget: the turn must not wait on a watcher."""
-        payload = part.model_dump(by_alias=True, exclude_none=True, mode="json") if hasattr(part, "model_dump") else part
-        asyncio.create_task(self._turn_store.publish_event({"session_id": session_id, "part": payload}))
+        payload = (
+            part.model_dump(by_alias=True, exclude_none=True, mode="json")
+            if hasattr(part, "model_dump")
+            else part
+        )
+        asyncio.create_task(
+            self._turn_store.publish_event({"session_id": session_id, "part": payload})
+        )
 
     def _notify_turn_state(self, session_id: str, running: bool) -> None:
         """Tell the daemon whether a turn is in flight, and whether anything still holds this process."""
-        asyncio.create_task(self._turn_store.publish_event({
-            "session_id": session_id,
-            "running": running,
-            "retains": self._has_live_background_work(),
-        }))
+        asyncio.create_task(
+            self._turn_store.publish_event(
+                {
+                    "session_id": session_id,
+                    "running": running,
+                    "retains": self._has_live_background_work(),
+                }
+            )
+        )
 
     def _has_live_background_work(self) -> bool:
         """Whether any runtime still has background work, including results that finished but never reached the model."""
@@ -175,7 +188,11 @@ class SessionExecutor(AgentExecutor):
         return self._handler
 
     async def _drive_self_sent_turn(
-        self, session_id: str, envelope_kind: str, *, metadata_flags: dict,
+        self,
+        session_id: str,
+        envelope_kind: str,
+        *,
+        metadata_flags: dict,
     ) -> None:
         """Drive one harness-initiated turn as a self-sent message, so it is real, persisted and replayable."""
         handler = self._agent_handler()
@@ -197,13 +214,17 @@ class SessionExecutor(AgentExecutor):
             return
         self._nudged_to_report = True
         await self._drive_self_sent_turn(
-            session_id, REPORT_REMINDER_KIND, metadata_flags={Metadata.REPORT_REMINDER: True},
+            session_id,
+            REPORT_REMINDER_KIND,
+            metadata_flags={Metadata.REPORT_REMINDER: True},
         )
 
     async def continue_goal(self, session_id: str) -> None:
         """Open one turn for an unfinished goal, so the transcript shows the agent carrying on rather than a mechanism."""
         await self._drive_self_sent_turn(
-            session_id, GOAL_CONTINUATION_KIND, metadata_flags={Metadata.GOAL_CONTINUATION: True},
+            session_id,
+            GOAL_CONTINUATION_KIND,
+            metadata_flags={Metadata.GOAL_CONTINUATION: True},
         )
 
     def clear_goal(self, session_id: str) -> bool:
@@ -230,14 +251,20 @@ class SessionExecutor(AgentExecutor):
 
     def _notify_goal_state(self, session_id: str, goal) -> None:
         """Tell the daemon what the goal is now, so the interface can show it and offer to call it off."""
-        asyncio.create_task(self._turn_store.publish_event({
-            "session_id": session_id,
-            "goal": goal.public() if goal is not None else None,
-        }))
+        asyncio.create_task(
+            self._turn_store.publish_event(
+                {
+                    "session_id": session_id,
+                    "goal": goal.public() if goal is not None else None,
+                }
+            )
+        )
 
     async def _run_compaction_turn(self, session_id: str) -> None:
         """Drive one manual-compaction turn, so it is persisted and replayable like any other."""
-        await self._drive_self_sent_turn(session_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True})
+        await self._drive_self_sent_turn(
+            session_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True}
+        )
 
     def abort_context(self, session_id: str) -> bool:
         # Stop is broadcast to every executor, but only the one holding this context has anything to stop.
@@ -262,7 +289,6 @@ class SessionExecutor(AgentExecutor):
         if state is None or state.runtime is None:
             return False
         return state.runtime.abort_tool(tool_call_identifier)
-
 
     def send_tool_to_background(self, session_id: str, tool_call_identifier: str) -> bool:
         state = self._contexts.get(session_id)
@@ -318,7 +344,9 @@ class SessionExecutor(AgentExecutor):
                 verdict = await runtime.reconsider_gate(gate)
                 if not verdict:
                     continue
-                await self.resolve_pending_input({"request_id": gate.request_id, "decision": verdict})
+                await self.resolve_pending_input(
+                    {"request_id": gate.request_id, "decision": verdict}
+                )
 
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them, deferring any context with work in flight."""
@@ -337,7 +365,6 @@ class SessionExecutor(AgentExecutor):
         self._work_habits_acknowledged = True
         return claimed
 
-
     def _record_pending_answer(self, task, payload: dict) -> Optional[tuple[dict, dict]]:
         """Record one answer durably and report whether the batch is now fully answered and ready to resume."""
         record = TurnRecord.from_metadata(task.metadata)
@@ -349,14 +376,15 @@ class SessionExecutor(AgentExecutor):
         if gate is None:
             return None
         if gate.is_question:
-            pending.answers[request_id] = {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
+            pending.answers[request_id] = (
+                {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
+            )
         else:
             pending.answers[request_id] = str(payload.get("decision", "deny"))
         task.metadata = record.apply_to(task.metadata)
         if pending.fully_answered:
             return pending.plans, pending.answers
         return None
-
 
     def steer_context(self, session_id: str, message: str) -> bool:
         state = self._contexts.get(session_id)
@@ -451,7 +479,9 @@ class SessionExecutor(AgentExecutor):
         if not has_live_result and not has_stored_result:
             return
         # An agent-authored resume, so no consumer sees a user message the user never sent.
-        await self._drive_self_sent_turn(session_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True})
+        await self._drive_self_sent_turn(
+            session_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True}
+        )
 
     def _build_runtime(
         self,
@@ -503,7 +533,12 @@ class SessionExecutor(AgentExecutor):
                 return None
             task = await self._turn_store.get(turn_id)
             # No `history`: read_turn feeds a task into the caller's context, and a full transcript would overflow it.
-            return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
+            return (
+                task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})
+                if task
+                else None
+            )
+
         return read_turn
 
     async def _runtime_for(self, session_id: str, workspace: SessionWorktree) -> AgentRuntime:
@@ -559,15 +594,20 @@ class SessionExecutor(AgentExecutor):
         """After a restart, record interrupted jobs and replay the finished ones the model never saw."""
         store = self._job_store
         for job in store.running_jobs(self._agent_name):
-            store.mark_abandoned(job["job_id"], compact({
-                "code": f"{job['kind']}_interrupted",
-                "job_id": job["job_id"],
-                "message": (
-                    "This task was interrupted by a server restart before it finished. "
-                    "Re-run it if the result is still needed."
+            store.mark_abandoned(
+                job["job_id"],
+                compact(
+                    {
+                        "code": f"{job['kind']}_interrupted",
+                        "job_id": job["job_id"],
+                        "message": (
+                            "This task was interrupted by a server restart before it finished. "
+                            "Re-run it if the result is still needed."
+                        ),
+                        "arguments": job["arguments"],
+                    }
                 ),
-                "arguments": job["arguments"],
-            }))
+            )
         for session_id in store.contexts_with_undelivered(self._agent_name):
             wake_task = asyncio.create_task(self._run_autonomous_turn(session_id))
             self._startup_resume_tasks.add(wake_task)
@@ -621,7 +661,9 @@ class SessionExecutor(AgentExecutor):
         if runtime is not None:
             runtime.abort()
         if context.current_task:
-            updater = TaskUpdater(event_queue, context.current_task.id, context.current_task.context_id)
+            updater = TaskUpdater(
+                event_queue, context.current_task.id, context.current_task.context_id
+            )
             await updater.cancel()
 
     # The facade the session's socket serves, binding the turn machinery to this one session.
@@ -669,6 +711,7 @@ class SessionExecutor(AgentExecutor):
 
         # Warm the screen listing now: the first ask costs ~1.8s per running application.
         if self._global_configuration.computer_control.enabled:
+
             def warm_screen() -> None:
                 from langmesh.computer import targets
 
@@ -695,7 +738,9 @@ class SessionExecutor(AgentExecutor):
 
         async def drive() -> None:
             try:
-                async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
+                async for event in handler.on_message_send_stream(
+                    MessageSendParams(message=message)
+                ):
                     if isinstance(event, Task) and not identified.done():
                         identified.set_result(event.id)
             except Exception as error:  # noqa: BLE001 — a failed turn must still answer the send
@@ -740,11 +785,15 @@ class SessionExecutor(AgentExecutor):
             if configuration is None:
                 return
             model_identifier = configuration.model_identifier
-            if not model_identifier or not model_is_authorized(model_identifier, self._global_configuration):
+            if not model_identifier or not model_is_authorized(
+                model_identifier, self._global_configuration
+            ):
                 return
             titling_configuration = configuration.model_copy(update={"reasoning_effort": "low"})
             model = build_chat_model(
-                model_identifier, self._global_configuration, titling_configuration,
+                model_identifier,
+                self._global_configuration,
+                titling_configuration,
                 self._runtime_working_directory,
             ).bind_tools([SessionTitle], tool_choice="auto")
             prompt = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
@@ -760,24 +809,36 @@ class SessionExecutor(AgentExecutor):
                 except Exception:  # noqa: BLE001 — one bad call is not worth the session's name
                     logger.warning(
                         "naming session %s failed (attempt %d of %d)",
-                        self._session_id, attempt, attempts, exc_info=True,
+                        self._session_id,
+                        attempt,
+                        attempts,
+                        exc_info=True,
                     )
                     continue
                 if not response.tool_calls:
                     logger.warning(
                         "the model answered without calling the title tool for session %s "
-                        "(attempt %d of %d)", self._session_id, attempt, attempts,
+                        "(attempt %d of %d)",
+                        self._session_id,
+                        attempt,
+                        attempts,
                     )
                     continue
-                title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
+                title = (
+                    SessionTitle.model_validate(response.tool_calls[0]["args"]).title or ""
+                ).strip()
                 if title:
                     await self._turn_store.publish_title(title)
                     return
                 logger.warning(
                     "the model returned an empty title for session %s (attempt %d of %d)",
-                    self._session_id, attempt, attempts,
+                    self._session_id,
+                    attempt,
+                    attempts,
                 )
-            logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
+            logger.warning(
+                "gave up naming session %s after %d attempts", self._session_id, attempts
+            )
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
             # Not `debug`: failing to name one session is cosmetic, failing to name every session is a fault.
             logger.warning(

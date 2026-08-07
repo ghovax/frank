@@ -23,8 +23,27 @@ _UNREADABLE = ("script", "style", "noscript", "template")
 
 #: Elements that end a line of prose, so text taken across them does not run together.
 _BLOCKS = (
-    "p", "div", "section", "article", "header", "footer", "nav", "aside", "main",
-    "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "br", "pre", "blockquote", "table",
+    "p",
+    "div",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    "main",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "tr",
+    "br",
+    "pre",
+    "blockquote",
+    "table",
 )
 
 
@@ -48,8 +67,15 @@ async def fetch_url(url: str, output_format: str = "markdown", timeout_seconds: 
         output_format = _FORMATS[0]
     content, engine = await _fetch_through_engines(_http_url(url), output_format, timeout_seconds)
 
-    inline_content, truncated = clip_to_tokens(content, active_tuning().amount(Tunable.fetch_tokens))
-    fields: dict[str, object] = {"url": url, "format": output_format, "engine": engine, "truncated": truncated}
+    inline_content, truncated = clip_to_tokens(
+        content, active_tuning().amount(Tunable.fetch_tokens)
+    )
+    fields: dict[str, object] = {
+        "url": url,
+        "format": output_format,
+        "engine": engine,
+        "truncated": truncated,
+    }
     if truncated:
         # The whole page goes to scratch, since what was clipped is what the reader most likely wants next.
         output_path = tool_context.current().spill_path("fetch")
@@ -68,7 +94,9 @@ def _fetch_engines():
     yield ("direct", _fetch_direct)
 
 
-async def _fetch_through_engines(url: str, output_format: str, timeout_seconds: int) -> tuple[str, str]:
+async def _fetch_through_engines(
+    url: str, output_format: str, timeout_seconds: int
+) -> tuple[str, str]:
     """Walk the engine cascade, returning the first substantial result, the longest thin one, or a combined error."""
     # Below this a page is a wall or a stub rather than the content, so the next engine is worth trying.
     minimum_useful_characters = tool_context.current().minimum_useful_characters
@@ -140,7 +168,10 @@ async def _fetch_direct(url: str, output_format: str, timeout_seconds: int) -> s
 
 
 async def download_file(
-    executor: LocationExecutor, url: str, resolved_path: str, timeout_seconds: int = 120,
+    executor: LocationExecutor,
+    url: str,
+    resolved_path: str,
+    timeout_seconds: int = 120,
 ) -> str:
     """Download a URL's bytes and write them through the executor, so the file lands on the target location."""
     response = await _impersonated_get(_http_url(url), timeout_seconds)
@@ -148,14 +179,20 @@ async def download_file(
     content_type = response.headers.get("content-type", "")
     await asyncio.to_thread(executor.write_bytes, resolved_path, data)
     return _payload(
-        "download_completed", url=url, path=resolved_path, bytes=len(data), content_type=content_type,
+        "download_completed",
+        url=url,
+        path=resolved_path,
+        bytes=len(data),
+        content_type=content_type,
     )
 
 
 def _minified(html: str) -> str:
     """The page with its comments, redundant whitespace and inline assets squeezed out, none of which a reader needs."""
     try:
-        return minify_html.minify(html, minify_css=True, minify_js=True, remove_processing_instructions=True)
+        return minify_html.minify(
+            html, minify_css=True, minify_js=True, remove_processing_instructions=True
+        )
     except Exception:  # noqa: BLE001 — a page too malformed to minify is still a page worth returning
         return html
 

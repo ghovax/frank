@@ -29,7 +29,15 @@ interface PermissionOverlayProps {
   onPermission: (requestId: string, decision: RuntimeDecision) => void;
 }
 
-export function PermissionOverlay({ permission, title, detail, detailPaths, command, arguments: toolArguments, onPermission }: PermissionOverlayProps) {
+export function PermissionOverlay({
+  permission,
+  title,
+  detail,
+  detailPaths,
+  command,
+  arguments: toolArguments,
+  onPermission,
+}: PermissionOverlayProps) {
   const translation = useTranslations("PermissionOverlay");
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -44,7 +52,10 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
     if (event.key === "1") {
       event.preventDefault();
       decide("deny");
-    } else if (event.key === "2" || (event.key === "Enter" && (!interactiveTarget || event.target === event.currentTarget))) {
+    } else if (
+      event.key === "2" ||
+      (event.key === "Enter" && (!interactiveTarget || event.target === event.currentTarget))
+    ) {
       event.preventDefault();
       decide("allow_once");
     }
@@ -55,81 +66,83 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
   }, []);
 
   return (
-        <Box
-          ref={boxRef}
-          tabIndex={0}
-          onKeyDown={handleKeyDown}
-          w="full"
-          mb={2}
-          p={3}
-          borderRadius="md"
-          border="1px solid"
-          borderColor="border"
-          bg="bg.panel"
-          boxShadow="panel"
-          maxH="50vh"
-          overflow="hidden"
-          display="flex"
-          flexDirection="column"
-          _focus={{ outline: "none" }}
-        >
-          <Flex align="center" justify="space-between" gap={2} mb={2} flexShrink={0}>
-            <Flex align="center" gap={2} minW={0}>
-              <Box color="yellow.fg" flexShrink={0}>
-                <LuShieldAlert size={14} />
-              </Box>
-              <Text textStyle="panelTitle" color="fg">
-                {translation("approvalNeeded")}
-              </Text>
-            </Flex>
-            <Flex align="center" gap={2} flexShrink={0}>
-              <ToolLocationBadge arguments={toolArguments} />
-            </Flex>
-          </Flex>
+    <Box
+      ref={boxRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      w="full"
+      mb={2}
+      p={3}
+      borderRadius="md"
+      border="1px solid"
+      borderColor="border"
+      bg="bg.panel"
+      boxShadow="panel"
+      maxH="50vh"
+      overflow="hidden"
+      display="flex"
+      flexDirection="column"
+      _focus={{ outline: "none" }}
+    >
+      <Flex align="center" justify="space-between" gap={2} mb={2} flexShrink={0}>
+        <Flex align="center" gap={2} minW={0}>
+          <Box color="yellow.fg" flexShrink={0}>
+            <LuShieldAlert size={14} />
+          </Box>
+          <Text textStyle="panelTitle" color="fg">
+            {translation("approvalNeeded")}
+          </Text>
+        </Flex>
+        <Flex align="center" gap={2} flexShrink={0}>
+          <ToolLocationBadge arguments={toolArguments} />
+        </Flex>
+      </Flex>
 
-          {/* Three things, each answering a different question: what the agent wants, exactly what will run, and why this stopped. */}
-          {/* One scroll region, so the whole body scrolls together and nothing below sets a height of its own. */}
-          <Flex direction="column" gap={1.5} mb={3} minH={0} overflowY="auto">
-            <Text fontSize="sm" fontWeight="medium">{title}</Text>
-            {command && (
-              <Pre
-                fontFamily="var(--app-font-mono)"
-                fontSize="xs"
-                color="fg.muted"
-                bg="bg.subtle"
-                border="1px solid"
-                borderColor="border"
-                borderRadius="md"
-                p={2}
-                m={0}
-                flexShrink={0}
-                // Sideways only: a long command scrolls rather than wrapping into something unlike what will run.
-                overflowX="auto"
-                whiteSpace="pre"
-              >
-                {command}
-              </Pre>
-            )}
-            {detail && detail !== title && (
-              <Box color="fg.muted" flexShrink={0}>
-                <MarkdownContent content={detail} fontSize="xs" />
-              </Box>
-            )}
-            {!!detailPaths?.length && (
-              <Box flexShrink={0}>
-                <MonoList items={detailPaths} />
-              </Box>
-            )}
-          </Flex>
+      {/* Three things, each answering a different question: what the agent wants, exactly what will run, and why this stopped. */}
+      {/* One scroll region, so the whole body scrolls together and nothing below sets a height of its own. */}
+      <Flex direction="column" gap={1.5} mb={3} minH={0} overflowY="auto">
+        <Text fontSize="sm" fontWeight="medium">
+          {title}
+        </Text>
+        {command && (
+          <Pre
+            fontFamily="var(--app-font-mono)"
+            fontSize="xs"
+            color="fg.muted"
+            bg="bg.subtle"
+            border="1px solid"
+            borderColor="border"
+            borderRadius="md"
+            p={2}
+            m={0}
+            flexShrink={0}
+            // Sideways only: a long command scrolls rather than wrapping into something unlike what will run.
+            overflowX="auto"
+            whiteSpace="pre"
+          >
+            {command}
+          </Pre>
+        )}
+        {detail && detail !== title && (
+          <Box color="fg.muted" flexShrink={0}>
+            <MarkdownContent content={detail} fontSize="xs" />
+          </Box>
+        )}
+        {!!detailPaths?.length && (
+          <Box flexShrink={0}>
+            <MonoList items={detailPaths} />
+          </Box>
+        )}
+      </Flex>
 
-          <Flex align="center" justify="space-between" gap={2} flexShrink={0}>
-            <Button colorPalette="red" variant="solid" onClick={() => decide("deny")}>
-              {translation("deny")}
-            </Button>
-            <Button colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
-              {translation("allowOnce")}
-            </Button>
-          </Flex>
-        </Box>
+      <Flex align="center" justify="space-between" gap={2} flexShrink={0}>
+        <Button colorPalette="red" variant="solid" onClick={() => decide("deny")}>
+          {translation("deny")}
+        </Button>
+        <Button colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
+          {translation("allowOnce")}
+        </Button>
+      </Flex>
+    </Box>
   );
 }

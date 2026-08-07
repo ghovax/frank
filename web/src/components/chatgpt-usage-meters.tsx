@@ -17,12 +17,18 @@ function windowLabel(translation: Translator, minutes: number): string {
 // The plan as the provider reports it, shown unlabelled rather than hidden or renamed.
 function planLabel(translation: Translator, planType: string): string {
   switch (planType) {
-    case "free": return translation("usagePlanFree");
-    case "plus": return translation("usagePlanPlus");
-    case "pro": return translation("usagePlanPro");
-    case "team": return translation("usagePlanTeam");
-    case "enterprise": return translation("usagePlanEnterprise");
-    default: return planType;
+    case "free":
+      return translation("usagePlanFree");
+    case "plus":
+      return translation("usagePlanPlus");
+    case "pro":
+      return translation("usagePlanPro");
+    case "team":
+      return translation("usagePlanTeam");
+    case "enterprise":
+      return translation("usagePlanEnterprise");
+    default:
+      return planType;
   }
 }
 
@@ -47,7 +53,9 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
         <Text textStyle="fieldLabel">{translation("usageTitle")}</Text>
         {/* The plan is why a percentage is what it is, since a small allowance goes quickly. */}
         {usage?.plan_type ? (
-          <Text fontSize="xs" color="fg.muted">{planLabel(translation, usage.plan_type)}</Text>
+          <Text fontSize="xs" color="fg.muted">
+            {planLabel(translation, usage.plan_type)}
+          </Text>
         ) : null}
       </HStack>
       <Stack gap={2.5}>
@@ -55,9 +63,10 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
           const percent = Math.min(Math.max(window.used_percent, 0), 100);
           // `resets_at` is unix seconds: show the countdown only while it is still in the future.
           const resetsAt = window.resets_at ? new Date(window.resets_at * 1000) : null;
-          const resets = resetsAt && resetsAt.getTime() > now.getTime()
-            ? format.relativeTime(resetsAt, now)
-            : null;
+          const resets =
+            resetsAt && resetsAt.getTime() > now.getTime()
+              ? format.relativeTime(resetsAt, now)
+              : null;
           return (
             <Box key={window.key}>
               <HStack justify="space-between" mb={1} gap={4}>

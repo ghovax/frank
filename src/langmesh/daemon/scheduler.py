@@ -20,24 +20,32 @@ async def _fire(record) -> None:
 
     session_id = ""
     try:
-        created = await api._session_create({
-            "agent": record.agent,
-            "working_directory": record.working_directory,
-            # Stated by the schedule, never inherited from the workspace — see ScheduleRecord.
-            "permission_mode": record.permission_mode,
-            "workspace_id": record.workspace_id,
-            "title": record.name,
-        })
+        created = await api._session_create(
+            {
+                "agent": record.agent,
+                "working_directory": record.working_directory,
+                # Stated by the schedule, never inherited from the workspace — see ScheduleRecord.
+                "permission_mode": record.permission_mode,
+                "workspace_id": record.workspace_id,
+                "title": record.name,
+            }
+        )
         session_id = str(created.get("id") or "")
         # The same shape `langmesh send` uses, so a scheduled turn and a typed one arrive the same way.
-        await api._session_send({
-            "id": session_id,
-            "parts": [{"kind": "text", "text": record.prompt}],
-        })
+        await api._session_send(
+            {
+                "id": session_id,
+                "parts": [{"kind": "text", "text": record.prompt}],
+            }
+        )
     except Exception as error:  # noqa: BLE001 — one bad schedule must not stop the rest
-        logger.warning("schedule could not run", extra=log_fields(error, schedule=record.id, schedule_name=record.name))
+        logger.warning(
+            "schedule could not run",
+            extra=log_fields(error, schedule=record.id, schedule_name=record.name),
+        )
         await asyncio.to_thread(
-            schedule_service.record_run, record.id, session_id=session_id, error=str(error))
+            schedule_service.record_run, record.id, session_id=session_id, error=str(error)
+        )
         return
     logger.info("schedule %s (%r) started session %s", record.id, record.name, session_id)
     await asyncio.to_thread(schedule_service.record_run, record.id, session_id=session_id)

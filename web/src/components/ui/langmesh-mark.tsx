@@ -1,7 +1,10 @@
 import type { SVGProps } from "react";
 
 /** The LangMesh mark on its own, without the container an app icon needs. */
-export function LangMeshMark({ size = "1em", ...props }: { size?: string | number } & SVGProps<SVGSVGElement>) {
+export function LangMeshMark({
+  size = "1em",
+  ...props
+}: { size?: string | number } & SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox="0 0 100 100"

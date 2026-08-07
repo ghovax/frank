@@ -1,4 +1,5 @@
 """Executing a tool call: the handlers, the dispatch pipeline, batch draining, and the background runner."""
+
 from __future__ import annotations
 
 import logging
@@ -41,7 +42,13 @@ from langmesh.runtime.locations import (
 )
 from langmesh.base.tuning import active_tuning, current_context_window, Tunable
 from langmesh.runtime.turn_events import (
-    DeniedInjection, Error, Mcp, RetryRequested, ToolCall, ToolResult, TurnEvent,
+    DeniedInjection,
+    Error,
+    Mcp,
+    RetryRequested,
+    ToolCall,
+    ToolResult,
+    TurnEvent,
 )
 from langmesh.runtime.tools.registry import (
     bash as bash_tool,
@@ -110,16 +117,19 @@ class _DispatchesTools:
         started_at = datetime.now(timezone.utc)
         started_monotonic = time.monotonic()
 
-        yield ToolCall(name=tool_name,
+        yield ToolCall(
+            name=tool_name,
             arguments=tool_arguments,
             id=tool_call_identifier,
         )
-        turn_tool_calls_log.append({
-            "name": tool_name,
-            "arguments": tool_arguments,
-            "tool_call_id": tool_call_identifier,
-            "started_at": _utc_timestamp(started_at),
-        })
+        turn_tool_calls_log.append(
+            {
+                "name": tool_name,
+                "arguments": tool_arguments,
+                "tool_call_id": tool_call_identifier,
+                "started_at": _utc_timestamp(started_at),
+            }
+        )
 
         result_content: str = ""
         background_job_id: str | None = None
@@ -128,23 +138,24 @@ class _DispatchesTools:
 
         tool_span = _telemetry.start_span("tool.execute", {"tool.name": tool_name})
         try:
-            async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier, decision):
+            async for event in self._execute_tool(
+                tool_name, tool_arguments, tool_call_identifier, decision
+            ):
                 yield event
                 if isinstance(event, ToolResult):
                     result_str = event.result
-                    if (
-                        isinstance(result_str, dict)
-                        and event.status == ToolStatus.RUNNING.value
-                    ):
+                    if isinstance(result_str, dict) and event.status == ToolStatus.RUNNING.value:
                         raw_job_id = result_str.get("job_id")
-                        background_job_id = (
-                            raw_job_id if isinstance(raw_job_id, str) else None
+                        background_job_id = raw_job_id if isinstance(raw_job_id, str) else None
+                        result_content = compact(
+                            {
+                                "code": "background_job_scheduled",
+                                "job_id": background_job_id,
+                            }
                         )
-                        result_content = compact({
-                            "code": "background_job_scheduled",
-                            "job_id": background_job_id,
-                        })
-                        turn_tool_results_log.append({"name": tool_name, "result": compact(result_str)})
+                        turn_tool_results_log.append(
+                            {"name": tool_name, "result": compact(result_str)}
+                        )
                     else:
                         if isinstance(result_str, dict):
                             # A result reporting an error status marks the call failed, for the model and the UI alike.
@@ -162,12 +173,18 @@ class _DispatchesTools:
                     denied_commands.append(event.command)
         except asyncio.CancelledError:
             result_content = "Tool call aborted."
-            yield Error(id=tool_call_identifier, message=result_content, tool=tool_name,
+            yield Error(
+                id=tool_call_identifier,
+                message=result_content,
+                tool=tool_name,
             )
             turn_tool_results_log.append({"name": tool_name, "result": result_content})
         except Exception as exception:
             result_content = f"{exception}"
-            yield Error(id=tool_call_identifier, message=result_content, tool=tool_name,
+            yield Error(
+                id=tool_call_identifier,
+                message=result_content,
+                tool=tool_name,
             )
             turn_tool_results_log.append({"name": tool_name, "result": result_content})
         finally:
@@ -214,9 +231,15 @@ class _DispatchesTools:
             if current_task is not None:
                 self._active_tool_tasks[tool_call_identifier] = current_task
             try:
-                decision = decisions.get(tool_call_identifier) or _ResolvedToolDecision(tool_call_id=tool_call_identifier)
+                decision = decisions.get(tool_call_identifier) or _ResolvedToolDecision(
+                    tool_call_id=tool_call_identifier
+                )
                 async for event in self._run_one_tool(
-                    tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes, decision,
+                    tool_call_data,
+                    turn_tool_calls_log,
+                    turn_tool_results_log,
+                    outcomes,
+                    decision,
                 ):
                     await queue.put(event)
             except Exception:
@@ -236,9 +259,7 @@ class _DispatchesTools:
                     break
                 # Race the next event against the abort, so a Stop is honoured even when every tool is parked.
                 get_future = asyncio.ensure_future(queue.get())
-                await asyncio.wait(
-                    {get_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
-                )
+                await asyncio.wait({get_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
                 if not get_future.done():
                     get_future.cancel()
                     break
@@ -262,7 +283,10 @@ class _DispatchesTools:
             return ("invalid_tool_arguments", f"{tool_name} arguments must be an object.")
         if tool_name not in tool_schemas:
             accepted = ", ".join(sorted(tool_schemas))
-            return ("unknown_tool", f"Unknown or unavailable tool '{tool_name}'. Available tools are: {accepted}.")
+            return (
+                "unknown_tool",
+                f"Unknown or unavailable tool '{tool_name}'. Available tools are: {accepted}.",
+            )
         schema = tool_schemas.get(tool_name)
         if schema is not None:
             fields = set(getattr(schema, "model_fields", {}).keys())
@@ -270,10 +294,16 @@ class _DispatchesTools:
             if unknown_arguments:
                 accepted = ", ".join(sorted(fields))
                 rejected = ", ".join(unknown_arguments)
-                return ("invalid_tool_arguments", f"The tool {tool_name} does not accept the following argument(s) with which it was invoked: {rejected}. Accepted arguments by it are only: {accepted}.")
+                return (
+                    "invalid_tool_arguments",
+                    f"The tool {tool_name} does not accept the following argument(s) with which it was invoked: {rejected}. Accepted arguments by it are only: {accepted}.",
+                )
             # Models often emit an MCP call's `arguments` as a JSON string; coerce before validating it.
             if tool_name == "call_mcp_tool" and isinstance(arguments.get("arguments"), str):
-                arguments = {**arguments, "arguments": _coerce_mcp_arguments(arguments.get("arguments"))}
+                arguments = {
+                    **arguments,
+                    "arguments": _coerce_mcp_arguments(arguments.get("arguments")),
+                }
             try:
                 schema_validator = getattr(schema, "model_validate", None)
                 if schema_validator is not None:
@@ -311,7 +341,9 @@ class _DispatchesTools:
             return token
         return ""
 
-    def _outside_working_directory_reads(self, command: str, working_directory: str | None = None) -> list[str]:
+    def _outside_working_directory_reads(
+        self, command: str, working_directory: str | None = None
+    ) -> list[str]:
         """Reads this command names outside the working directory. A signal about intent, not a boundary."""
         if self._global_configuration.sandbox.enforce == "off":
             return []
@@ -363,7 +395,8 @@ class _DispatchesTools:
             )
             model_visible_content = _model_visible_tool_result(
                 content,
-                outcome.get("metadata") or _tool_timing_metadata(
+                outcome.get("metadata")
+                or _tool_timing_metadata(
                     tool_name=tool_call_data.get("name", ""),
                     tool_call_identifier=tool_call_identifier,
                     started_at=datetime.now(timezone.utc),
@@ -379,7 +412,8 @@ class _DispatchesTools:
             background_job_id = outcome.get("background_job_id")
             if background_job_id:
                 self._background.bind_tool_call(
-                    background_job_id, tool_call_identifier,
+                    background_job_id,
+                    tool_call_identifier,
                 )
             denied_commands = outcome.get("denied_commands", [])
             if denied_commands:
@@ -392,9 +426,11 @@ class _DispatchesTools:
 
         # Malformed calls are corrected by a reminder: a ToolMessage would be orphaned and rejected.
         for invalid in response.invalid_tool_calls:
-            self._conversation.append(self._reminder_message(
-                self._invalid_tool_call_content(cast(dict, invalid)),
-            ))
+            self._conversation.append(
+                self._reminder_message(
+                    self._invalid_tool_call_content(cast(dict, invalid)),
+                )
+            )
 
     async def _through_pipeline(self, tool_name: str, tool_arguments: dict, invoke) -> Any:
         """Run one call through the caller's middleware, which asks a plain question a generator cannot answer."""
@@ -404,25 +440,35 @@ class _DispatchesTools:
         return await self._pipeline.run(call, lambda made: invoke(made.arguments))
 
     async def _execute_tool(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
         decision: _ResolvedToolDecision,
     ) -> AsyncIterator[TurnEvent]:
         """Execute one call, yielding events. Permission is already resolved, so this path never prompts."""
         # A call that already ran is replayed: whatever side effects it had, it had once.
         if decision.completed is not None:
             yield ToolResult(
-                id=tool_call_identifier, name=tool_name, result=decision.completed.get("result"),
+                id=tool_call_identifier,
+                name=tool_name,
+                result=decision.completed.get("result"),
             )
             return
 
         # A refused call never runs: surface the recorded refusal and stop.
         if decision.denial is not None:
-            error_kwargs: dict[str, Any] = {"id": tool_call_identifier, "tool": tool_name, "message": decision.denial.get("message", "")}
+            error_kwargs: dict[str, Any] = {
+                "id": tool_call_identifier,
+                "tool": tool_name,
+                "message": decision.denial.get("message", ""),
+            }
             if decision.denial.get("code"):
                 error_kwargs["code"] = decision.denial["code"]
             yield Error(**error_kwargs)
             if decision.denial.get("denied_injection"):
-                yield DeniedInjection(id=tool_call_identifier,
+                yield DeniedInjection(
+                    id=tool_call_identifier,
                     command=decision.denial.get("raw_command", ""),
                 )
             return
@@ -432,7 +478,9 @@ class _DispatchesTools:
 
         # The session state tools read at call time, bound per call so two open turns cannot see each other's.
         tool_context.bind(
-            self._tool_context.with_grants(self._access_grants).with_attachments(self._attached_files)
+            self._tool_context.with_grants(self._access_grants).with_attachments(
+                self._attached_files
+            )
         )
 
         # Coerce JSON-string arguments up front, so validation and dispatch see the real container.
@@ -454,7 +502,9 @@ class _DispatchesTools:
         )
         if validation_error:
             error_code, error_message = validation_error
-            yield Error(id=tool_call_identifier, code=error_code, message=error_message, tool=tool_name)
+            yield Error(
+                id=tool_call_identifier, code=error_code, message=error_message, tool=tool_name
+            )
             return
 
         # Resolve the location and derive the policy as a value, so concurrent calls cannot cross them.
@@ -465,7 +515,12 @@ class _DispatchesTools:
             try:
                 resolved_location = self._resolve_location(location_value)
             except ToolLocationError as exception:
-                yield Error(id=tool_call_identifier, code="invalid_location", message=str(exception), tool=tool_name)
+                yield Error(
+                    id=tool_call_identifier,
+                    code="invalid_location",
+                    message=str(exception),
+                    tool=tool_name,
+                )
                 return
         policy = self._call_policy(resolved_location)
 
@@ -474,21 +529,33 @@ class _DispatchesTools:
             # A supplied tool reaches this point through the identical preamble: the handler is the extension point.
             if tool_name in self._extra_tools:
                 async for event in self._tool_supplied(
-                    tool_name, tool_arguments, tool_call_identifier,
+                    tool_name,
+                    tool_arguments,
+                    tool_call_identifier,
                 ):
                     yield event
                 return
-            yield Error(id=tool_call_identifier,
-                message=f"Unknown tool '{tool_name}'", tool=tool_name,
+            yield Error(
+                id=tool_call_identifier,
+                message=f"Unknown tool '{tool_name}'",
+                tool=tool_name,
             )
             return
         async for event in getattr(self, handler_name)(
-            tool_name, tool_arguments, tool_call_identifier, decision, policy, resolved_location,
+            tool_name,
+            tool_arguments,
+            tool_call_identifier,
+            decision,
+            policy,
+            resolved_location,
         ):
             yield event
 
     async def _tool_supplied(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
     ):
         """Run a caller's tool through LangChain's own invocation, so anything written for it works here."""
         tool = self._extra_tools[tool_name]
@@ -510,8 +577,12 @@ class _DispatchesTools:
         )
 
     async def _tool_bash(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         raw_command = tool_arguments.get("command", "")
@@ -532,14 +603,16 @@ class _DispatchesTools:
             if directory:
                 directory_path = Path(directory).expanduser()
                 if not directory_path.is_absolute():
-                    yield Error(id=tool_call_identifier,
+                    yield Error(
+                        id=tool_call_identifier,
                         code="invalid_working_directory",
                         message=f"Working directory must be an absolute path: {directory}",
                         tool=tool_name,
                     )
                     return
                 if not directory_path.is_dir():
-                    yield Error(id=tool_call_identifier,
+                    yield Error(
+                        id=tool_call_identifier,
                         code="invalid_working_directory",
                         message=f"Working directory does not exist: {directory}",
                         tool=tool_name,
@@ -548,7 +621,8 @@ class _DispatchesTools:
                 # The directory is the process's own `cwd`, not shell text a command could `cd` out of.
                 tool_context.bind(
                     self._tool_context.for_directory(str(directory_path))
-                    .with_grants(self._access_grants).with_attachments(self._attached_files)
+                    .with_grants(self._access_grants)
+                    .with_attachments(self._attached_files)
                 )
         requested, _ = parse_access_request(tool_arguments.get("access_request"))
         # No claim is treated as mutating, which is what the lease below depends on.
@@ -563,8 +637,10 @@ class _DispatchesTools:
                 self._permissions.check_bash_background()
             except PermissionDenied as denial:
                 yield Error(
-                    id=tool_call_identifier, code="background_not_allowed",
-                    message=str(denial), tool=tool_name,
+                    id=tool_call_identifier,
+                    code="background_not_allowed",
+                    message=str(denial),
+                    tool=tool_name,
                 )
                 return
 
@@ -581,7 +657,8 @@ class _DispatchesTools:
                     working_directory=policy.working_directory,
                 )
             except FileLeaseConflict as exception:
-                yield Error(id=tool_call_identifier,
+                yield Error(
+                    id=tool_call_identifier,
                     code="filesystem_lease_conflict",
                     message=str(exception),
                     tool=tool_name,
@@ -592,7 +669,9 @@ class _DispatchesTools:
             if decision.retry_grant is not None:
                 # An approved second run goes out with the widening and is not offered again.
                 result_data = await self._run_bash(
-                    tool_arguments, tool_call_identifier, retry_grant=decision.retry_grant,
+                    tool_arguments,
+                    tool_call_identifier,
+                    retry_grant=decision.retry_grant,
                 )
                 yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
                 return
@@ -600,17 +679,25 @@ class _DispatchesTools:
             # A refused command is not a finished one, and its first run was confined, so a retry is safe to offer.
             denial = self._sandbox_denial(result_data, policy)
             if denial is not None:
-                verdict, grant = await self.decide_retry(self.retry_gate(
-                    tool_call_id=tool_call_identifier, command=raw_command, denial=denial,
-                    explanation=str(tool_arguments.get("explanation", "") or ""),
-                ))
+                verdict, grant = await self.decide_retry(
+                    self.retry_gate(
+                        tool_call_id=tool_call_identifier,
+                        command=raw_command,
+                        denial=denial,
+                        explanation=str(tool_arguments.get("explanation", "") or ""),
+                    )
+                )
                 if verdict == "run" and grant is not None:
                     result_data = await self._run_bash(
-                        tool_arguments, tool_call_identifier, retry_grant=grant,
+                        tool_arguments,
+                        tool_call_identifier,
+                        retry_grant=grant,
                     )
                 elif verdict == "ask":
                     yield RetryRequested(
-                        id=tool_call_identifier, command=raw_command, denial_kind=denial.kind,
+                        id=tool_call_identifier,
+                        command=raw_command,
+                        denial_kind=denial.kind,
                         denial_evidence=denial.evidence,
                         explanation=str(tool_arguments.get("explanation", "") or ""),
                         result=result_data,
@@ -620,18 +707,25 @@ class _DispatchesTools:
             if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
                 job_id = result_data.get("job_id", "")
                 if job_id:
-                    self._record_event("background_bash_started", {"job_id": job_id, "command": raw_command})
+                    self._record_event(
+                        "background_bash_started", {"job_id": job_id, "command": raw_command}
+                    )
                     if lease_token and self._background.add_done_callback(
                         job_id,
-                        lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
+                        lambda _identifier, token=lease_token: self._release_filesystem_lease(
+                            token
+                        ),
                     ):
                         lease_token = ""
         finally:
             self._release_filesystem_lease(lease_token)
 
-
     async def _run_bash(
-        self, tool_arguments: dict, tool_call_identifier: str, *, retry_grant=None,
+        self,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        *,
+        retry_grant=None,
     ) -> Any:
         """One run of the bash tool, inside whatever confinement this attempt carries."""
         if retry_grant is not None:
@@ -658,14 +752,20 @@ class _DispatchesTools:
             str(result_data.get(key, "")) for key in ("stdout", "stderr", "output", "error")
         )
         return _confinement.denial_in(
-            exit_code=exit_code, output=output,
+            exit_code=exit_code,
+            output=output,
             attempt=_confinement.first_attempt(
-                tool_context.current().sandbox, workspace=policy.working_directory,
+                tool_context.current().sandbox,
+                workspace=policy.working_directory,
             ),
         )
 
     def _confinement_refusal(
-        self, resolved: str, policy: CallExecutionPolicy, *, writing: bool,
+        self,
+        resolved: str,
+        policy: CallExecutionPolicy,
+        *,
+        writing: bool,
     ) -> str:
         """Why the confinement refuses this path. The file tools run in-process, so the profile is applied by hand."""
         if policy.is_remote or not resolved:
@@ -675,89 +775,131 @@ class _DispatchesTools:
             return ""
         workspace = policy.working_directory
         permitted = (
-            profile.may_write(resolved, workspace=workspace) if writing
+            profile.may_write(resolved, workspace=workspace)
+            if writing
             else profile.may_read(resolved, workspace=workspace)
         )
         if permitted:
             return ""
-        return self._prompt_loader.load("outside_confinement", {
-            "path": resolved,
-            "action": "write" if writing else "read",
-        })
+        return self._prompt_loader.load(
+            "outside_confinement",
+            {
+                "path": resolved,
+                "action": "write" if writing else "read",
+            },
+        )
 
     async def _tool_fetch_url(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         url = str(tool_arguments.get("url", ""))
         output_format = str(tool_arguments.get("format", "markdown") or "markdown")
-        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default) or Tunable.slow_tool_sync_window.default)
+        sync_window = float(
+            tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default)
+            or Tunable.slow_tool_sync_window.default
+        )
         configured = tool_context.current().fetch_timeout_seconds
         hard_deadline = int(tool_arguments.get("hard_deadline", configured) or configured)
         background = bool(tool_arguments.get("background", False))
         async for event in self._run_backgroundable_tool(
-            tool_name, tool_call_identifier, fetching.fetch_url(url, output_format, hard_deadline),
-            started_code="fetch_url_started", sync_window=sync_window, background=background,
+            tool_name,
+            tool_call_identifier,
+            fetching.fetch_url(url, output_format, hard_deadline),
+            started_code="fetch_url_started",
+            sync_window=sync_window,
+            background=background,
         ):
             yield event
 
-
     async def _tool_download_file(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         executor = resolved_location.executor
         url = str(tool_arguments.get("url", ""))
         destination = str(tool_arguments.get("path", ""))
-        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default) or Tunable.slow_tool_sync_window.default)
+        sync_window = float(
+            tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default)
+            or Tunable.slow_tool_sync_window.default
+        )
         configured = tool_context.current().download_timeout_seconds
         hard_deadline = int(tool_arguments.get("hard_deadline", configured) or configured)
         background = bool(tool_arguments.get("background", False))
-        resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
+        resolved = await asyncio.to_thread(
+            executor.resolve, resolved_location.base_directory, destination
+        )
         refusal = self._confinement_refusal(resolved, policy, writing=True)
         if refusal:
-            yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
+            yield Error(
+                id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name
+            )
             return
         # A download is a tracked-tree write, so it holds the lease until it completes, background or not.
         lease_token = ""
         if not policy.is_remote:
             try:
                 lease_token = await self._acquire_filesystem_lease(
-                    scope="file", path=resolved,
+                    scope="file",
+                    path=resolved,
                     description=f"{tool_name}: {resolved}",
                     working_directory=policy.working_directory,
                 )
             except FileLeaseConflict as exception:
-                yield Error(id=tool_call_identifier, code="filesystem_lease_conflict",
-                    message=str(exception), tool=tool_name)
+                yield Error(
+                    id=tool_call_identifier,
+                    code="filesystem_lease_conflict",
+                    message=str(exception),
+                    tool=tool_name,
+                )
                 return
         try:
             backgrounded_job_id = ""
             async for event in self._run_backgroundable_tool(
-                tool_name, tool_call_identifier, fetching.download_file(executor, url, resolved, hard_deadline),
-                started_code="download_file_started", sync_window=sync_window, background=background,
+                tool_name,
+                tool_call_identifier,
+                fetching.download_file(executor, url, resolved, hard_deadline),
+                started_code="download_file_started",
+                sync_window=sync_window,
+                background=background,
             ):
                 if (
-                    isinstance(event, ToolResult) and isinstance(event.result, dict)
+                    isinstance(event, ToolResult)
+                    and isinstance(event.result, dict)
                     and event.result.get("code") == "download_file_started"
                 ):
                     backgrounded_job_id = str(event.result.get("job_id", ""))
                 yield event
-            if lease_token and backgrounded_job_id and self._background.add_done_callback(
-                backgrounded_job_id,
-                lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
+            if (
+                lease_token
+                and backgrounded_job_id
+                and self._background.add_done_callback(
+                    backgrounded_job_id,
+                    lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
+                )
             ):
                 lease_token = ""
         finally:
             self._release_filesystem_lease(lease_token)
 
-
     async def _tool_load_skill(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         skill_name = str(tool_arguments.get("name", ""))
@@ -766,25 +908,34 @@ class _DispatchesTools:
         )
         match = next((skill for skill in all_skills if skill.identifier == skill_name), None)
         if match is None:
-            yield Error(id=tool_call_identifier,
+            yield Error(
+                id=tool_call_identifier,
                 message=f"No enabled skill named '{skill_name}'.",
                 tool=tool_name,
             )
             return
-        result = compact({
-            "code": "skill_loaded",
-            "name": match.identifier,
-            "title": match.display_title,
-            "path": match.path,
-            "content": match.body,
-        })
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        result = compact(
+            {
+                "code": "skill_loaded",
+                "name": match.identifier,
+                "title": match.display_title,
+                "path": match.path,
+                "content": match.body,
+            }
+        )
+        yield ToolResult(
+            id=tool_call_identifier,
+            name=tool_name,
+            result=_maybe_json(result),
         )
 
-
     async def _tool_wait_for(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         """A cancellable inline wait: the model's polling primitive, which wakes the instant a Stop arrives."""
@@ -792,11 +943,15 @@ class _DispatchesTools:
         try:
             seconds = max(0.0, float(raw_seconds))
         except (TypeError, ValueError):
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
-                "code": "invalid_arguments",
-                "status": ToolStatus.ERROR.value,
-                "message": "'seconds' must be a number.",
-            })
+            yield ToolResult(
+                id=tool_call_identifier,
+                name=tool_name,
+                result={
+                    "code": "invalid_arguments",
+                    "status": ToolStatus.ERROR.value,
+                    "message": "'seconds' must be a number.",
+                },
+            )
             return
         interrupted = False
         if seconds > 0:
@@ -805,44 +960,63 @@ class _DispatchesTools:
                 interrupted = True  # a Stop fired before the wait elapsed
             except asyncio.TimeoutError:
                 interrupted = False  # the full wait elapsed normally
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result={
-            "code": "interrupted" if interrupted else "waited",
-            "seconds": seconds,
-            "message": (
-                "Wait interrupted by a stop request."
-                if interrupted else f"Waited {seconds:g}s; continue."
-            ),
-        })
-
+        yield ToolResult(
+            id=tool_call_identifier,
+            name=tool_name,
+            result={
+                "code": "interrupted" if interrupted else "waited",
+                "seconds": seconds,
+                "message": (
+                    "Wait interrupted by a stop request."
+                    if interrupted
+                    else f"Waited {seconds:g}s; continue."
+                ),
+            },
+        )
 
     async def _tool_ask_user(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # ask_user's answers are its preflight decision: the question was gated before the batch ran.
         answers = decision.answers
         # Dismissed without answering: tell the model and end the turn rather than proceed on a guess.
         if isinstance(answers, dict) and answers.get("__declined__"):
-            result = compact({
-                "code": "user_declined",
-                "message": (
-                    "The user dismissed the question without answering and chose to stop here. "
-                    "Do not re-ask or proceed on a guess; wait for further direction."
-                ),
-            })
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            result = compact(
+                {
+                    "code": "user_declined",
+                    "message": (
+                        "The user dismissed the question without answering and chose to stop here. "
+                        "Do not re-ask or proceed on a guess; wait for further direction."
+                    ),
+                }
+            )
+            yield ToolResult(
+                id=tool_call_identifier,
+                name=tool_name,
+                result=_maybe_json(result),
             )
             self._abort_event.set()
             return
         result = compact({"code": "user_answered", "answers": answers})
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        yield ToolResult(
+            id=tool_call_identifier,
+            name=tool_name,
+            result=_maybe_json(result),
         )
 
-
     async def _tool_call_mcp_tool(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # Permission is resolved; an approved MCP call runs.
@@ -851,18 +1025,21 @@ class _DispatchesTools:
         async def on_mcp_event(event: dict[str, Any]) -> None:
             await event_queue.put(event)
 
-        call_task = asyncio.create_task(call_mcp_tool_with_events(
-            str(tool_arguments.get("server", "")),
-            str(tool_arguments.get("tool_name", "")),
-            _coerce_mcp_arguments(tool_arguments.get("arguments")),
-            on_mcp_event,
-        ))
+        call_task = asyncio.create_task(
+            call_mcp_tool_with_events(
+                str(tool_arguments.get("server", "")),
+                str(tool_arguments.get("tool_name", "")),
+                _coerce_mcp_arguments(tool_arguments.get("arguments")),
+                on_mcp_event,
+            )
+        )
         try:
             while True:
                 # Once the call is done, drain what is buffered with `get_nowait` rather than racing a fresh getter.
                 if call_task.done():
                     while not event_queue.empty():
-                        yield Mcp(id=tool_call_identifier,
+                        yield Mcp(
+                            id=tool_call_identifier,
                             name="call_mcp_tool",
                             server=tool_arguments.get("server", ""),
                             tool=tool_arguments.get("tool_name", ""),
@@ -875,7 +1052,8 @@ class _DispatchesTools:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if get_task in done:
-                    yield Mcp(id=tool_call_identifier,
+                    yield Mcp(
+                        id=tool_call_identifier,
                         name="call_mcp_tool",
                         server=tool_arguments.get("server", ""),
                         tool=tool_arguments.get("tool_name", ""),
@@ -890,10 +1068,13 @@ class _DispatchesTools:
             return
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
-
     async def _tool_mcp_query(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         tool_map = {
@@ -906,8 +1087,12 @@ class _DispatchesTools:
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
     async def _tool_set_tasks(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         task_definitions = tool_arguments.get("tasks", [])
@@ -915,7 +1100,8 @@ class _DispatchesTools:
         self._session_dirty = True
         result_message = f"Created {len(identifiers)} task{'s' if len(identifiers) != 1 else ''}."
         # An ordinary tool result: the task list is the model's own bookkeeping, and both sides see it.
-        yield ToolResult(id=tool_call_identifier,
+        yield ToolResult(
+            id=tool_call_identifier,
             name=tool_name,
             result={
                 "code": "tasks_updated",
@@ -924,17 +1110,22 @@ class _DispatchesTools:
             },
         )
 
-
     async def _tool_update_tasks(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         updates = tool_arguments.get("updates", [])
         updated_ids, complaints = self._task_manager.update_tasks(updates)
         if updated_ids:
             self._session_dirty = True
-            result_message = f"Updated {len(updated_ids)} task{'s' if len(updated_ids) != 1 else ''}."
+            result_message = (
+                f"Updated {len(updated_ids)} task{'s' if len(updated_ids) != 1 else ''}."
+            )
         else:
             result_message = "Nothing was updated."
         result: dict[str, Any] = {
@@ -945,13 +1136,18 @@ class _DispatchesTools:
         # What went wrong per update, so a bad key is distinguishable from a task that does not exist.
         if complaints:
             result["rejected"] = complaints
-            result["status"] = ToolStatus.ERROR.value if not updated_ids else result.get("status", "")
+            result["status"] = (
+                ToolStatus.ERROR.value if not updated_ids else result.get("status", "")
+            )
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
-
     async def _tool_update_goal(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         status = str(tool_arguments.get("status", "active"))
@@ -962,7 +1158,11 @@ class _DispatchesTools:
         current = self.goal
 
         def refuse(message: str) -> dict:
-            return {"code": "goal_update_error", "status": ToolStatus.ERROR.value, "message": message}
+            return {
+                "code": "goal_update_error",
+                "status": ToolStatus.ERROR.value,
+                "message": message,
+            }
 
         if status == "active":
             # Both halves demanded at once: this is the only moment the goal meets a fresh reading of the request.
@@ -975,11 +1175,13 @@ class _DispatchesTools:
                 )
             else:
                 # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
-                self.write_goal(Goal(
-                    text=goal,
-                    requirements=requirements,
-                    continuations=current.continuations if current is not None else 0,
-                ))
+                self.write_goal(
+                    Goal(
+                        text=goal,
+                        requirements=requirements,
+                        continuations=current.continuations if current is not None else 0,
+                    )
+                )
                 result = {"code": "goal_active", "goal": goal, "requirements": requirements}
                 self._record_event("goal_updated", result)
         elif status == "satisfied":
@@ -992,7 +1194,11 @@ class _DispatchesTools:
                 )
             else:
                 self.write_goal(None)
-                result = {"code": "goal_satisfied", "previous_goal": current.text, "evidence": evidence}
+                result = {
+                    "code": "goal_satisfied",
+                    "previous_goal": current.text,
+                    "evidence": evidence,
+                }
                 self._record_event("goal_updated", result)
         elif status == "blocked":
             if current is None:
@@ -1000,7 +1206,9 @@ class _DispatchesTools:
             elif not blocker:
                 result = refuse("Say what is in the way, and what would clear it.")
             else:
-                self.write_goal(current.model_copy(update={"status": Goal.BLOCKED, "blocker": blocker}))
+                self.write_goal(
+                    current.model_copy(update={"status": Goal.BLOCKED, "blocker": blocker})
+                )
                 result = {"code": "goal_blocked", "goal": current.text, "blocker": blocker}
                 self._record_event("goal_updated", result)
         elif status == "cleared":
@@ -1014,10 +1222,13 @@ class _DispatchesTools:
             result = refuse("Status must be one of 'active', 'satisfied', 'blocked', or 'cleared'.")
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
-
     async def _tool_session(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         """Every peer-session verb, in one handler: they differ only in which call they make."""
@@ -1032,10 +1243,13 @@ class _DispatchesTools:
             unbind_background_jobs(background_token)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result))
 
-
     async def _tool_search_web(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         background_token = bind_background_jobs(self._background)
@@ -1049,23 +1263,33 @@ class _DispatchesTools:
             result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
-
     async def _tool_read_turn(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         requested_turn_id = tool_arguments.get("turn_id", "")
         # A search or background-bash handle is not an A2A task, so redirect rather than answer task_not_found.
         background_kind = _background_handle_kind(requested_turn_id)
         if self._turn_reader is None:
-            result = {"code": "read_turn_unavailable", "message": "Reading turns is not available in this session."}
+            result = {
+                "code": "read_turn_unavailable",
+                "message": "Reading turns is not available in this session.",
+            }
         elif background_kind is not None:
             message = self._prompt_loader.load(
                 "read_turn_background_handle",
                 {"job_id": requested_turn_id, "kind": background_kind},
             )
-            result = {"code": "not_a_readable_turn", "turn_id": requested_turn_id, "message": message}
+            result = {
+                "code": "not_a_readable_turn",
+                "turn_id": requested_turn_id,
+                "message": message,
+            }
         else:
             task = await self._turn_reader(requested_turn_id)
             if task is None:
@@ -1073,7 +1297,6 @@ class _DispatchesTools:
             else:
                 result = task
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
-
 
     @staticmethod
     def _surface_for(surface_name: str):
@@ -1083,8 +1306,12 @@ class _DispatchesTools:
         return native_surface.SURFACE if surface_name == "computer" else web_surface.SURFACE
 
     async def _tool_control_screen(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        self,
+        tool_name: str,
+        tool_arguments: dict,
+        tool_call_identifier: str,
+        decision: _ResolvedToolDecision,
+        policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # Run the model's Python in the killable sandbox, bridging each primitive to the chosen surface.
@@ -1095,31 +1322,51 @@ class _DispatchesTools:
 
         script = str(tool_arguments.get("script", ""))
         if not script.strip():
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result={"ok": False, "error": "control_screen needs a script to run."})
+            yield ToolResult(
+                id=tool_call_identifier,
+                name=tool_name,
+                result={"ok": False, "error": "control_screen needs a script to run."},
+            )
             return
         # A target is a window or tab by the identifier its platform minted, since a display name is not an identity.
         target_id = str(tool_arguments.get("target", "") or "").strip()
         if not target_id:
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
-                "ok": False,
-                "error": "control_screen needs a target — the window or tab to act in.",
-                "targets": {"current": target_registry.describe_all()},
-            })
+            yield ToolResult(
+                id=tool_call_identifier,
+                name=tool_name,
+                result={
+                    "ok": False,
+                    "error": "control_screen needs a target — the window or tab to act in.",
+                    "targets": {"current": target_registry.describe_all()},
+                },
+            )
             return
         target = target_registry.find_target(target_id)
         if target is None:
             # Say what is known rather than assert a cause: an unfound target may simply be on another Space.
             listing = target_registry.list_targets()
-            same_app = [place for place in listing if place.app.lower() == target_id.strip().lower()]
+            same_app = [
+                place for place in listing if place.app.lower() == target_id.strip().lower()
+            ]
             if same_app:
-                described = target_registry.describe_all(sorted(same_app, key=target_registry._worth_naming))
-                error = (f"{target_id!r} is an application, not a window — an application has no single "
-                         f"place to act in. Its windows are listed under 'candidates', likeliest first.")
+                described = target_registry.describe_all(
+                    sorted(same_app, key=target_registry._worth_naming)
+                )
+                error = (
+                    f"{target_id!r} is an application, not a window — an application has no single "
+                    f"place to act in. Its windows are listed under 'candidates', likeliest first."
+                )
                 payload = {"ok": False, "error": error, "targets": {"candidates": described}}
             else:
                 error = f"Target {target_id!r} is not among the windows and tabs I can see."
-                payload = {"ok": False, "error": error,
-                           "targets": {"missing": [target_id], "current": target_registry.describe_all(listing)}}
+                payload = {
+                    "ok": False,
+                    "error": error,
+                    "targets": {
+                        "missing": [target_id],
+                        "current": target_registry.describe_all(listing),
+                    },
+                }
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=payload)
             return
         surface_name = target.surface
@@ -1136,15 +1383,19 @@ class _DispatchesTools:
         permitted_primitives = set(surface.primitives())
         if not decision.screen_mutations:
             permitted_primitives -= MUTATING_SCREEN_PRIMITIVES
-        known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
+        known_ids: dict[
+            str, dict[str, str]
+        ] = {}  # id -> {id, name, role, context}, from find_* results
         changed: list[dict[str, Any]] = []
-        read_failures: list[dict[str, Any]] = []    # structured payloads a failed read produced
+        read_failures: list[dict[str, Any]] = []  # structured payloads a failed read produced
         # Everything the script did, in order, so a failure on line four says which of the first three happened.
         ran: list[dict[str, Any]] = []
         # One place, three questions, so the verb sets cannot disagree about what needs focus or watching.
         element_mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
         # Verbs whose first argument is an element to resolve, changed or not.
-        targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll", "caret", "select", "focus"})
+        targeting_verbs = element_mutating_verbs | frozenset(
+            {"read", "hover", "scroll", "caret", "select", "focus"}
+        )
         # Verbs worth bracketing with a glance. The tab verbs and `evaluate` report themselves, so they stay out.
         watched_verbs = element_mutating_verbs | frozenset({"press", "navigate", "caret", "select"})
         # Verbs that replace the document wholesale, whose diff is a summary rather than a list.
@@ -1203,8 +1454,9 @@ class _DispatchesTools:
             asked.append((vector, top))
             del asked[:-12]
 
-        def _rank(query: str, limit: int, floor: float = 0.0, facets: dict | None = None,
-                  near: str = "") -> list:
+        def _rank(
+            query: str, limit: int, floor: float = 0.0, facets: dict | None = None, near: str = ""
+        ) -> list:
             # One call, one meaning, both surfaces: the target says where to read.
             raw = surface.documents(target_id)
             if not raw.get("ok"):
@@ -1215,27 +1467,38 @@ class _DispatchesTools:
             candidates = _matching(documents, facets or {})
             # A facet admitting nothing falls back to the whole surface: narrowing is a preference, not a precondition.
             if not candidates and documents:
-                logger.info("screen find: facets %r admitted nothing; ranking the whole surface", facets)
+                logger.info(
+                    "screen find: facets %r admitted nothing; ranking the whole surface", facets
+                )
                 candidates = documents
             index = retrieval.Index(candidates)
             if near:
                 tuning = active_tuning()
                 try:
                     hits = index.anchored(
-                        query, near, top_k=limit,
+                        query,
+                        near,
+                        top_k=limit,
                         weight=tuning.ratio(Tunable.find_near_weight),
                         anchor_margin=tuning.ratio(Tunable.find_anchor_margin),
                     )
                 except retrieval.WeakAnchor as weak:
-                    raise RuntimeError(control_message(
-                        "weak_anchor", query=str(query), anchor=weak.anchor,
-                    )) from None
+                    raise RuntimeError(
+                        control_message(
+                            "weak_anchor",
+                            query=str(query),
+                            anchor=weak.anchor,
+                        )
+                    ) from None
             else:
                 hits = index.search(query, top_k=limit, floor=floor)
             # What the model actually asks for, so the index can be tuned against real queries rather than invented ones.
             logger.info(
                 "screen find: surface=%s query=%r results=%d top=%r",
-                surface_name, query, len(hits), (hits[0].payload.get("name", "") if hits else ""),
+                surface_name,
+                query,
+                len(hits),
+                (hits[0].payload.get("name", "") if hits else ""),
             )
             _note_if_rephrasing(query, hits)
             return hits
@@ -1248,7 +1511,9 @@ class _DispatchesTools:
             if not ids:
                 return {}
             known = [known_ids[identifier] for identifier in ids if identifier in known_ids]
-            sample = known[:appeared_detail_limit] or [{"id": identifier} for identifier in sorted(ids)[:appeared_detail_limit]]
+            sample = known[:appeared_detail_limit] or [
+                {"id": identifier} for identifier in sorted(ids)[:appeared_detail_limit]
+            ]
             report: dict[str, Any] = {"appeared": sample}
             if len(ids) > len(sample):
                 report["appeared_total"] = len(ids)
@@ -1287,8 +1552,10 @@ class _DispatchesTools:
 
         def _register(record: dict) -> None:
             known_ids[record["id"]] = {
-                "id": record["id"], "name": record.get("name", ""),
-                "role": record.get("role", ""), "context": record.get("context", ""),
+                "id": record["id"],
+                "name": record.get("name", ""),
+                "role": record.get("role", ""),
+                "context": record.get("context", ""),
             }
 
         def _identity(record: dict) -> tuple:
@@ -1296,14 +1563,26 @@ class _DispatchesTools:
 
         def _candidates(records: list) -> str:
             """The competing elements as data rather than as a sentence about data, so nothing is parsed back out."""
-            return compact([
-                {field: record.get(field) for field in ("id", "name", "role", "context", "parent", "bounds")
-                 if record.get(field)}
-                for record in records
-            ])
+            return compact(
+                [
+                    {
+                        field: record.get(field)
+                        for field in ("id", "name", "role", "context", "parent", "bounds")
+                        if record.get(field)
+                    }
+                    for record in records
+                ]
+            )
 
-        def find_many(query: Any, limit: int = 8, clickable: Any = None,
-                      near: str = "", name: str = "", context: str = "", **_: Any) -> list:
+        def find_many(
+            query: Any,
+            limit: int = 8,
+            clickable: Any = None,
+            near: str = "",
+            name: str = "",
+            context: str = "",
+            **_: Any,
+        ) -> list:
             # The caller's limit, bounded by what any caller may ask for.
             tuning = active_tuning()
             wanted = max(1, min(int(limit), tuning.amount(Tunable.find_many_ceiling)))
@@ -1313,54 +1592,96 @@ class _DispatchesTools:
             for record in records:
                 _register(record)
             # Recorded whether or not the script keeps the value, so nothing has to be parsed back out of stdout.
-            ran.append({"find_many": str(query), "matched": len(records),
-                        "ids": [record["id"] for record in records]})
+            ran.append(
+                {
+                    "find_many": str(query),
+                    "matched": len(records),
+                    "ids": [record["id"] for record in records],
+                }
+            )
             return records
 
-        def find_one(query: Any, clickable: Any = None, near: str = "", name: str = "",
-                     context: str = "", **_: Any) -> dict:
+        def find_one(
+            query: Any,
+            clickable: Any = None,
+            near: str = "",
+            name: str = "",
+            context: str = "",
+            **_: Any,
+        ) -> dict:
             facets = _facets(clickable, name, context)
             # No floor: the abstention below is a margin fitted over the full ranking, which a floor would change.
-            scored = [(_record(hit), float(hit.score or 0.0))
-                      for hit in _rank(str(query), 8, 0.0, facets, str(near))]
+            scored = [
+                (_record(hit), float(hit.score or 0.0))
+                for hit in _rank(str(query), 8, 0.0, facets, str(near))
+            ]
             if not scored:
                 raise RuntimeError(control_message("no_match", query=str(query)))
             top, top_score = scored[0]
             # How many rivals the top match is weighed against, and how many come back when it cannot be chosen.
             shortlist = active_tuning().amount(Tunable.find_candidates)
             # Score-competitive: within the shortlist and at least 90% of the top. A twin there means raise.
-            competitive = [record for record, score in scored[:shortlist] if top_score <= 0 or score >= 0.9 * top_score]
+            competitive = [
+                record
+                for record, score in scored[:shortlist]
+                if top_score <= 0 or score >= 0.9 * top_score
+            ]
             twins = [record for record in competitive[1:] if _identity(record) == _identity(top)]
             if twins:
-                raise RuntimeError(control_message("ambiguous_match", query=str(query), candidates=_candidates([top, *twins])))
+                raise RuntimeError(
+                    control_message(
+                        "ambiguous_match", query=str(query), candidates=_candidates([top, *twins])
+                    )
+                )
             # Where the ranker had no real preference: the gap to second, as a fraction of the spread, abstains.
             runner_up = scored[1][1] if len(scored) > 1 else 0.0
-            spread = statistics.pstdev([score for _record, score in scored]) if len(scored) > 1 else 0.0
+            spread = (
+                statistics.pstdev([score for _record, score in scored]) if len(scored) > 1 else 0.0
+            )
             margin = (top_score - runner_up) / spread if spread > 1e-9 else 1.0
             if margin < active_tuning().ratio(Tunable.find_one_margin):
-                raise RuntimeError(control_message(
-                    "unsure_match", query=str(query),
-                    candidates=_candidates([record for record, _ in scored[:shortlist]]),
-                ))
+                raise RuntimeError(
+                    control_message(
+                        "unsure_match",
+                        query=str(query),
+                        candidates=_candidates([record for record, _ in scored[:shortlist]]),
+                    )
+                )
             _register(top)
             # The element it settled on, named rather than reproduced: one record can run to tens of thousands of characters.
-            ran.append({"find_one": str(query),
-                        "matched": {key: top.get(key) for key in ("id", "role", "name") if top.get(key)}})
+            ran.append(
+                {
+                    "find_one": str(query),
+                    "matched": {
+                        key: top.get(key) for key in ("id", "role", "name") if top.get(key)
+                    },
+                }
+            )
             return top
 
-        async def wait_for(query: Any, seconds: float = 5.0, clickable: Any = None, near: str = "",
-                           name: str = "", context: str = "", **_: Any) -> dict:
+        async def wait_for(
+            query: Any,
+            seconds: float = 5.0,
+            clickable: Any = None,
+            near: str = "",
+            name: str = "",
+            context: str = "",
+            **_: Any,
+        ) -> dict:
             """Poll a find until it matches and return the element, since a screen builds and animates."""
             deadline = time.monotonic() + max(0.0, float(seconds))
             interval = active_tuning().settle_poll()
             while True:
                 # By keyword: the facet order is `find_many`'s business, and positional would re-aim every call.
-                hits = await asyncio.to_thread(find_many, query, 1, clickable=clickable,
-                                               near=near, name=name, context=context)
+                hits = await asyncio.to_thread(
+                    find_many, query, 1, clickable=clickable, near=near, name=name, context=context
+                )
                 if hits:
                     return hits[0]
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(control_message("waited_in_vain", query=str(query), seconds=f"{seconds:g}"))
+                    raise RuntimeError(
+                        control_message("waited_in_vain", query=str(query), seconds=f"{seconds:g}")
+                    )
                 await asyncio.sleep(interval)
 
         def _resolve_target(verb: str, args: list) -> list:
@@ -1399,8 +1720,14 @@ class _DispatchesTools:
             # An action is bracketed by two cheap observations, so the result says what changed, not what was touched.
             watched = name in watched_verbs
             # A glance on each side, not a full read: reading rebuilds the id map and re-points every held id.
-            before = await asyncio.to_thread(surface.glance, target_id) if watched else surface_module.Glance()
-            outcome = await asyncio.to_thread(surface.perform, target_id, name, list(args), keywords)
+            before = (
+                await asyncio.to_thread(surface.glance, target_id)
+                if watched
+                else surface_module.Glance()
+            )
+            outcome = await asyncio.to_thread(
+                surface.perform, target_id, name, list(args), keywords
+            )
             if isinstance(outcome, dict):
                 if outcome.get("ok") is False:
                     ran.append({name: args[0] if args else "", "failed": outcome.get("error", "")})
@@ -1411,7 +1738,9 @@ class _DispatchesTools:
                     record = await _record_change(name, args, before)
                     if record is not None:
                         changed.append(record)
-                        step.update({key: value for key, value in record.items() if key != "action"})
+                        step.update(
+                            {key: value for key, value in record.items() if key != "action"}
+                        )
                 ran.append(step)
                 # Hand the script the useful value: a result or text directly, an action its confirmation.
                 if "result" in outcome:
@@ -1425,17 +1754,26 @@ class _DispatchesTools:
         # The baseline the target diff is reported against, so the model is told what its own actions did.
         targets_before = target_registry.list_targets()
         result = await control.run_control_script(
-            script, dispatch, profile=active.sandbox, workspace=active.workspace,
+            script,
+            dispatch,
+            profile=active.sandbox,
+            workspace=active.workspace,
             # Only what this surface implements and this session may run, so a missing name fails against the surface.
             primitives=tuple(sorted(permitted_primitives)),
             # The place the script drives, so the child binds a `screen` already pointed at it.
             target=target_id,
             # Where saved workflows live, so `from workflows.x import y` reaches them.
-            import_roots=workflow_registry.import_roots(self._project_directory or active.workspace or ""),
+            import_roots=workflow_registry.import_roots(
+                self._project_directory or active.workspace or ""
+            ),
             # And what those skills installed into, so a package with dependencies works.
-            dependency_roots=workflow_registry.dependency_roots(self._project_directory or active.workspace or ""),
+            dependency_roots=workflow_registry.dependency_roots(
+                self._project_directory or active.workspace or ""
+            ),
             # And where those dependencies keep the shared libraries they were built against.
-            library_roots=workflow_registry.library_roots(self._project_directory or active.workspace or ""),
+            library_roots=workflow_registry.library_roots(
+                self._project_directory or active.workspace or ""
+            ),
         )
         if isinstance(result, dict):
             moved = target_registry.difference(targets_before, target_registry.list_targets())

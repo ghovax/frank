@@ -105,7 +105,9 @@ def call(method: str, **params: Any) -> dict:
     try:
         body = response.json()
     except ValueError as error:
-        raise DaemonError(f"langmeshd returned something that was not JSON ({response.status_code}).") from error
+        raise DaemonError(
+            f"langmeshd returned something that was not JSON ({response.status_code})."
+        ) from error
     if "error" in body:
         raise DaemonError(body["error"].get("message") or "The call failed.")
     if response.status_code >= 400:

@@ -3,7 +3,16 @@
 import { Box, Button, Flex, Separator, Span, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { LuCheck, LuClock, LuCopy, LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTrash2, LuTriangleAlert } from "react-icons/lu";
+import {
+  LuCheck,
+  LuClock,
+  LuCopy,
+  LuFoldVertical,
+  LuMessagesSquare,
+  LuRotateCw,
+  LuTrash2,
+  LuTriangleAlert,
+} from "react-icons/lu";
 import { swallowed } from "@/lib/swallowed";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
@@ -67,12 +76,7 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
       </Box>
       {onRetry && (
         <Flex mt={2.5}>
-          <Button
-            variant="solid"
-            colorPalette="red"
-            fontWeight="medium"
-            onClick={onRetry}
-          >
+          <Button variant="solid" colorPalette="red" fontWeight="medium" onClick={onRetry}>
             <LuRotateCw size={13} />
             {translation("tryAgain")}
           </Button>
@@ -140,15 +144,26 @@ export interface QueuedMessageState {
 }
 
 /** What is under a message you sent: when it was sent, and the small things you can do to it. */
-function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: string; queued?: QueuedMessageState }) {
+function MessageFooter({
+  content,
+  sentAt,
+  queued,
+}: {
+  content: string;
+  sentAt: string;
+  queued?: QueuedMessageState;
+}) {
   const translation = useTranslations("ChatMessage");
   // A minute is the finest step the wording has, so re-reading the clock more often would change nothing.
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
 
-  useEffect(() => () => {
-    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   const copy = async () => {
     try {
@@ -179,7 +194,9 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
             <Span display="inline-flex" alignItems="center">
               {queued.failed ? <LuTriangleAlert size={11} /> : <LuClock size={11} />}
             </Span>
-            <Text textStyle="fieldLabel" color={queued.failed ? "red.fg" : "fg.subtle"}>{queued.status}</Text>
+            <Text textStyle="fieldLabel" color={queued.failed ? "red.fg" : "fg.subtle"}>
+              {queued.status}
+            </Text>
           </Flex>
         ) : null
       ) : dated ? (
@@ -187,7 +204,9 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
         <RelativeTime date={dated} textStyle="fieldLabel" pe={1} />
       ) : null}
       {queued?.onRetry && queued.retryLabel && (
-        <Button size="2xs" variant="outline" onClick={queued.onRetry}>{queued.retryLabel}</Button>
+        <Button size="2xs" variant="outline" onClick={queued.onRetry}>
+          {queued.retryLabel}
+        </Button>
       )}
       {content.trim() && (
         <Button size="2xs" variant="ghost" color="fg.subtle" onClick={copy}>
@@ -210,7 +229,11 @@ export function UserMessageCard({
   message,
   banner = "",
   queued,
-}: { message: ChatMessage; banner?: string; queued?: QueuedMessageState }) {
+}: {
+  message: ChatMessage;
+  banner?: string;
+  queued?: QueuedMessageState;
+}) {
   const translation = useTranslations("ChatMessage");
   const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
   const contentRef = useRef<HTMLDivElement>(null);
@@ -225,11 +248,22 @@ export function UserMessageCard({
   }, [message.content]);
 
   return (
-    <Flex className="message-row" direction="column" alignSelf="flex-end" align="flex-end" gap={1.5} maxW="80%">
+    <Flex
+      className="message-row"
+      direction="column"
+      alignSelf="flex-end"
+      align="flex-end"
+      gap={1.5}
+      maxW="80%"
+    >
       {banner && (
         <Flex align="center" gap={1.5} color="fg.muted">
-          <ActivityIcon><LuMessagesSquare /></ActivityIcon>
-          <Text fontSize="xs" fontWeight="medium">{banner}</Text>
+          <ActivityIcon>
+            <LuMessagesSquare />
+          </ActivityIcon>
+          <Text fontSize="xs" fontWeight="medium">
+            {banner}
+          </Text>
         </Flex>
       )}
       {attachments.length > 0 && <AttachmentChips attachments={attachments} />}
@@ -281,7 +315,11 @@ export function UserMessageCard({
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry, streaming = false }: ChatMessageProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({
+  message,
+  onRetry,
+  streaming = false,
+}: ChatMessageProps) {
   const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
@@ -296,7 +334,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
       if (!message.contentBlocks) {
         throw new Error("Assistant messages require structured content blocks.");
       }
-      const contentBlocks = message.contentBlocks.filter((contentBlock) => contentBlock.content.trim());
+      const contentBlocks = message.contentBlocks.filter((contentBlock) =>
+        contentBlock.content.trim(),
+      );
       if (contentBlocks.length === 0) return null;
       return (
         // No horizontal inset, so the prose shares its left edge with the tool-activity lines.
@@ -353,12 +393,15 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
               gap={1.5}
               flexShrink={0}
               color={running ? "blue.fg" : undefined}
-              title={running || !before ? undefined : translation("compactedTooltip", { before, after })}
+              title={
+                running || !before ? undefined : translation("compactedTooltip", { before, after })
+              }
             >
-              <ActivityIcon>
-                {running ? <ActivitySpinner /> : <LuFoldVertical />}
-              </ActivityIcon>
-              <Text textStyle="fieldLabel" className={running ? "running-title-shimmer" : undefined}>
+              <ActivityIcon>{running ? <ActivitySpinner /> : <LuFoldVertical />}</ActivityIcon>
+              <Text
+                textStyle="fieldLabel"
+                className={running ? "running-title-shimmer" : undefined}
+              >
                 {running ? translation("compactingContext") : translation("contextCompacted")}
               </Text>
             </Flex>
@@ -378,7 +421,10 @@ interface ChatToolGroupProps {
   keepOpen?: boolean;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, keepOpen }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({
+  messages,
+  keepOpen,
+}: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the shape the shared group renders.
   const tools: ToolEvent[] = messages.map((message) => ({
     name: message.content,
@@ -389,10 +435,5 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, keepOpen }:
     permission: message.meta?.permission as ToolPermission | undefined,
     question: message.meta?.question as ToolQuestion | undefined,
   }));
-  return (
-    <ToolGroup
-      tools={tools}
-      keepOpen={keepOpen}
-    />
-  );
+  return <ToolGroup tools={tools} keepOpen={keepOpen} />;
 });

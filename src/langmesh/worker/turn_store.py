@@ -65,7 +65,9 @@ class DaemonTurnStore(TaskStore):
 
     async def save_session_state(self, session_id: str, session_state: dict) -> None:
         """Write the durable goal/task state alone, for a change that happened between turns."""
-        await self._call("turn.save_session_state", session_id=session_id, session_state=session_state)
+        await self._call(
+            "turn.save_session_state", session_id=session_id, session_state=session_state
+        )
 
     async def load_checkpoint(self, session_id: str) -> dict:
         return await self._call("turn.load_checkpoint", session_id=session_id) or {
@@ -88,13 +90,18 @@ class DaemonTurnStore(TaskStore):
 
     async def append_ledger(self, session_id: str, ledger: str, entries: list) -> None:
         """Append a fold's entries to a session's ledger, which only the daemon may write."""
-        await self._call("session.append_ledger", session_id=session_id, ledger=ledger, entries=entries)
+        await self._call(
+            "session.append_ledger", session_id=session_id, ledger=ledger, entries=entries
+        )
 
     async def ledger_entries(self, session_id: str, ledger: str, live_only: bool = True) -> list:
         """A session's ledger, live entries only unless the whole chain is asked for."""
-        return await self._call(
-            "session.ledger", session_id=session_id, ledger=ledger, live_only=live_only
-        ) or []
+        return (
+            await self._call(
+                "session.ledger", session_id=session_id, ledger=ledger, live_only=live_only
+            )
+            or []
+        )
 
     async def publish_event(self, event: dict) -> None:
         """Hand a live turn event to the daemon, so whoever is attached sees it now."""

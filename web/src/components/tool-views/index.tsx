@@ -9,7 +9,17 @@ import { LuExternalLink } from "react-icons/lu";
 import { openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { MarkdownContent } from "../markdown-content";
 import { RelativeTime } from "../ui/relative-time";
-import { Card, EmptyHint, Field, FieldList, InlineField, Mono, MonoBlock, MonoList, ProseList } from "../ui/display";
+import {
+  Card,
+  EmptyHint,
+  Field,
+  FieldList,
+  InlineField,
+  Mono,
+  MonoBlock,
+  MonoList,
+  ProseList,
+} from "../ui/display";
 import { asArray, asRecord, asString } from "@/lib/coerce";
 import { declaredNonMutating, requestedAccess } from "@shared/tools";
 import { Pill } from "../ui/pill";
@@ -38,7 +48,9 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
       <Field label={translation("command")}>
         <MonoBlock>{command}</MonoBlock>
       </Field>
-      <InlineField label={translation("readOnly")}>{readOnly ? translation("yes") : translation("no")}</InlineField>
+      <InlineField label={translation("readOnly")}>
+        {readOnly ? translation("yes") : translation("no")}
+      </InlineField>
       {access.writes.length > 0 && (
         <Field label={translation("accessWrite")}>
           <MonoList items={access.writes} />
@@ -75,7 +87,9 @@ function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   return (
     <FieldList>
       {asString(args.target) && (
-        <InlineField label={translation("controlTarget")}><Mono>{asString(args.target)}</Mono></InlineField>
+        <InlineField label={translation("controlTarget")}>
+          <Mono>{asString(args.target)}</Mono>
+        </InlineField>
       )}
       <Field label={translation("controlScript")}>
         <MonoBlock>{asString(args.script)}</MonoBlock>
@@ -107,7 +121,12 @@ function taskHashLabel(id: string): string {
 }
 
 // One row shared by task creation and updates: number, status badge, prose as markdown, and dependency chips.
-function TaskRow({ label, status, body, dependencies = [] }: {
+function TaskRow({
+  label,
+  status,
+  body,
+  dependencies = [],
+}: {
   label: string;
   status: string;
   body: string;
@@ -118,16 +137,26 @@ function TaskRow({ label, status, body, dependencies = [] }: {
   return (
     <Card>
       <Flex align="center" gap={2} mb={body ? 1.5 : 0}>
-        <Text textStyle="sectionLabel" flexShrink={0}>{label}</Text>
+        <Text textStyle="sectionLabel" flexShrink={0}>
+          {label}
+        </Text>
         <Box flex={1} />
-        {appearance && <Pill colorPalette={appearance.palette}>{translation(appearance.key as Parameters<typeof translation>[0])}</Pill>}
+        {appearance && (
+          <Pill colorPalette={appearance.palette}>
+            {translation(appearance.key as Parameters<typeof translation>[0])}
+          </Pill>
+        )}
       </Flex>
       {body && <MarkdownContent content={body} fontSize="xs" />}
       {dependencies.length > 0 && (
         <Flex align="center" gap={1} mt={1.5} flexWrap="wrap">
-          <Text fontSize="2xs" color="fg.subtle">{translation("dependsOn")}</Text>
+          <Text fontSize="2xs" color="fg.subtle">
+            {translation("dependsOn")}
+          </Text>
           {dependencies.map((dependency) => (
-            <Pill key={dependency} colorPalette="purple">{taskHashLabel(dependency)}</Pill>
+            <Pill key={dependency} colorPalette="purple">
+              {taskHashLabel(dependency)}
+            </Pill>
           ))}
         </Flex>
       )}
@@ -266,8 +295,14 @@ function FetchUrlCallView({ args }: { args: Record<string, unknown> }) {
       <InlineField label={translation("url")}>
         <Mono>{asString(args.url)}</Mono>
       </InlineField>
-      {args.format ? <InlineField label={translation("format")}>{asString(args.format)}</InlineField> : null}
-      {args.timeout != null && <InlineField label={translation("timeout")}>{translation("secondsValue", { value: asString(args.timeout) })}</InlineField>}
+      {args.format ? (
+        <InlineField label={translation("format")}>{asString(args.format)}</InlineField>
+      ) : null}
+      {args.timeout != null && (
+        <InlineField label={translation("timeout")}>
+          {translation("secondsValue", { value: asString(args.timeout) })}
+        </InlineField>
+      )}
     </FieldList>
   );
 }
@@ -327,14 +362,34 @@ function ChangeRow({ entry }: { entry: Record<string, unknown> }) {
   const nothingChanged = Array.isArray(entry.changed) && entry.changed.length === 0;
   return (
     <Flex align="baseline" gap={2} wrap="wrap">
-      <Text fontSize="2xs" color="fg.muted">{asString(entry.action)}</Text>
-      {where && <Mono fontSize="2xs" color="fg.subtle">{where}</Mono>}
-      {destination && <Text fontSize="2xs" color="fg.muted">{destination}</Text>}
-      {appearedCount > 0 && (
-        <Text fontSize="2xs" color="fg.subtle">{translation("controlAppeared", { count: appearedCount })}</Text>
+      <Text fontSize="2xs" color="fg.muted">
+        {asString(entry.action)}
+      </Text>
+      {where && (
+        <Mono fontSize="2xs" color="fg.subtle">
+          {where}
+        </Mono>
       )}
-      {nothingChanged && <Text fontSize="2xs" color="fg.subtle">{translation("controlNoChange")}</Text>}
-      {entry.visible === false && <Text fontSize="2xs" color="fg.subtle">{translation("controlOffScreen")}</Text>}
+      {destination && (
+        <Text fontSize="2xs" color="fg.muted">
+          {destination}
+        </Text>
+      )}
+      {appearedCount > 0 && (
+        <Text fontSize="2xs" color="fg.subtle">
+          {translation("controlAppeared", { count: appearedCount })}
+        </Text>
+      )}
+      {nothingChanged && (
+        <Text fontSize="2xs" color="fg.subtle">
+          {translation("controlNoChange")}
+        </Text>
+      )}
+      {entry.visible === false && (
+        <Text fontSize="2xs" color="fg.subtle">
+          {translation("controlOffScreen")}
+        </Text>
+      )}
     </Flex>
   );
 }
@@ -364,7 +419,12 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
     );
   }
   const resultValue = data.value;
-  const resultText = resultValue == null ? "" : typeof resultValue === "object" ? JSON.stringify(resultValue, null, 2) : asString(resultValue);
+  const resultText =
+    resultValue == null
+      ? ""
+      : typeof resultValue === "object"
+        ? JSON.stringify(resultValue, null, 2)
+        : asString(resultValue);
   const stdout = asString(data.stdout);
   // What each action changed rather than what it was aimed at, which is the question a script cannot already answer.
   const changed = asArray(data.changed).map(asRecord);
@@ -374,7 +434,9 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
       {changed.length > 0 && (
         <Field label={translation("controlChanged")}>
           <Flex direction="column" gap={1}>
-            {changed.map((entry, index) => <ChangeRow key={index} entry={entry} />)}
+            {changed.map((entry, index) => (
+              <ChangeRow key={index} entry={entry} />
+            ))}
           </Flex>
         </Field>
       )}
@@ -398,7 +460,9 @@ function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
   const content = asString(data.content);
   return (
     <FieldList>
-      {data.truncated === true && <InlineField label={translation("truncated")}>{translation("yes")}</InlineField>}
+      {data.truncated === true && (
+        <InlineField label={translation("truncated")}>{translation("yes")}</InlineField>
+      )}
       {content && (
         <Field label={translation("content")}>
           <MarkdownContent content={content} fontSize="xs" />
@@ -458,7 +522,14 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   return (
     <FieldList>
       {entries.map(([key, value]) => (
-        <InlineField key={key} label={FIELD_LABEL_KEYS[key] ? translation(FIELD_LABEL_KEYS[key] as Parameters<typeof translation>[0]) : key}>
+        <InlineField
+          key={key}
+          label={
+            FIELD_LABEL_KEYS[key]
+              ? translation(FIELD_LABEL_KEYS[key] as Parameters<typeof translation>[0])
+              : key
+          }
+        >
           {value && typeof value === "object" ? (
             // Structured values (objects/arrays) are data — monospace JSON.
             <MonoBlock>{JSON.stringify(value, null, 2)}</MonoBlock>
@@ -483,7 +554,9 @@ function CreateSessionCallView({ args }: { args: Record<string, unknown> }) {
   const permissions = useTranslations("SessionControls");
   const message = asString(args.message);
   // The mode as the rest of the interface names it, rather than the wire's own spelling.
-  const choice = PERMISSION_MODES.choices.find((item) => item.value === asString(args.permission_mode));
+  const choice = PERMISSION_MODES.choices.find(
+    (item) => item.value === asString(args.permission_mode),
+  );
   const permissionKey = choice?.nameKey ?? choice?.labelKey;
   return (
     <FieldList>
@@ -571,7 +644,9 @@ function SessionListResultView({ data }: { data: Record<string, unknown> }) {
             <Pill colorPalette={PEER_ACTIVITY_PALETTE[asString(session.activity)] ?? "gray"}>
               {asString(session.activity) || asString(session.lifecycle)}
             </Pill>
-            {session.awaiting_input ? <Pill colorPalette="orange">{translation("peerWaiting")}</Pill> : null}
+            {session.awaiting_input ? (
+              <Pill colorPalette="orange">{translation("peerWaiting")}</Pill>
+            ) : null}
           </Flex>
         </InlineField>
       ))}
@@ -587,13 +662,19 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
   // The session id is not repeated here, since the call above already states which session this is about.
   const activity = asString(data.activity);
   const activityKey = ACTIVITY_LABEL_KEYS[activity];
-  const resultChoice = PERMISSION_MODES.choices.find((item) => item.value === asString(data.permission_mode));
+  const resultChoice = PERMISSION_MODES.choices.find(
+    (item) => item.value === asString(data.permission_mode),
+  );
   const permissionKey = resultChoice?.nameKey ?? resultChoice?.labelKey;
   // The row's completed state already says the call worked, so only a status that is not `ok` is worth a line.
   const failed = asString(data.status) === "error";
   return (
     <FieldList>
-      {asString(data.agent) && <InlineField label={translation("peerAgent")}>{agentName(asString(data.agent))}</InlineField>}
+      {asString(data.agent) && (
+        <InlineField label={translation("peerAgent")}>
+          {agentName(asString(data.agent))}
+        </InlineField>
+      )}
       {permissionKey && (
         <InlineField label={translation("peerMode")}>
           {permissions(permissionKey as Parameters<typeof permissions>[0])}
@@ -669,20 +750,30 @@ function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
   return (
     <FieldList>
       <InlineField label={translation("fieldOutcome")}>
-        <Pill colorPalette={code === "goal_active" ? "blue" : code === "goal_blocked" ? "orange" : "green"}>
+        <Pill
+          colorPalette={
+            code === "goal_active" ? "blue" : code === "goal_blocked" ? "orange" : "green"
+          }
+        >
           {translation(outcome as Parameters<typeof translation>[0])}
         </Pill>
       </InlineField>
       {goal ? (
-        <Field label={translation("goal")}><MarkdownContent content={goal} fontSize="xs" /></Field>
+        <Field label={translation("goal")}>
+          <MarkdownContent content={goal} fontSize="xs" />
+        </Field>
       ) : null}
       {previous ? (
-        <Field label={translation("previousGoal")}><MarkdownContent content={previous} fontSize="xs" /></Field>
+        <Field label={translation("previousGoal")}>
+          <MarkdownContent content={previous} fontSize="xs" />
+        </Field>
       ) : null}
       <GoalLines label={translation("goalRequirements")} lines={requirements} />
       <GoalLines label={translation("goalEvidence")} lines={evidence} />
       {blocker ? (
-        <Field label={translation("goalBlocker")}><MarkdownContent content={blocker} fontSize="xs" /></Field>
+        <Field label={translation("goalBlocker")}>
+          <MarkdownContent content={blocker} fontSize="xs" />
+        </Field>
       ) : null}
     </FieldList>
   );
@@ -740,17 +831,31 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
   if (!output && !outputFile && !hasMeta) return null;
   return (
     <FieldList>
-      {data.pid != null && <InlineField label={translation("pid")}>{asString(data.pid)}</InlineField>}
-      {data.size != null && <InlineField label={translation("size")}>{translation("bytesValue", { value: asString(data.size) })}</InlineField>}
-      {data.truncated === true && <InlineField label={translation("truncated")}>{translation("yes")}</InlineField>}
+      {data.pid != null && (
+        <InlineField label={translation("pid")}>{asString(data.pid)}</InlineField>
+      )}
+      {data.size != null && (
+        <InlineField label={translation("size")}>
+          {translation("bytesValue", { value: asString(data.size) })}
+        </InlineField>
+      )}
+      {data.truncated === true && (
+        <InlineField label={translation("truncated")}>{translation("yes")}</InlineField>
+      )}
       {output ? (
         <Field label={translation("output")}>
           <MonoBlock>{output}</MonoBlock>
         </Field>
       ) : outputFile ? (
-        <InlineField label={translation("output")}><Mono>{outputFile}</Mono></InlineField>
+        <InlineField label={translation("output")}>
+          <Mono>{outputFile}</Mono>
+        </InlineField>
       ) : null}
-      {output && outputFile ? <InlineField label={translation("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
+      {output && outputFile ? (
+        <InlineField label={translation("fullOutput")}>
+          <Mono>{outputFile}</Mono>
+        </InlineField>
+      ) : null}
     </FieldList>
   );
 }
@@ -771,21 +876,32 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
       <Flex direction="column" gap={1} minW={0}>
         {url ? (
           // Sized to its own text rather than stretched across the card, so the link is not a click target over empty space.
-          <Link href={url} target="_blank" rel="noopener noreferrer" colorPalette="blue" textStyle="fieldLabel" alignSelf="flex-start">
+          <Link
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            colorPalette="blue"
+            textStyle="fieldLabel"
+            alignSelf="flex-start"
+          >
             {title}
           </Link>
         ) : (
           <Text textStyle="fieldLabel">{title}</Text>
         )}
         {url && (
-          <Mono color="fg.subtle" truncate>{url}</Mono>
+          <Mono color="fg.subtle" truncate>
+            {url}
+          </Mono>
         )}
         {published && (
           <InlineField label={translation("published")}>
-            {publishedKnown
-              ? <RelativeTime date={publishedAt} />
+            {publishedKnown ? (
+              <RelativeTime date={publishedAt} />
+            ) : (
               // Whatever the provider sent, unparsed rather than dropped, since a date we cannot read is one the reader might.
-              : published}
+              published
+            )}
           </InlineField>
         )}
         {summary && (
@@ -805,7 +921,9 @@ function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
   if (results.length === 0) return <EmptyHint>{translation("noResults")}</EmptyHint>;
   return (
     <Flex direction="column" gap={1.5}>
-      {results.map((result, index) => <WebResultCard key={index} result={result} />)}
+      {results.map((result, index) => (
+        <WebResultCard key={index} result={result} />
+      ))}
     </Flex>
   );
 }
@@ -813,7 +931,14 @@ function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
 // One shared in-chat alert surface, whose palette drives the tint while callers supply the body.
 function AlertBox({ colorPalette, children }: { colorPalette: string; children: ReactNode }) {
   return (
-    <Box bg={`${colorPalette}.subtle`} border="1px solid" borderColor={`${colorPalette}.muted`} borderRadius="md" px={2.5} py={2}>
+    <Box
+      bg={`${colorPalette}.subtle`}
+      border="1px solid"
+      borderColor={`${colorPalette}.muted`}
+      borderRadius="md"
+      px={2.5}
+      py={2}
+    >
       {children}
     </Box>
   );
@@ -835,7 +960,9 @@ function ErrorView({ message }: { message: string }) {
       <Alert.Indicator />
       <Alert.Content flex={1} minW={0}>
         <Alert.Title fontSize="xs">{translation("errorTitle")}</Alert.Title>
-        <Alert.Description fontSize="xs" color="fg.muted">{body}</Alert.Description>
+        <Alert.Description fontSize="xs" color="fg.muted">
+          {body}
+        </Alert.Description>
       </Alert.Content>
     </Alert.Root>
   );
@@ -847,18 +974,28 @@ function BrowserAuthorizationPending() {
   return (
     <AlertBox colorPalette="blue">
       <Text textStyle="fieldLabel">{translation("browserAuthorizationTitle")}</Text>
-      <Text fontSize="xs" color="fg.muted" mt={0.5}>{translation("browserAuthorizationBody")}</Text>
+      <Text fontSize="xs" color="fg.muted" mt={0.5}>
+        {translation("browserAuthorizationBody")}
+      </Text>
     </AlertBox>
   );
 }
 
-function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string; browserName?: string }) {
+function BrowserRemoteDebuggingAlert({
+  address,
+  browserName,
+}: {
+  address: string;
+  browserName?: string;
+}) {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
   return (
     <AlertBox colorPalette="yellow">
       <Text textStyle="fieldLabel">{translation("browserEnableTitle")}</Text>
-      <Text fontSize="xs" color="fg.muted" mt={0.5}>{translation("browserEnableBody")}</Text>
+      <Text fontSize="xs" color="fg.muted" mt={0.5}>
+        {translation("browserEnableBody")}
+      </Text>
       <Flex align="center" gap={2} mt={2}>
         <Button
           size="xs"
@@ -869,9 +1006,15 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
           <LuExternalLink size={12} />
           {translation("browserEnableButton")}
         </Button>
-        <Mono fontSize="2xs" color="fg.subtle">{address}</Mono>
+        <Mono fontSize="2xs" color="fg.subtle">
+          {address}
+        </Mono>
       </Flex>
-      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{translation("browserEnableOpened")}</Text>}
+      {opened && (
+        <Text fontSize="2xs" color="green.fg" mt={1.5}>
+          {translation("browserEnableOpened")}
+        </Text>
+      )}
     </AlertBox>
   );
 }
@@ -882,9 +1025,7 @@ function PermissionGrantAlert() {
   const [opened, setOpened] = useState(false);
   return (
     <AlertBox colorPalette="yellow">
-      <Text textStyle="fieldLabel">
-        {translation("permissionAccessibilityTitle")}
-      </Text>
+      <Text textStyle="fieldLabel">{translation("permissionAccessibilityTitle")}</Text>
       <Text fontSize="xs" color="fg.muted" mt={0.5}>
         {translation("permissionAccessibilityBody")}
       </Text>
@@ -902,7 +1043,11 @@ function PermissionGrantAlert() {
           {translation("permissionGrantButton")}
         </Button>
       </Flex>
-      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{translation("permissionOpened")}</Text>}
+      {opened && (
+        <Text fontSize="2xs" color="green.fg" mt={1.5}>
+          {translation("permissionOpened")}
+        </Text>
+      )}
     </AlertBox>
   );
 }
@@ -923,7 +1068,11 @@ function compactMcpContent(content: unknown): unknown {
     }
     if (record.uri && (record.mimeType || record.mime_type)) {
       const mimeType = asString(record.mimeType || record.mime_type);
-      if (mimeType.startsWith("image/") || mimeType === "text/html" || mimeType === "application/xhtml+xml") {
+      if (
+        mimeType.startsWith("image/") ||
+        mimeType === "text/html" ||
+        mimeType === "application/xhtml+xml"
+      ) {
         return {
           type: "resource",
           uri: record.uri,
@@ -941,7 +1090,10 @@ function McpResultView({ data }: { data: Record<string, unknown> }) {
     return <ErrorView message={translation("mcpToolError")} />;
   }
   const structuredContent = data.structured_content;
-  const output = structuredContent != null ? structuredContent : compactMcpContent(data.content ?? data.contents);
+  const output =
+    structuredContent != null
+      ? structuredContent
+      : compactMcpContent(data.content ?? data.contents);
   if (output == null || (Array.isArray(output) && output.length === 0)) {
     return null;
   }
@@ -976,9 +1128,11 @@ export function ToolResultView({
     if (status === "running" && hasBackgroundJobId(data)) return null;
     if (code === "tool_error") return null;
     if (code === "web_search_completed") return <SearchWebResultView data={data} />;
-    if (code === "web_search_error") return <ErrorView message={asString(data.message) || translation("searchFailed")} />;
+    if (code === "web_search_error")
+      return <ErrorView message={asString(data.message) || translation("searchFailed")} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
-    if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
+    if (name === "call_mcp_tool" || name === "read_mcp_resource")
+      return <McpResultView data={data} />;
     if (code === "empty_response") {
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;

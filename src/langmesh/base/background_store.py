@@ -22,9 +22,9 @@ BACKGROUND_DATABASE_FILENAME = "background.db"
 
 # Lifecycle of a persisted job.
 STATUS_RUNNING = "running"
-STATUS_COMPLETED = "completed"      # finished; result stored; not yet delivered to the model
-STATUS_DELIVERED = "delivered"      # result has reached the model (in-turn or via an autonomous wake)
-STATUS_ABANDONED = "abandoned"      # could not be recovered after a restart (e.g. a bash command)
+STATUS_COMPLETED = "completed"  # finished; result stored; not yet delivered to the model
+STATUS_DELIVERED = "delivered"  # result has reached the model (in-turn or via an autonomous wake)
+STATUS_ABANDONED = "abandoned"  # could not be recovered after a restart (e.g. a bash command)
 
 
 def background_database_path() -> Path:
@@ -115,7 +115,9 @@ class BackgroundJobStore:
                     for row in connection.execute("PRAGMA table_info(background_jobs)").fetchall()
                 }
                 if "process_group" not in existing_columns:
-                    connection.execute("ALTER TABLE background_jobs ADD COLUMN process_group INTEGER")
+                    connection.execute(
+                        "ALTER TABLE background_jobs ADD COLUMN process_group INTEGER"
+                    )
                 # Indices matched to the hot queries, so the startup and per-turn scans stay cheap.
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status "

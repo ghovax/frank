@@ -18,7 +18,9 @@ def _iso_now() -> str:
 
 
 def _location_address(record: LocationRecord) -> LocationAddress:
-    return LocationAddress(kind=record.kind, base_directory=record.base_directory, host_alias=record.host_alias or "")
+    return LocationAddress(
+        kind=record.kind, base_directory=record.base_directory, host_alias=record.host_alias or ""
+    )
 
 
 def _serialize_location(record: LocationRecord) -> dict[str, Any]:
@@ -27,7 +29,9 @@ def _serialize_location(record: LocationRecord) -> dict[str, Any]:
         uri = location_uri_for(_location_address(record))
     except Exception:
         uri = ""
-    host_known = record.kind == "local" or (bool(record.host_alias) and host_is_defined(record.host_alias))
+    host_known = record.kind == "local" or (
+        bool(record.host_alias) and host_is_defined(record.host_alias)
+    )
     return {
         "id": record.id,
         "workspace_id": record.workspace_id,
@@ -42,7 +46,9 @@ def _serialize_location(record: LocationRecord) -> dict[str, Any]:
     }
 
 
-def _serialize_workspace(record: WorkspaceRecord, database_session, *, with_locations: bool = True) -> dict[str, Any]:
+def _serialize_workspace(
+    record: WorkspaceRecord, database_session, *, with_locations: bool = True
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": record.id,
         "created_at": record.created_at,
@@ -57,20 +63,34 @@ def _serialize_workspace(record: WorkspaceRecord, database_session, *, with_loca
             .all()
         )
         payload["locations"] = [_serialize_location(location) for location in locations]
-    session_count = database_session.query(SessionRecord).filter(SessionRecord.workspace_id == record.id).count()
+    session_count = (
+        database_session.query(SessionRecord)
+        .filter(SessionRecord.workspace_id == record.id)
+        .count()
+    )
     payload["session_count"] = session_count
     return payload
 
 
-def _derive_location_name(database_session, workspace_id: str, kind: str, base_directory: str, host_alias: str, *, exclude_id: str = "") -> str:
+def _derive_location_name(
+    database_session,
+    workspace_id: str,
+    kind: str,
+    base_directory: str,
+    host_alias: str,
+    *,
+    exclude_id: str = "",
+) -> str:
     """The agent-facing name for a location, derived from its connection rather than entered."""
     if kind == "remote":
         base = (host_alias or "").strip() or "remote"
     else:
         base = Path(base_directory.strip().rstrip("/")).name or "local"
     existing = {
-        row.name for row in database_session.query(LocationRecord.name)
-        .filter(LocationRecord.workspace_id == workspace_id, LocationRecord.id != exclude_id).all()
+        row.name
+        for row in database_session.query(LocationRecord.name)
+        .filter(LocationRecord.workspace_id == workspace_id, LocationRecord.id != exclude_id)
+        .all()
     }
     if base not in existing:
         return base
@@ -80,7 +100,9 @@ def _derive_location_name(database_session, workspace_id: str, kind: str, base_d
     return f"{base}-{index}"
 
 
-def _location_pair_conflict(first: tuple[str, str, str], second: tuple[str, str, str]) -> str | None:
+def _location_pair_conflict(
+    first: tuple[str, str, str], second: tuple[str, str, str]
+) -> str | None:
     """The overlap message for one pair of locations, or `None` when they do not conflict."""
     (machine_a, path_a, raw_a), (machine_b, path_b, raw_b) = first, second
     if machine_a != machine_b or not path_a or not path_b:
@@ -105,12 +127,18 @@ def _locations_conflict_message(entries: list[tuple[str, str, str]]) -> str | No
         for kind, host, base in entries
     ]
     return next(
-        (message for first, second in combinations(normalized, 2) if (message := _location_pair_conflict(first, second))),
+        (
+            message
+            for first, second in combinations(normalized, 2)
+            if (message := _location_pair_conflict(first, second))
+        ),
         None,
     )
 
 
-def _existing_location_entries(database_session, workspace_id: str, *, exclude_id: str = "") -> list[tuple[str, str, str]]:
+def _existing_location_entries(
+    database_session, workspace_id: str, *, exclude_id: str = ""
+) -> list[tuple[str, str, str]]:
     rows = (
         database_session.query(LocationRecord)
         .filter(LocationRecord.workspace_id == workspace_id, LocationRecord.id != exclude_id)
@@ -119,14 +147,18 @@ def _existing_location_entries(database_session, workspace_id: str, *, exclude_i
     return [(row.kind, row.host_alias or "", row.base_directory) for row in rows]
 
 
-def _add_location_row(database_session, workspace_id: str, location_input: LocationInput) -> LocationRecord:
+def _add_location_row(
+    database_session, workspace_id: str, location_input: LocationInput
+) -> LocationRecord:
     kind = location_input.kind if location_input.kind in ("local", "remote") else "local"
     host_alias = (location_input.host_alias or "").strip()
     base_directory = location_input.base_directory.strip()
     record = LocationRecord(
         id=str(uuid.uuid4()),
         workspace_id=workspace_id,
-        name=_derive_location_name(database_session, workspace_id, kind, base_directory, host_alias),
+        name=_derive_location_name(
+            database_session, workspace_id, kind, base_directory, host_alias
+        ),
         kind=kind,
         host_alias=host_alias,
         base_directory=base_directory,
@@ -173,14 +205,16 @@ def _resolve_session_locations(session_id: str) -> list[dict[str, Any]] | None:
                 uri = location_uri_for(_location_address(location))
             except Exception:
                 uri = ""
-            resolved.append({
-                "uri": uri,
-                "name": location.name,
-                "kind": location.kind,
-                "base_directory": location.base_directory,
-                "host_alias": location.host_alias or "",
-                "permission_mode": location.permission_mode or "ask",
-            })
+            resolved.append(
+                {
+                    "uri": uri,
+                    "name": location.name,
+                    "kind": location.kind,
+                    "base_directory": location.base_directory,
+                    "host_alias": location.host_alias or "",
+                    "permission_mode": location.permission_mode or "ask",
+                }
+            )
         return resolved or None
     finally:
         database_session.close()

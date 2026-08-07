@@ -19,7 +19,9 @@ interface SessionTreeNode {
 }
 
 function buildSessionTree(entries: SessionEntry[]): SessionTreeNode[] {
-  const nodes = new Map(entries.map((entry) => [entry.sessionId, { entry, children: [] as SessionTreeNode[] }]));
+  const nodes = new Map(
+    entries.map((entry) => [entry.sessionId, { entry, children: [] as SessionTreeNode[] }]),
+  );
   const roots: SessionTreeNode[] = [];
   for (const node of nodes.values()) {
     // A child whose parent is not in this list is promoted to a root rather than dropped.
@@ -83,9 +85,13 @@ function DelegationBranch({
       unseenCompletions={unseenCompletions}
       disclosure={hasChildren ? (expanded ? "open" : "closed") : undefined}
       onDisclosureChange={() => onToggleCollapsed(node.entry.sessionId)}
-      badges={!expanded && hasChildren ? (
-        <Pill colorPalette={failed > 0 ? "red" : waiting > 0 ? "yellow" : "gray"}>{below.length}</Pill>
-      ) : undefined}
+      badges={
+        !expanded && hasChildren ? (
+          <Pill colorPalette={failed > 0 ? "red" : waiting > 0 ? "yellow" : "gray"}>
+            {below.length}
+          </Pill>
+        ) : undefined
+      }
       onResume={onResume}
       onRequestDelete={onRequestDelete}
     >
@@ -183,13 +189,19 @@ export function DelegatedWorkPanel({
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
         title={sidebarTranslation("deleteTitle")}
         confirmLabel={sidebarTranslation("deleteConfirm")}
         danger
-        onConfirm={() => { if (pendingDelete) onDeleteSession(pendingDelete); }}
+        onConfirm={() => {
+          if (pendingDelete) onDeleteSession(pendingDelete);
+        }}
       >
-        {sidebarTranslation("deleteBody", { title: pendingDelete?.title || sidebarTranslation("untitledConversation") })}
+        {sidebarTranslation("deleteBody", {
+          title: pendingDelete?.title || sidebarTranslation("untitledConversation"),
+        })}
       </ConfirmDialog>
     </PanelCard>
   );

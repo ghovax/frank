@@ -19,7 +19,9 @@ def load_catalogue(configuration: Configuration, directory: str | Path) -> Any:
     return project_catalogue(configuration, str(Path(directory).resolve()))
 
 
-def load_agent(name: str, directory: str | Path, *, configuration: Configuration | None = None) -> Any:
+def load_agent(
+    name: str, directory: str | Path, *, configuration: Configuration | None = None
+) -> Any:
     """One named agent profile from this machine, raising with what is available when the name is unknown."""
     resolved = configuration if configuration is not None else load_configuration(seed=False)
     catalogue = load_catalogue(resolved, directory)

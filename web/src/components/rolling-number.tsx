@@ -86,7 +86,14 @@ const Digit = memo(function Digit({ digit }: { digit: number }) {
         }}
       >
         {DIGITS.map((digit) => (
-          <Span key={digit} h="1em" lineHeight="1em" display="flex" alignItems="center" justifyContent="center">
+          <Span
+            key={digit}
+            h="1em"
+            lineHeight="1em"
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+          >
             {digit}
           </Span>
         ))}
@@ -99,9 +106,7 @@ interface RollingNumberProps {
   value: number;
 }
 
-export const RollingNumber = memo(function RollingNumber({
-  value,
-}: RollingNumberProps) {
+export const RollingNumber = memo(function RollingNumber({ value }: RollingNumberProps) {
   const { displayValue } = useAnimatedValue(value);
   const safeValue = normalizedValue(displayValue);
   const digits = String(safeValue).split("").map(Number);

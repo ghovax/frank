@@ -18,10 +18,14 @@ WINDOW_VOCABULARY = "window"
 PAGE_VOCABULARY = "page"
 
 # Applications whose windows are pages, reachable over the DevTools protocol rather than the accessibility tree.
-BROWSER_OWNERS = frozenset({"Google Chrome", "Chromium", "Google Chrome Canary", "Google Chrome Beta"})
+BROWSER_OWNERS = frozenset(
+    {"Google Chrome", "Chromium", "Google Chrome Canary", "Google Chrome Beta"}
+)
 
 # Processes that own windows nobody addresses, named rather than inferred so small real windows still show.
-FURNITURE_OWNERS = frozenset({"Control Center", "Window Server", "Dock", "Spotlight", "Notification Center"})
+FURNITURE_OWNERS = frozenset(
+    {"Control Center", "Window Server", "Dock", "Spotlight", "Notification Center"}
+)
 
 
 @dataclass(frozen=True)
@@ -31,7 +35,7 @@ class Target:
     id: str
     app: str
     title: str
-    surface: str                      # "computer" or "browser" — for routing, never for the model
+    surface: str  # "computer" or "browser" — for routing, never for the model
     can: str = WINDOW_VOCABULARY
     focused: bool = False
     visible: bool = True
@@ -41,11 +45,16 @@ class Target:
     bounds: tuple[int, int, int, int] = (0, 0, 0, 0)
     url: str = ""
     note: str = ""
-    address: dict[str, Any] = field(default_factory=dict)   # how the surface finds it again
+    address: dict[str, Any] = field(default_factory=dict)  # how the surface finds it again
 
     def described(self) -> dict[str, Any]:
         """The form handed to the model, where a key is absent rather than present and false."""
-        described: dict[str, Any] = {"id": self.id, "app": self.app, "title": self.title, "can": self.can}
+        described: dict[str, Any] = {
+            "id": self.id,
+            "app": self.app,
+            "title": self.title,
+            "can": self.can,
+        }
         if self.focused:
             described["focused"] = True
         if self.main:
@@ -75,14 +84,20 @@ def _window_server_windows() -> tuple[dict[int, dict[str, Any]], set[int]]:
     except Exception:  # noqa: BLE001 — a machine without Quartz simply has no native targets
         return {}, set()
     try:
-        everything = Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionAll | Quartz.kCGWindowListExcludeDesktopElements,
-            Quartz.kCGNullWindowID,
-        ) or []
-        on_screen = Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
-            Quartz.kCGNullWindowID,
-        ) or []
+        everything = (
+            Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionAll | Quartz.kCGWindowListExcludeDesktopElements,
+                Quartz.kCGNullWindowID,
+            )
+            or []
+        )
+        on_screen = (
+            Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+                Quartz.kCGNullWindowID,
+            )
+            or []
+        )
     except Exception:  # noqa: BLE001 — never let enumeration take the tool down
         logger.debug("could not enumerate windows", exc_info=True)
         return {}, set()
@@ -95,7 +110,8 @@ def _window_server_windows() -> tuple[dict[int, dict[str, Any]], set[int]]:
             continue
         numbered[int(number)] = {"app": owner, "pid": int(process_id)}
     visible = {
-        int(window["kCGWindowNumber"]) for window in on_screen
+        int(window["kCGWindowNumber"])
+        for window in on_screen
         if window.get("kCGWindowNumber") is not None
     }
     return numbered, visible
@@ -138,35 +154,43 @@ def _native_targets() -> list[Target]:
             app = entry["app"] if entry else accessibility.app_name_for_pid(pid)
             on_screen = record.window_id in visible_ids
             is_page = app in BROWSER_OWNERS
-            targets.append(Target(
-                id=f"{NATIVE_PREFIX}-{record.window_id}",
-                app=app,
-                title=record.title,
-                surface="browser" if is_page else "computer",
-                can=PAGE_VOCABULARY if is_page else WINDOW_VOCABULARY,
-                focused=pid == frontmost and on_screen,
-                visible=on_screen and not record.minimized,
-                main=record.main,
-                document=_readable_document(record.document),
-                bounds=record.bounds,
-                note="minimized" if record.minimized else "",
-                address={"window_number": record.window_id, "pid": pid},
-            ))
+            targets.append(
+                Target(
+                    id=f"{NATIVE_PREFIX}-{record.window_id}",
+                    app=app,
+                    title=record.title,
+                    surface="browser" if is_page else "computer",
+                    can=PAGE_VOCABULARY if is_page else WINDOW_VOCABULARY,
+                    focused=pid == frontmost and on_screen,
+                    visible=on_screen and not record.minimized,
+                    main=record.main,
+                    document=_readable_document(record.document),
+                    bounds=record.bounds,
+                    note="minimized" if record.minimized else "",
+                    address={"window_number": record.window_id, "pid": pid},
+                )
+            )
     if silent_pids:
         # Background services and unclaimed layers are withheld, because neither is a place anybody means.
         answered_apps = {target.app for target in targets}
         withheld = {
-            number: entry for number, entry in numbered.items()
+            number: entry
+            for number, entry in numbered.items()
             if entry["pid"] in silent_pids
             and entry["app"] not in answered_apps
             and _is_ordinary_application(entry["pid"])
         }
-        targets.extend(_collapsed(
-            withheld, visible_ids, frontmost, note=(
-                "This application does not publish its windows to accessibility, so they cannot "
-                "be addressed individually."
-            ),
-        ))
+        targets.extend(
+            _collapsed(
+                withheld,
+                visible_ids,
+                frontmost,
+                note=(
+                    "This application does not publish its windows to accessibility, so they cannot "
+                    "be addressed individually."
+                ),
+            )
+        )
     return targets
 
 
@@ -176,7 +200,10 @@ def _is_ordinary_application(pid: int) -> bool:
         from AppKit import NSApplicationActivationPolicyRegular, NSRunningApplication
 
         application = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
-        return application is not None and application.activationPolicy() == NSApplicationActivationPolicyRegular
+        return (
+            application is not None
+            and application.activationPolicy() == NSApplicationActivationPolicyRegular
+        )
     except Exception:  # noqa: BLE001 — an unanswerable question is not a reason to hide a window
         return True
 
@@ -192,12 +219,15 @@ def _readable_document(document: str) -> str:
     return document
 
 
-def _collapsed(numbered: dict[int, dict[str, Any]], visible_ids: set[int],
-               frontmost: int, *, note: str) -> list[Target]:
+def _collapsed(
+    numbered: dict[int, dict[str, Any]], visible_ids: set[int], frontmost: int, *, note: str
+) -> list[Target]:
     """One row per application, for windows that cannot be named. Never addressable, always seen."""
     by_app: dict[str, dict[str, Any]] = {}
     for number, entry in sorted(numbered.items()):
-        seen = by_app.setdefault(entry["app"], {"pid": entry["pid"], "count": 0, "visible": False, "number": number})
+        seen = by_app.setdefault(
+            entry["app"], {"pid": entry["pid"], "count": 0, "visible": False, "number": number}
+        )
         seen["count"] += 1
         seen["visible"] = seen["visible"] or number in visible_ids
     return [
@@ -210,7 +240,9 @@ def _collapsed(numbered: dict[int, dict[str, Any]], visible_ids: set[int],
             focused=seen["pid"] == frontmost,
             visible=seen["visible"],
             addressable=False,
-            note=f"{seen['count']} window(s). {note}".strip() if note else f"{seen['count']} window(s)",
+            note=f"{seen['count']} window(s). {note}".strip()
+            if note
+            else f"{seen['count']} window(s)",
             address={"window_number": seen["number"], "pid": seen["pid"]},
         )
         for app, seen in sorted(by_app.items())
@@ -236,16 +268,20 @@ def _browser_targets() -> list[Target]:
         identifier = str(tab.get("id") or "")
         if not identifier:
             continue
-        targets.append(Target(
-            id=identifier if identifier.startswith(BROWSER_PREFIX) else f"{BROWSER_PREFIX}-{identifier}",
-            app=str(tab.get("app") or "Browser"),
-            title=str(tab.get("title") or ""),
-            surface="browser",
-            can=PAGE_VOCABULARY,
-            focused=bool(tab.get("active")),
-            url=str(tab.get("url") or ""),
-            address={"tab_id": identifier, "window_number": tab.get("window_number")},
-        ))
+        targets.append(
+            Target(
+                id=identifier
+                if identifier.startswith(BROWSER_PREFIX)
+                else f"{BROWSER_PREFIX}-{identifier}",
+                app=str(tab.get("app") or "Browser"),
+                title=str(tab.get("title") or ""),
+                surface="browser",
+                can=PAGE_VOCABULARY,
+                focused=bool(tab.get("active")),
+                url=str(tab.get("url") or ""),
+                address={"tab_id": identifier, "window_number": tab.get("window_number")},
+            )
+        )
     return targets
 
 
@@ -262,8 +298,14 @@ def vocabularies() -> dict[str, dict[str, str]]:
 def _worth_naming(target: Target) -> tuple:
     """Sort key: the window a person would mean, first."""
     width, height = target.bounds[2], target.bounds[3]
-    return (not target.focused, not target.visible, not target.main, not target.document,
-            -(width * height), target.app.lower())
+    return (
+        not target.focused,
+        not target.visible,
+        not target.main,
+        not target.document,
+        -(width * height),
+        target.app.lower(),
+    )
 
 
 def list_windows() -> list[Target]:
@@ -366,7 +408,11 @@ def difference(before: list[Target], after: list[Target]) -> dict[str, Any]:
     """What changed between two listings, sent instead of the whole list so unchanged rows are not repeated."""
     before_by_id = {target.id: target for target in before}
     after_by_id = {target.id: target for target in after}
-    added = [target.described() for identifier, target in after_by_id.items() if identifier not in before_by_id]
+    added = [
+        target.described()
+        for identifier, target in after_by_id.items()
+        if identifier not in before_by_id
+    ]
     removed = [identifier for identifier in before_by_id if identifier not in after_by_id]
     changed = [
         target.described()

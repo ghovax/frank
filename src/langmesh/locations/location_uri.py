@@ -58,7 +58,9 @@ def parse(uri: str) -> LocationTarget:
     if parts.scheme == LOCAL_SCHEME:
         if parts.netloc:
             raise ValueError(f"A local location URI must have an empty host: {uri!r}")
-        return LocationTarget(kind="local", base_directory=_normalize_base_directory(unquote(parts.path)))
+        return LocationTarget(
+            kind="local", base_directory=_normalize_base_directory(unquote(parts.path))
+        )
     if parts.scheme == REMOTE_SCHEME:
         if not parts.hostname:
             raise ValueError(f"A remote location URI requires a host: {uri!r}")
@@ -70,4 +72,3 @@ def parse(uri: str) -> LocationTarget:
             port=parts.port or 22,
         )
     raise ValueError(f"Unrecognized location URI scheme in: {uri!r}")
-

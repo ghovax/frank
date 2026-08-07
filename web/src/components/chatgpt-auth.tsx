@@ -48,7 +48,12 @@ export function ChatGPTAuthControl({
         setStatus(next);
         onStatusChange?.(next);
       })
-      .catch((caught) => swallowed({ component: "chatgpt-auth", operation: "read the ChatGPT sign-in state" }, caught));
+      .catch((caught) =>
+        swallowed(
+          { component: "chatgpt-auth", operation: "read the ChatGPT sign-in state" },
+          caught,
+        ),
+      );
     return () => {
       cancelled = true;
       stopPolling();
@@ -59,7 +64,9 @@ export function ChatGPTAuthControl({
   useEffect(() => {
     if (!status?.signed_in) return;
     const id = window.setInterval(() => {
-      refresh().catch((caught) => swallowed({ component: "chatgpt-auth", operation: "poll the ChatGPT sign-in" }, caught));
+      refresh().catch((caught) =>
+        swallowed({ component: "chatgpt-auth", operation: "poll the ChatGPT sign-in" }, caught),
+      );
     }, 5000);
     return () => window.clearInterval(id);
   }, [status?.signed_in, refresh]);
@@ -108,11 +115,7 @@ export function ChatGPTAuthControl({
         {translation("title")}
       </Text>
       {signedIn ? (
-        <Button
-          colorPalette="red"
-          onClick={handleSignOut}
-          loading={busy}
-        >
+        <Button colorPalette="red" onClick={handleSignOut} loading={busy}>
           <LuLogOut size={14} />
           {translation("signOut")}
         </Button>
@@ -143,7 +146,9 @@ export function ChatGPTAuthControl({
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Description fontSize="xs" truncate>
-                {status?.email ? translation("signedInAs", { email: status.email }) : translation("signedIn")}
+                {status?.email
+                  ? translation("signedInAs", { email: status.email })
+                  : translation("signedIn")}
               </Alert.Description>
             </Alert.Content>
           </Alert.Root>
@@ -157,9 +162,7 @@ export function ChatGPTAuthControl({
         <Alert.Root status="info" size="sm" borderRadius="md" mt={3} alignItems="center">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Description fontSize="xs">
-              {translation("planNotice")}
-            </Alert.Description>
+            <Alert.Description fontSize="xs">{translation("planNotice")}</Alert.Description>
           </Alert.Content>
         </Alert.Root>
       )}

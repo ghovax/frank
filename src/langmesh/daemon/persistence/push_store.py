@@ -79,12 +79,16 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
         try:
             async with self._engine.begin() as connection:
                 statement = sqlite_insert(self._table).values(
-                    turn_id=turn_id, configuration_id=notification_config.id, configuration=serialized,
+                    turn_id=turn_id,
+                    configuration_id=notification_config.id,
+                    configuration=serialized,
                 )
-                await connection.execute(statement.on_conflict_do_update(
-                    index_elements=[self._table.c.turn_id, self._table.c.configuration_id],
-                    set_={"configuration": serialized},
-                ))
+                await connection.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[self._table.c.turn_id, self._table.c.configuration_id],
+                        set_={"configuration": serialized},
+                    )
+                )
         finally:
             release_sqlite_write_lock(write_lock)
 
@@ -92,10 +96,14 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
-                await connection.execute(
-                    select(self._table.c.configuration).where(self._table.c.turn_id == turn_id)
+                (
+                    await connection.execute(
+                        select(self._table.c.configuration).where(self._table.c.turn_id == turn_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [PushNotificationConfig.model_validate(json.loads(row)) for row in rows]
 
     async def delete_info(self, turn_id: str, config_id: Optional[str] = None) -> None:
@@ -136,13 +144,17 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
         except UntrustedHostError as exception:
             logger.warning(
                 "refusing push-notification for turn_id=%s to untrusted URL %s: %s",
-                task.id, url, exception,
+                task.id,
+                url,
+                exception,
             )
             return False
         # Pin to the verified IP so a rebind cannot swap in a private target — unless a proxy does its own connect.
         proxied = bool(
-            os.environ.get(environment_variables.HTTPS_PROXY) or os.environ.get("https_proxy")
-            or os.environ.get(environment_variables.ALL_PROXY) or os.environ.get("all_proxy")
+            os.environ.get(environment_variables.HTTPS_PROXY)
+            or os.environ.get("https_proxy")
+            or os.environ.get(environment_variables.ALL_PROXY)
+            or os.environ.get("all_proxy")
         )
         if proxied or not ips:
             post_url, headers, extensions = url, {}, {}
@@ -160,7 +172,9 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
             response.raise_for_status()
         except Exception:
             logger.exception(
-                "error sending push-notification for turn_id=%s to URL: %s.", task.id, url,
+                "error sending push-notification for turn_id=%s to URL: %s.",
+                task.id,
+                url,
             )
             return False
         logger.info("push-notification sent for turn_id=%s to URL: %s", task.id, url)

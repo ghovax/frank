@@ -12,14 +12,38 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuArrowDown, LuBookMarked, LuEllipsis, LuFolderOpen, LuGitBranch, LuMessageSquare, LuMoon, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert } from "react-icons/lu";
+import {
+  LuArrowDown,
+  LuBookMarked,
+  LuEllipsis,
+  LuFolderOpen,
+  LuGitBranch,
+  LuMessageSquare,
+  LuMoon,
+  LuPanelLeftClose,
+  LuPanelLeftOpen,
+  LuPlugZap,
+  LuSettings,
+  LuSun,
+  LuTerminal,
+  LuTrash2,
+  LuTriangleAlert,
+} from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useTranslations } from "next-intl";
 import { toaster } from "@/components/ui/toaster";
 import { PanelTiles, type TilePanel } from "./panel-tiles";
 import { useColorMode } from "./ui/color-mode";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import { useChat, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup, UserMessageCard } from "./chat-message";
 import { TOP_BAR_HEIGHT } from "@/components/ui/panel";
@@ -44,13 +68,38 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay } from "@/lib/glyphs";
-import { permissionReasonPaths, permissionReasonText, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
+import {
+  permissionReasonPaths,
+  permissionReasonText,
+  type ToolPermission,
+  type ToolQuestion,
+} from "@/lib/tool-event";
 
-import { clearSessionGoal, fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
+import {
+  clearSessionGoal,
+  fetchSettings,
+  getWorkspace,
+  revealInFinder,
+  saveSessionDraft,
+  saveAgentConfiguration,
+  saveSettings,
+  setSessionPermissionMode,
+  subscribeEvents,
+  type AgentCard,
+  type AgentSummary,
+  type Location,
+  type PermissionMode,
+  type SandboxEnforce,
+  type WorktreeStrategy,
+} from "@/lib/api";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
-import { closePermissionNotification, notifyPermissionRequest, setPermissionNotificationHandler } from "@/lib/notify";
+import {
+  closePermissionNotification,
+  notifyPermissionRequest,
+  setPermissionNotificationHandler,
+} from "@/lib/notify";
 import { swallowed } from "@/lib/swallowed";
 import { errorMessage } from "@/lib/errors";
 
@@ -64,7 +113,6 @@ const MAXIMUM_OPEN_SIDE_PANELS = 2;
 
 // One shared empty set for a caller tracking no unread completions, so the tree panel is not re-rendered for a fresh Set.
 const EMPTY_UNSEEN_COMPLETIONS: Set<string> = new Set();
-
 
 interface ChatPanelProps {
   agent: string;
@@ -115,7 +163,12 @@ interface ChatPanelProps {
   historyOpen?: boolean;
   onToggleHistory?: () => void;
   models?: { id: string; name: string; provider: string; available: boolean }[];
-  modelProviders?: { id: string; name: string; openai_compatible: boolean; credential_id: string }[];
+  modelProviders?: {
+    id: string;
+    name: string;
+    openai_compatible: boolean;
+    credential_id: string;
+  }[];
   recentModels?: { id: string; name: string; provider: string }[];
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;
@@ -153,7 +206,12 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
     if (message.role !== "tool_call") {
       if (pendingThinkingId) {
-        items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
+        items.push({
+          kind: "tool_group",
+          id: pendingThinkingId,
+          messages: [],
+          thinkingTurns: pendingThinkingTurns,
+        });
       }
       items.push({ kind: "message", message });
       pendingThinkingId = null;
@@ -191,7 +249,12 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   }
   // A trailing reasoning phase is emitted here and rendered only while the turn is live, so settled reasoning leaves no row.
   if (pendingThinkingId) {
-    items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
+    items.push({
+      kind: "tool_group",
+      id: pendingThinkingId,
+      messages: [],
+      thinkingTurns: pendingThinkingTurns,
+    });
   }
   return items;
 }
@@ -240,14 +303,43 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, grantedPermissionMode, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
-    useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
+  const {
+    messages,
+    tokenUsage,
+    queuedMessages,
+    sessionId,
+    isStreaming,
+    isHistoryLoading,
+    historyError,
+    reloadHistory,
+    send,
+    abort,
+    dequeueMessage,
+    outboxHold,
+    deliveringMessage,
+    grantedPermissionMode,
+    retryOutbox,
+    handlePermission,
+    handleQuestion,
+    declineQuestion,
+    compact,
+  } = useChat(
+    agent,
+    initialSessionId,
+    workingDirectory,
+    worktreeStrategy,
+    permissionMode,
+    sessionRunning,
+    workspaceId,
+  );
 
   // One source of truth for the working directory's validity and Git status, read by the status bar and the composer's send gate.
   const { status: directoryStatus, directoryValid } = useDirectoryStatus(workingDirectory);
   // Whether the chat body has resolved enough to render without flashing, so opening a workspace does not flicker.
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
-  const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
+  const directoryPending =
+    !!trimmedWorkingDirectory &&
+    (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
   // Mounted whenever a daemon is there: a directory check runs on every switch, and unmounting on it jumped.
   const chatReady = isConnected;
   // The one condition under which the transcript is in the DOM, read by the render and by everything touching scroll.
@@ -260,24 +352,41 @@ export function ChatPanel({
     // Resolving through a promise keeps the state update off the synchronous effect path.
     const load = () => {
       const request = workspaceId ? getWorkspace(workspaceId) : Promise.resolve(null);
-      request.then((workspace) => { if (!cancelled) setWorkspaceLocations(workspace?.locations ?? []); }).catch((caught) => swallowed({ component: "chat-panel", operation: "read a workspace" }, caught));
+      request
+        .then((workspace) => {
+          if (!cancelled) setWorkspaceLocations(workspace?.locations ?? []);
+        })
+        .catch((caught) =>
+          swallowed({ component: "chat-panel", operation: "read a workspace" }, caught),
+        );
     };
     load();
-    const unsubscribe = subscribeEvents((event) => { if (event.type === "workspaces_changed") load(); });
-    return () => { cancelled = true; unsubscribe(); };
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "workspaces_changed") load();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [workspaceId]);
 
   // On mount, read the stored permission mode so the user's last choice survives a reload when no session is active.
   useEffect(() => {
     if (initialSessionId) return;
     let cancelled = false;
-    fetchSettings().then((settings) => {
-      if (cancelled || settings.permission_mode === permissionMode) return;
-      setPermissionModeState(settings.permission_mode);
-    }).catch((caught) => swallowed({ component: "chat-panel", operation: "read the settings" }, caught));
-    return () => { cancelled = true; };
-  // Only without a session, since a session's own permission mode is the one that governs it.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchSettings()
+      .then((settings) => {
+        if (cancelled || settings.permission_mode === permissionMode) return;
+        setPermissionModeState(settings.permission_mode);
+      })
+      .catch((caught) =>
+        swallowed({ component: "chat-panel", operation: "read the settings" }, caught),
+      );
+    return () => {
+      cancelled = true;
+    };
+    // Only without a session, since a session's own permission mode is the one that governs it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSessionId]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -299,12 +408,18 @@ export function ChatPanel({
   const [transcriptPinned, setTranscriptPinned] = useState(true);
   // Top-bar surfaces, opened on mount when the workspace was entered with `?settings=<section>`.
   const validInitialSection: SettingsSection | null =
-    initialSettingsSection === "general" || initialSettingsSection === "locations"
-      || initialSettingsSection === "agents" || initialSettingsSection === "connection"
-      ? initialSettingsSection : null;
+    initialSettingsSection === "general" ||
+    initialSettingsSection === "locations" ||
+    initialSettingsSection === "agents" ||
+    initialSettingsSection === "connection"
+      ? initialSettingsSection
+      : null;
   const [settingsOpen, setSettingsOpen] = useState(!!validInitialSection);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>(validInitialSection ?? "general");
-  const [appliedInitialSettingsSection, setAppliedInitialSettingsSection] = useState(validInitialSection);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(
+    validInitialSection ?? "general",
+  );
+  const [appliedInitialSettingsSection, setAppliedInitialSettingsSection] =
+    useState(validInitialSection);
   if (appliedInitialSettingsSection !== validInitialSection) {
     setAppliedInitialSettingsSection(validInitialSection);
     if (validInitialSection) {
@@ -314,26 +429,41 @@ export function ChatPanel({
   }
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  const setSidePanelOpen = useCallback((panel: SidePanelKey, open: boolean) => {
-    const remainingPanels = openSidePanels.filter((openPanel) => openPanel !== panel);
-    onOpenSidePanelsChange(open ? [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS) : remainingPanels);
-  }, [openSidePanels, onOpenSidePanelsChange]);
+  const setSidePanelOpen = useCallback(
+    (panel: SidePanelKey, open: boolean) => {
+      const remainingPanels = openSidePanels.filter((openPanel) => openPanel !== panel);
+      onOpenSidePanelsChange(
+        open ? [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS) : remainingPanels,
+      );
+    },
+    [openSidePanels, onOpenSidePanelsChange],
+  );
 
   useEffect(() => {
-    if (openSidePanels.length === 0 || !historyOpen || !window.matchMedia("(max-width: 1199px)").matches) return;
+    if (
+      openSidePanels.length === 0 ||
+      !historyOpen ||
+      !window.matchMedia("(max-width: 1199px)").matches
+    )
+      return;
     onToggleHistory?.();
   }, [openSidePanels.length, historyOpen, onToggleHistory]);
 
-  const markSidePanelActive = useCallback((panel: SidePanelKey) => {
-    if (!openSidePanels.includes(panel) || openSidePanels[openSidePanels.length - 1] === panel) return;
-    onOpenSidePanelsChange([...openSidePanels.filter((openPanel) => openPanel !== panel), panel]);
-  }, [openSidePanels, onOpenSidePanelsChange]);
+  const markSidePanelActive = useCallback(
+    (panel: SidePanelKey) => {
+      if (!openSidePanels.includes(panel) || openSidePanels[openSidePanels.length - 1] === panel)
+        return;
+      onOpenSidePanelsChange([...openSidePanels.filter((openPanel) => openPanel !== panel), panel]);
+    },
+    [openSidePanels, onOpenSidePanelsChange],
+  );
 
   // Pinned means the viewport is at the bottom: pinned follows new content, unpinned never pulls the reader back down.
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+    const distanceFromBottom =
+      container.scrollHeight - (container.scrollTop + container.clientHeight);
     const atBottom = distanceFromBottom <= 8;
     isPinnedRef.current = atBottom;
     setTranscriptPinned(atBottom);
@@ -356,23 +486,26 @@ export function ChatPanel({
     scrollMetricsRef.current.scrollHeight = container.scrollHeight;
   }, []);
 
-  const handleSend = useCallback((text: string, dataParts?: Record<string, unknown>[]) => {
-    // Which agent runs is never assumed, so an unchosen agent is asked for rather than guessed at.
-    if (!agent && !initialSessionId) {
-      toaster.create({
-        type: "error",
-        title: translation("chooseAnAgent"),
-        description: translation("chooseAnAgentDescription"),
-        closable: true,
-      });
-      return undefined;
-    }
-    scrollToBottom();
-    // Whether this can be sent at all is `useChat`'s to answer rather than the composer's.
-    const result = send(text, dataParts);
-    scrollToBottom();
-    return result;
-  }, [agent, initialSessionId, scrollToBottom, send, translation]);
+  const handleSend = useCallback(
+    (text: string, dataParts?: Record<string, unknown>[]) => {
+      // Which agent runs is never assumed, so an unchosen agent is asked for rather than guessed at.
+      if (!agent && !initialSessionId) {
+        toaster.create({
+          type: "error",
+          title: translation("chooseAnAgent"),
+          description: translation("chooseAnAgentDescription"),
+          closable: true,
+        });
+        return undefined;
+      }
+      scrollToBottom();
+      // Whether this can be sent at all is `useChat`'s to answer rather than the composer's.
+      const result = send(text, dataParts);
+      scrollToBottom();
+      return result;
+    },
+    [agent, initialSessionId, scrollToBottom, send, translation],
+  );
 
   // A clamped session says so once, and the chip follows the truth rather than the request.
   const effectivePermissionMode = grantedPermissionMode ?? permissionMode;
@@ -398,13 +531,17 @@ export function ChatPanel({
     if (!sessionId) return;
     // The bar clears when the daemon says it cleared, since whether the goal was still there is the session's answer.
     clearSessionGoal(sessionId).catch((caught) =>
-      swallowed({ component: "chat-panel", operation: "call off the goal" }, caught));
+      swallowed({ component: "chat-panel", operation: "call off the goal" }, caught),
+    );
   }, [sessionId]);
 
-  const openSettings = useCallback((section: SettingsSection) => {
-    setSettingsSection(section);
-    setSettingsOpen(true);
-  }, [setSettingsOpen, setSettingsSection]);
+  const openSettings = useCallback(
+    (section: SettingsSection) => {
+      setSettingsSection(section);
+      setSettingsOpen(true);
+    },
+    [setSettingsOpen, setSettingsSection],
+  );
 
   useEffect(() => {
     if (!sessionId || notifiedSessionIdRef.current === sessionId) return;
@@ -419,7 +556,8 @@ export function ChatPanel({
     const firstKey = messages.length > 0 ? messages[0].id : "";
     const count = messages.length;
     const previous = scrollMetricsRef.current;
-    const prepended = count > previous.count && firstKey !== previous.firstKey && previous.count > 0;
+    const prepended =
+      count > previous.count && firstKey !== previous.firstKey && previous.count > 0;
     if (prepended) {
       // Shift down by exactly how much taller the content got, so background paging is invisible.
       const delta = container.scrollHeight - previous.scrollHeight;
@@ -448,8 +586,14 @@ export function ChatPanel({
   }, [timelineMounted]);
 
   // Follow the session the parent selected, as a render-phase adjustment rather than an effect.
-  const [previousInitialSession, setPreviousInitialSession] = useState({ id: initialSessionId, permissionMode: initialPermissionMode });
-  if (initialSessionId !== previousInitialSession.id || initialPermissionMode !== previousInitialSession.permissionMode) {
+  const [previousInitialSession, setPreviousInitialSession] = useState({
+    id: initialSessionId,
+    permissionMode: initialPermissionMode,
+  });
+  if (
+    initialSessionId !== previousInitialSession.id ||
+    initialPermissionMode !== previousInitialSession.permissionMode
+  ) {
     setPreviousInitialSession({ id: initialSessionId, permissionMode: initialPermissionMode });
     setPermissionModeState(initialPermissionMode);
   }
@@ -469,12 +613,17 @@ export function ChatPanel({
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
-    saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed({ component: "chat-panel", operation: "save the settings" }, caught));
+    saveSettings({ permission_mode: nextMode }).catch((caught) =>
+      swallowed({ component: "chat-panel", operation: "save the settings" }, caught),
+    );
     // Raise the agent's own ceiling first, since the daemon meets any request against it and would otherwise clamp silently.
     try {
       await saveAgentConfiguration(agent, { permission_mode: nextMode }, workingDirectory);
     } catch (caught) {
-      swallowed({ component: "chat-panel", operation: "raise the agent's permission ceiling" }, caught);
+      swallowed(
+        { component: "chat-panel", operation: "raise the agent's permission ceiling" },
+        caught,
+      );
     }
     if (!sessionId) return;
     setSessionPermissionMode(sessionId, nextMode)
@@ -496,18 +645,26 @@ export function ChatPanel({
       });
   }
 
-  const handleInputDraftChange = useCallback((nextDraft: string) => {
-    if (!sessionId) return;
-    saveSessionDraft(sessionId, nextDraft).catch((caught) => swallowed({ component: "chat-panel", operation: "save the session draft" }, caught));
-  }, [sessionId]);
+  const handleInputDraftChange = useCallback(
+    (nextDraft: string) => {
+      if (!sessionId) return;
+      saveSessionDraft(sessionId, nextDraft).catch((caught) =>
+        swallowed({ component: "chat-panel", operation: "save the session draft" }, caught),
+      );
+    },
+    [sessionId],
+  );
 
   const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
   const hasInheritedContext = Boolean(
-    initialSessionId && sessions.some((entry) => entry.sessionId === initialSessionId && entry.parentSessionId),
+    initialSessionId &&
+    sessions.some((entry) => entry.sessionId === initialSessionId && entry.parentSessionId),
   );
   // Entrance animation is reserved for rows a live turn just appended at the bottom, by a purely positional rule.
-  const timelineKeys = renderedTimeline.map((item) => (item.kind === "tool_group" ? item.id : item.message.id));
+  const timelineKeys = renderedTimeline.map((item) =>
+    item.kind === "tool_group" ? item.id : item.message.id,
+  );
   const timelineSessionKey = initialSessionId ?? "__new__";
   const [timelineAnimationState, setTimelineAnimationState] = useState<{
     sessionKey: string;
@@ -521,9 +678,10 @@ export function ChatPanel({
     timelineAnimationState.keys.length !== timelineKeys.length ||
     timelineAnimationState.keys.some((key, index) => key !== timelineKeys[index]);
   if (timelineKeysChanged) {
-    const previousSeen = timelineAnimationState.sessionKey === timelineSessionKey
-      ? new Set(timelineAnimationState.seen)
-      : new Set<string>();
+    const previousSeen =
+      timelineAnimationState.sessionKey === timelineSessionKey
+        ? new Set(timelineAnimationState.seen)
+        : new Set<string>();
     const nextAnimated = new Set<string>();
     // Only when this is the same transcript with something added, since a replay rebuilds every row under a different id.
     const survived = timelineKeys.some((key) => previousSeen.has(key));
@@ -543,9 +701,11 @@ export function ChatPanel({
     animatedKeys = nextAnimated;
   }
   // Running shell commands drive the badge on the background-processes button.
-  const runningShellCount = messages.filter((message) =>
-    message.role === "tool_call" && message.content === "bash" &&
-    (message.meta?.status === "running" || message.meta?.status === "input_required")
+  const runningShellCount = messages.filter(
+    (message) =>
+      message.role === "tool_call" &&
+      message.content === "bash" &&
+      (message.meta?.status === "running" || message.meta?.status === "input_required"),
   ).length;
   // How many sessions the open conversation has delegated, at any depth, counted against that conversation.
   const delegatedSessionCount = useMemo(() => {
@@ -553,7 +713,10 @@ export function ChatPanel({
     const childrenOf = new Map<string, string[]>();
     for (const session of sessions) {
       if (!session.parentSessionId) continue;
-      childrenOf.set(session.parentSessionId, [...(childrenOf.get(session.parentSessionId) ?? []), session.sessionId]);
+      childrenOf.set(session.parentSessionId, [
+        ...(childrenOf.get(session.parentSessionId) ?? []),
+        session.sessionId,
+      ]);
     }
     let total = 0;
     const pending = [rootSessionId];
@@ -566,7 +729,7 @@ export function ChatPanel({
   }, [sessions, rootSessionId]);
   // A compaction pass is live while its marker is still running, driving the Compact control's in-progress state.
   const isCompacting = messages.some(
-    (message) => message.role === "compaction" && message.meta?.status === "running"
+    (message) => message.role === "compaction" && message.meta?.status === "running",
   );
   // "Reveal" opens the session's working directory in the OS file manager.
   const revealPath = (workingDirectory || "").trim();
@@ -583,11 +746,18 @@ export function ChatPanel({
   }, [messages, send]);
 
   // The first pending prompt, surfaced as an overlay above the input so a decision always grabs attention.
-  let pendingPrompt: (
+  let pendingPrompt:
     | { kind: "question"; question: ToolQuestion }
-    | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; detailPaths?: string[]; command?: string; arguments?: Record<string, unknown> }
-    | null
-  ) = null;
+    | {
+        kind: "permission";
+        permission: ToolPermission;
+        title: string;
+        detail?: string;
+        detailPaths?: string[];
+        command?: string;
+        arguments?: Record<string, unknown>;
+      }
+    | null = null;
   {
     for (const message of messages) {
       if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
@@ -607,7 +777,10 @@ export function ChatPanel({
           // The title says what the agent is trying to do, and the detail says what made this stop for approval.
           title: getToolCallDisplay(name, args).label,
           // The structured reason wins, because it is the only one this interface can say in the reader's language.
-          detail: permissionReasonText(permission.reason, translation) || permission.explanation || undefined,
+          detail:
+            permissionReasonText(permission.reason, translation) ||
+            permission.explanation ||
+            undefined,
           // The paths travel as data so the overlay lists them, rather than being joined into a sentence.
           detailPaths: permissionReasonPaths(permission.reason),
           command: command || undefined,
@@ -619,9 +792,12 @@ export function ChatPanel({
   }
   // The attention cue plays for the first prompt in a turn, and a permission prompt also raises a system notification.
   const permissionTranslation = useTranslations("PermissionOverlay");
-  const pendingPermissionId = pendingPrompt?.kind === "permission" ? pendingPrompt.permission.requestId : "";
-  const pendingQuestionId = pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
-  const pendingPermissionBody = pendingPrompt?.kind === "permission" ? pendingPrompt.command || pendingPrompt.title : "";
+  const pendingPermissionId =
+    pendingPrompt?.kind === "permission" ? pendingPrompt.permission.requestId : "";
+  const pendingQuestionId =
+    pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
+  const pendingPermissionBody =
+    pendingPrompt?.kind === "permission" ? pendingPrompt.command || pendingPrompt.title : "";
   const notifiedPermissionRef = useRef("");
   const attentionSoundPlayedRef = useRef(false);
   const pendingPromptId = pendingPermissionId || pendingQuestionId;
@@ -660,485 +836,589 @@ export function ChatPanel({
     return () => setPermissionNotificationHandler(null);
   }, [handlePermission]);
 
-  const startSidePanelResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = sidePanelWidth;
+  const startSidePanelResize = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidePanelWidth;
 
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      // Clamp to the same bounds the region's CSS enforces, so the drag never fights the styled limits.
-      const nextWidth = Math.min(Math.min(900, Math.round(window.innerWidth * 0.8)), Math.max(360, startWidth + startX - moveEvent.clientX));
-      onSidePanelWidthChange(nextWidth);
-    }
+      function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+        // Clamp to the same bounds the region's CSS enforces, so the drag never fights the styled limits.
+        const nextWidth = Math.min(
+          Math.min(900, Math.round(window.innerWidth * 0.8)),
+          Math.max(360, startWidth + startX - moveEvent.clientX),
+        );
+        onSidePanelWidthChange(nextWidth);
+      }
 
-    function handlePointerUp() {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
+      function handlePointerUp() {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
 
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, { once: true });
-  }, [sidePanelWidth, onSidePanelWidthChange]);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp, { once: true });
+    },
+    [sidePanelWidth, onSidePanelWidthChange],
+  );
 
   // Built before the return so the region can be gated on the tiles themselves: an open panel with
   // nothing to render would otherwise reserve a full-width column of empty space.
-  const sidePanels = ([
-      backgroundPanelOpen && {
-        key: "background",
-        onActivate: () => markSidePanelActive("background"),
-        content: (
-          <BackgroundJobsPanel
-            open={backgroundPanelOpen}
-            onClose={() => setSidePanelOpen("background", false)}
-            messages={messages}
-            sessionId={sessionId}
-            workingDirectory={workingDirectory || homeDirectory || ""}
-            locations={workspaceLocations}
-          />
-        ),
-      },
-      memoryPanelOpen && {
-        key: "memory",
-        onActivate: () => markSidePanelActive("memory"),
-        content: (
-          <MemoryPanel
-            key={sessionId}
-            sessionId={sessionId}
-            onClose={() => setSidePanelOpen("memory", false)}
-          />
-        ),
-      },
-      delegatedPanelOpen && {
-        key: "delegated",
-        onActivate: () => markSidePanelActive("delegated"),
-        content: (
-          <DelegatedWorkPanel
-            sessions={sessions}
-            rootSessionId={rootSessionId}
-            activeSessionId={sessionId}
-            unseenCompletions={unseenCompletions ?? EMPTY_UNSEEN_COMPLETIONS}
-            agents={agents}
-            onResume={(entry) => onResumeSession?.(entry)}
-            onDeleteSession={(entry) => onDeleteSession?.(entry.sessionId)}
-            onClose={() => setSidePanelOpen("delegated", false)}
-          />
-        ),
-      },
-    ].filter(Boolean) as TilePanel[]);
+  const sidePanels = [
+    backgroundPanelOpen && {
+      key: "background",
+      onActivate: () => markSidePanelActive("background"),
+      content: (
+        <BackgroundJobsPanel
+          open={backgroundPanelOpen}
+          onClose={() => setSidePanelOpen("background", false)}
+          messages={messages}
+          sessionId={sessionId}
+          workingDirectory={workingDirectory || homeDirectory || ""}
+          locations={workspaceLocations}
+        />
+      ),
+    },
+    memoryPanelOpen && {
+      key: "memory",
+      onActivate: () => markSidePanelActive("memory"),
+      content: (
+        <MemoryPanel
+          key={sessionId}
+          sessionId={sessionId}
+          onClose={() => setSidePanelOpen("memory", false)}
+        />
+      ),
+    },
+    delegatedPanelOpen && {
+      key: "delegated",
+      onActivate: () => markSidePanelActive("delegated"),
+      content: (
+        <DelegatedWorkPanel
+          sessions={sessions}
+          rootSessionId={rootSessionId}
+          activeSessionId={sessionId}
+          unseenCompletions={unseenCompletions ?? EMPTY_UNSEEN_COMPLETIONS}
+          agents={agents}
+          onResume={(entry) => onResumeSession?.(entry)}
+          onDeleteSession={(entry) => onDeleteSession?.(entry.sessionId)}
+          onClose={() => setSidePanelOpen("delegated", false)}
+        />
+      ),
+    },
+  ].filter(Boolean) as TilePanel[];
 
   return (
     // Every profile name is resolved from this one catalogue, so the transcript and the sidebar cannot disagree.
     <AgentNamesProvider agents={agents}>
-    <Flex h="100%" minW={0} position="relative">
-      <Flex direction="column" flex={1} minW={0} h="100%">
-        {/* Persistent top bar: session identity on the left, session tools on the right. */}
-        <Flex align="center" gap={2} px={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
-          {onToggleHistory ? (
-            <Tooltip content={historyOpen ? translation("hideConversations") : translation("showConversations")} openDelay={300}>
-              <IconButton
-                aria-label={historyOpen ? translation("hideConversationsSidebar") : translation("showConversationsSidebar")}
-                variant="ghost"
-                colorPalette="gray"
-                flexShrink={0}
-                onClick={onToggleHistory}
+      <Flex h="100%" minW={0} position="relative">
+        <Flex direction="column" flex={1} minW={0} h="100%">
+          {/* Persistent top bar: session identity on the left, session tools on the right. */}
+          <Flex align="center" gap={2} px={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
+            {onToggleHistory ? (
+              <Tooltip
+                content={
+                  historyOpen ? translation("hideConversations") : translation("showConversations")
+                }
+                openDelay={300}
               >
-                {historyOpen ? <LuPanelLeftClose size={14} /> : <LuPanelLeftOpen size={14} />}
-              </IconButton>
-            </Tooltip>
-          ) : (
-            <Box color="fg.muted" flexShrink={0}><LuMessageSquare size={14} /></Box>
-          )}
-          <Text textStyle="panelTitle" fontWeight="medium" truncate minW={0} flex={1}>
-            {sessionId ? (sessionTitle || translation("untitledConversation")) : translation("newConversation")}
-          </Text>
-          <GitStatusBar status={directoryStatus} />
-          <Flex align="center" gap={1} flexShrink={0}>
-            {/* What this workspace's conversations have handed to other sessions, with a dot only when something has. */}
-            <ToolbarAction
-              label={translation("delegatedWork")}
-              icon={<LuGitBranch size={14} />}
-              active={delegatedPanelOpen}
-              colorPalette="purple"
-              indicator={delegatedSessionCount > 0}
-              onClick={() => setSidePanelOpen("delegated", !delegatedPanelOpen)}
-            />
-            {/* What this conversation remembers of the turns that have left its window. */}
-            <ToolbarAction
-              label={translation("memory")}
-              icon={<LuBookMarked size={CONTROL_ICON_SIZE} />}
-              active={memoryPanelOpen}
-              colorPalette="orange"
-              onClick={() => setSidePanelOpen("memory", !memoryPanelOpen)}
-            />
-            <ToolbarAction
-              label={translation("terminalAndBackground")}
-              icon={<LuTerminal size={14} />}
-              active={backgroundPanelOpen}
-              colorPalette="green"
-              indicator={runningShellCount > 0}
-              onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
-            />
-            {/* Light and dark, switched here because it is the one setting people change on a whim. */}
-            <ToolbarAction
-              label={colorMode === "dark" ? translation("switchToLight") : translation("switchToDark")}
-              icon={colorMode === "dark" ? <LuSun size={14} /> : <LuMoon size={14} />}
-              onClick={toggleColorMode}
-            />
-            <ToolbarAction
-              label={translation("settings")}
-              icon={<LuSettings size={14} />}
-              onClick={() => openSettings("general")}
-            />
-            <DropdownMenu
-              trigger={
-                <IconButton aria-label={translation("sessionOptions")} variant="ghost">
-                  <LuEllipsis size={14} />
+                <IconButton
+                  aria-label={
+                    historyOpen
+                      ? translation("hideConversationsSidebar")
+                      : translation("showConversationsSidebar")
+                  }
+                  variant="ghost"
+                  colorPalette="gray"
+                  flexShrink={0}
+                  onClick={onToggleHistory}
+                >
+                  {historyOpen ? <LuPanelLeftClose size={14} /> : <LuPanelLeftOpen size={14} />}
                 </IconButton>
-              }
-              minW="200px"
-            >
-              <Menu.Item
-                value="reveal"
-                fontSize="xs"
-                disabled={!revealPath}
-                onClick={() => { if (revealPath) void revealInFinder(revealPath); }}
-              >
-                <LuFolderOpen size={13} />
-                <Box flex={1}>{translation("openThisFolder")}</Box>
-              </Menu.Item>
-              <Menu.Item
-                value="delete"
-                fontSize="xs"
-                color="red.fg"
-                _hover={{ bg: "red.subtle" }}
-                disabled={!sessionId || !onDeleteSession}
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                <LuTrash2 size={13} />
-                <Box flex={1}>{translation("deleteSession")}</Box>
-              </Menu.Item>
-            </DropdownMenu>
-          </Flex>
-        </Flex>
-        <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
-        <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={4} py={3} onScroll={handleScroll} css={transcriptPinned ? scrollFade : scrollFadeTopBottom} style={{ overflowAnchor: "none", scrollbarGutter: "stable both-edges" }}>
-          {connectionLost ? (
-            // A lost daemon is a state worth naming, and the only one here whose remedy is a single button.
-            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
-              <EmptyState.Root>
-                <EmptyState.Content>
-                  <EmptyState.Indicator>
-                    <LuPlugZap />
-                  </EmptyState.Indicator>
-                  <VStack gap={1}>
-                    <EmptyState.Title>{translation("disconnectedTitle")}</EmptyState.Title>
-                    <EmptyState.Description>{translation("disconnectedDescription")}</EmptyState.Description>
-                  </VStack>
-                  <Button variant="solid" colorPalette="blue" onClick={onReconnect}>
-                    {translation("reconnect")}
-                  </Button>
-                </EmptyState.Content>
-              </EmptyState.Root>
-            </Flex>
-          ) : !transcriptVisible ? (
-            <Flex h="100%" />
-          ) : historyError ? (
-            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
-              <EmptyState.Root>
-                <EmptyState.Content>
-                  <EmptyState.Indicator>
-                    <LuTriangleAlert />
-                  </EmptyState.Indicator>
-                  <VStack gap={1}>
-                    <EmptyState.Title>{translation("loadConversationErrorTitle")}</EmptyState.Title>
-                    <EmptyState.Description>
-                      {translation("loadConversationErrorDescription")}
-                    </EmptyState.Description>
-                  </VStack>
-                  <Button variant="solid" colorPalette="blue" onClick={reloadHistory}>
-                    {translation("retry")}
-                  </Button>
-                </EmptyState.Content>
-              </EmptyState.Root>
-            </Flex>
-          ) : (
-            // The welcome and the timeline cross-fade out of flow, so sending the first message never flashes.
-            <AnimatePresence mode="popLayout" initial={false}>
-              {messages.length === 0 && !hasInheritedContext ? (
-                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                  {/* The same centred column as the transcript, sitting in the middle of whatever room there is. */}
-                  {/* One rhythm for the sections, matching the gap the capability sections keep between themselves. */}
-                  <Flex direction="column" align="stretch" gap={6} w="full" maxW="80rem" mx="auto" my="auto" py={{ base: 4, md: 6 }}>
-                    {/* The blank-conversation state inside a workspace: the prompt, then what it can reach and what the agent can do. */}
-                    <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center" mb={4}>
-                      {translation("buildPrompt", { folder: currentFolderName })}
-                    </Heading>
-
-                    {/* The locations read as a section like the ones under them, with the same icon, heading and list. */}
-                    {workspaceLocations.length > 0 && (
-                      <Box w="100%" minW={0}>
-                        <SectionHeader
-                          icon={<CONCEPT_ICONS.environment size={14} />}
-                          title={translation("environmentsAvailable")}
-                          description={translation("environmentsDescription")}
-                        />
-                        <Flex align="center" gap={2.5} wrap="wrap">
-                          {workspaceLocations.map((location) => (
-                            <LocationChip key={location.id} location={location} />
-                          ))}
-                        </Flex>
-                      </Box>
-                    )}
-
-                    <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} />
-                  </Flex>
-                </motion.div>
-              ) : (
-                <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
-                  {/* Tight enough that a tool line and the prose around it read as one document, with bubbles marking turns. */}
-                  <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
-                    {hasInheritedContext ? (
-                      <Flex align="center" gap={3} py={2} color="fg.muted">
-                        <Separator flex={1} />
-                        <Text fontSize="xs" whiteSpace="nowrap">{translation("inheritedContextBoundary")}</Text>
-                        <Separator flex={1} />
-                      </Flex>
-                    ) : null}
-                    {/* No presence wrapper, deliberately: a transcript row appears when it exists and is gone when it does not. */}
-                    {renderedTimeline.map((item, itemIndex) => {
-                        const isLastItem = itemIndex === renderedTimeline.length - 1;
-                        const key = item.kind === "tool_group" ? item.id : item.message.id;
-                        // A tools-less group stays as a persistent Thinking row, so it is skipped only when it carries neither tools nor thinking.
-                        if (item.kind === "tool_group" && item.messages.length === 0 && item.thinkingTurns === 0) {
-                          return null;
-                        }
-                        const inner = item.kind === "tool_group" ? (
-                          <ChatToolGroup
-                            messages={item.messages}
-                            keepOpen={isStreaming && isLastItem}
-                          />
-                        ) : (
-                          <ChatMessageItem
-                            message={item.message}
-                            onRetry={item.message.role === "error" ? handleRetry : undefined}
-                            streaming={isStreaming && isLastItem}
-                          />
-                        );
-                        // Assistant messages stream, so their wrapper stays stable; complete rows get a single gentle fade.
-                        const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
-                        if (isAssistantMessage) {
-                          return (
-                            <Box key={key} display="flex" flexDirection="column">
-                              {inner}
-                            </Box>
-                          );
-                        }
-                        return (
-                          <FadeIn
-                            key={key}
-                            animate={animatedKeys.has(key)}
-                            style={{ display: "flex", flexDirection: "column" }}
-                          >
-                            {inner}
-                          </FadeIn>
-                        );
-                    })}
-                    {/* A queued message, drawn as itself; the one being handed over is skipped, being a row already. */}
-                    {queuedMessages.map((message, index) => message.id === deliveringMessage ? null : (
-                      <UserMessageCard
-                        key={message.id}
-                        message={{ id: message.id, role: "user", content: message.text, timestamp: "" }}
-                        queued={{
-                          status: translation(
-                            outboxHold === "unreachable" ? "queuedUnreachable"
-                              : outboxHold === "decision" ? "queuedForDecision"
-                                : "queued"
-                          ),
-                          failed: outboxHold === "unreachable",
-                          onDelete: () => dequeueMessage(index),
-                          ...(outboxHold === "unreachable" && index === 0
-                            ? { onRetry: retryOutbox, retryLabel: translation("queuedRetry") }
-                            : {}),
-                        }}
-                      />
-                    ))}
-                  </VStack>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          )}
-        </Box>
-        {!isAtBottom && timelineMounted && (
-          <Button
-            variant="outline"
-            position="absolute"
-            bottom={3}
-            left="50%"
-            transform="translateX(-50%)"
-            zIndex={2}
-            bg="bg.subtle"
-            color="fg"
-            fontWeight="medium"
-            px={2}
-            onClick={scrollToBottom}
-          >
-            <LuArrowDown />
-            {translation("jumpToLatest")}
-          </Button>
-        )}
-        </Box>
-
-        {/* The overlay sits in the same centred column as the messages, with no clipping to slice its shadow. */}
-        {/* One owner for the transition, keyed by the request, so two decisions are never on screen at once. */}
-        <AnimatePresence mode="wait" initial={false}>
-          {pendingPrompt && (
-            <FadeIn key={pendingPromptId} seconds={0.15}>
-              <Box px={4}>
-                <Box w="full" maxW="80rem" mx="auto">
-                  {pendingPrompt.kind === "question" && (
-                    <QuestionOverlay question={pendingPrompt.question} onQuestion={handleQuestion} onDismiss={declineQuestion} />
-                  )}
-                  {pendingPrompt.kind === "permission" && (
-                    <PermissionOverlay
-                      permission={pendingPrompt.permission}
-                      title={pendingPrompt.title}
-                      detail={pendingPrompt.detail}
-                      detailPaths={pendingPrompt.detailPaths}
-                      command={pendingPrompt.command}
-                      arguments={pendingPrompt.arguments}
-                      onPermission={handlePermission}
-                    />
-                  )}
-                </Box>
+              </Tooltip>
+            ) : (
+              <Box color="fg.muted" flexShrink={0}>
+                <LuMessageSquare size={14} />
               </Box>
-            </FadeIn>
+            )}
+            <Text textStyle="panelTitle" fontWeight="medium" truncate minW={0} flex={1}>
+              {sessionId
+                ? sessionTitle || translation("untitledConversation")
+                : translation("newConversation")}
+            </Text>
+            <GitStatusBar status={directoryStatus} />
+            <Flex align="center" gap={1} flexShrink={0}>
+              {/* What this workspace's conversations have handed to other sessions, with a dot only when something has. */}
+              <ToolbarAction
+                label={translation("delegatedWork")}
+                icon={<LuGitBranch size={14} />}
+                active={delegatedPanelOpen}
+                colorPalette="purple"
+                indicator={delegatedSessionCount > 0}
+                onClick={() => setSidePanelOpen("delegated", !delegatedPanelOpen)}
+              />
+              {/* What this conversation remembers of the turns that have left its window. */}
+              <ToolbarAction
+                label={translation("memory")}
+                icon={<LuBookMarked size={CONTROL_ICON_SIZE} />}
+                active={memoryPanelOpen}
+                colorPalette="orange"
+                onClick={() => setSidePanelOpen("memory", !memoryPanelOpen)}
+              />
+              <ToolbarAction
+                label={translation("terminalAndBackground")}
+                icon={<LuTerminal size={14} />}
+                active={backgroundPanelOpen}
+                colorPalette="green"
+                indicator={runningShellCount > 0}
+                onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
+              />
+              {/* Light and dark, switched here because it is the one setting people change on a whim. */}
+              <ToolbarAction
+                label={
+                  colorMode === "dark" ? translation("switchToLight") : translation("switchToDark")
+                }
+                icon={colorMode === "dark" ? <LuSun size={14} /> : <LuMoon size={14} />}
+                onClick={toggleColorMode}
+              />
+              <ToolbarAction
+                label={translation("settings")}
+                icon={<LuSettings size={14} />}
+                onClick={() => openSettings("general")}
+              />
+              <DropdownMenu
+                trigger={
+                  <IconButton aria-label={translation("sessionOptions")} variant="ghost">
+                    <LuEllipsis size={14} />
+                  </IconButton>
+                }
+                minW="200px"
+              >
+                <Menu.Item
+                  value="reveal"
+                  fontSize="xs"
+                  disabled={!revealPath}
+                  onClick={() => {
+                    if (revealPath) void revealInFinder(revealPath);
+                  }}
+                >
+                  <LuFolderOpen size={13} />
+                  <Box flex={1}>{translation("openThisFolder")}</Box>
+                </Menu.Item>
+                <Menu.Item
+                  value="delete"
+                  fontSize="xs"
+                  color="red.fg"
+                  _hover={{ bg: "red.subtle" }}
+                  disabled={!sessionId || !onDeleteSession}
+                  onClick={() => setDeleteConfirmOpen(true)}
+                >
+                  <LuTrash2 size={13} />
+                  <Box flex={1}>{translation("deleteSession")}</Box>
+                </Menu.Item>
+              </DropdownMenu>
+            </Flex>
+          </Flex>
+          <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
+            <Box
+              ref={scrollContainerRef}
+              flex={1}
+              minH={0}
+              display="flex"
+              flexDirection="column"
+              overflowY="auto"
+              px={4}
+              py={3}
+              onScroll={handleScroll}
+              css={transcriptPinned ? scrollFade : scrollFadeTopBottom}
+              style={{ overflowAnchor: "none", scrollbarGutter: "stable both-edges" }}
+            >
+              {connectionLost ? (
+                // A lost daemon is a state worth naming, and the only one here whose remedy is a single button.
+                <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
+                  <EmptyState.Root>
+                    <EmptyState.Content>
+                      <EmptyState.Indicator>
+                        <LuPlugZap />
+                      </EmptyState.Indicator>
+                      <VStack gap={1}>
+                        <EmptyState.Title>{translation("disconnectedTitle")}</EmptyState.Title>
+                        <EmptyState.Description>
+                          {translation("disconnectedDescription")}
+                        </EmptyState.Description>
+                      </VStack>
+                      <Button variant="solid" colorPalette="blue" onClick={onReconnect}>
+                        {translation("reconnect")}
+                      </Button>
+                    </EmptyState.Content>
+                  </EmptyState.Root>
+                </Flex>
+              ) : !transcriptVisible ? (
+                <Flex h="100%" />
+              ) : historyError ? (
+                <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
+                  <EmptyState.Root>
+                    <EmptyState.Content>
+                      <EmptyState.Indicator>
+                        <LuTriangleAlert />
+                      </EmptyState.Indicator>
+                      <VStack gap={1}>
+                        <EmptyState.Title>
+                          {translation("loadConversationErrorTitle")}
+                        </EmptyState.Title>
+                        <EmptyState.Description>
+                          {translation("loadConversationErrorDescription")}
+                        </EmptyState.Description>
+                      </VStack>
+                      <Button variant="solid" colorPalette="blue" onClick={reloadHistory}>
+                        {translation("retry")}
+                      </Button>
+                    </EmptyState.Content>
+                  </EmptyState.Root>
+                </Flex>
+              ) : (
+                // The welcome and the timeline cross-fade out of flow, so sending the first message never flashes.
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {messages.length === 0 && !hasInheritedContext ? (
+                    <motion.div
+                      key="empty"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      style={{
+                        width: "100%",
+                        flex: 1,
+                        minHeight: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      {/* The same centred column as the transcript, sitting in the middle of whatever room there is. */}
+                      {/* One rhythm for the sections, matching the gap the capability sections keep between themselves. */}
+                      <Flex
+                        direction="column"
+                        align="stretch"
+                        gap={6}
+                        w="full"
+                        maxW="80rem"
+                        mx="auto"
+                        my="auto"
+                        py={{ base: 4, md: 6 }}
+                      >
+                        {/* The blank-conversation state inside a workspace: the prompt, then what it can reach and what the agent can do. */}
+                        <Heading
+                          as="h2"
+                          fontSize="3xl"
+                          fontWeight="semibold"
+                          textAlign="center"
+                          mb={4}
+                        >
+                          {translation("buildPrompt", { folder: currentFolderName })}
+                        </Heading>
+
+                        {/* The locations read as a section like the ones under them, with the same icon, heading and list. */}
+                        {workspaceLocations.length > 0 && (
+                          <Box w="100%" minW={0}>
+                            <SectionHeader
+                              icon={<CONCEPT_ICONS.environment size={14} />}
+                              title={translation("environmentsAvailable")}
+                              description={translation("environmentsDescription")}
+                            />
+                            <Flex align="center" gap={2.5} wrap="wrap">
+                              {workspaceLocations.map((location) => (
+                                <LocationChip key={location.id} location={location} />
+                              ))}
+                            </Flex>
+                          </Box>
+                        )}
+
+                        <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} />
+                      </Flex>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="timeline"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      style={{ width: "100%" }}
+                    >
+                      {/* Tight enough that a tool line and the prose around it read as one document, with bubbles marking turns. */}
+                      <VStack
+                        ref={scrollContentRef}
+                        gap={2.5}
+                        align="stretch"
+                        w="full"
+                        maxW="80rem"
+                        mx="auto"
+                      >
+                        {hasInheritedContext ? (
+                          <Flex align="center" gap={3} py={2} color="fg.muted">
+                            <Separator flex={1} />
+                            <Text fontSize="xs" whiteSpace="nowrap">
+                              {translation("inheritedContextBoundary")}
+                            </Text>
+                            <Separator flex={1} />
+                          </Flex>
+                        ) : null}
+                        {/* No presence wrapper, deliberately: a transcript row appears when it exists and is gone when it does not. */}
+                        {renderedTimeline.map((item, itemIndex) => {
+                          const isLastItem = itemIndex === renderedTimeline.length - 1;
+                          const key = item.kind === "tool_group" ? item.id : item.message.id;
+                          // A tools-less group stays as a persistent Thinking row, so it is skipped only when it carries neither tools nor thinking.
+                          if (
+                            item.kind === "tool_group" &&
+                            item.messages.length === 0 &&
+                            item.thinkingTurns === 0
+                          ) {
+                            return null;
+                          }
+                          const inner =
+                            item.kind === "tool_group" ? (
+                              <ChatToolGroup
+                                messages={item.messages}
+                                keepOpen={isStreaming && isLastItem}
+                              />
+                            ) : (
+                              <ChatMessageItem
+                                message={item.message}
+                                onRetry={item.message.role === "error" ? handleRetry : undefined}
+                                streaming={isStreaming && isLastItem}
+                              />
+                            );
+                          // Assistant messages stream, so their wrapper stays stable; complete rows get a single gentle fade.
+                          const isAssistantMessage =
+                            item.kind === "message" && item.message.role === "assistant";
+                          if (isAssistantMessage) {
+                            return (
+                              <Box key={key} display="flex" flexDirection="column">
+                                {inner}
+                              </Box>
+                            );
+                          }
+                          return (
+                            <FadeIn
+                              key={key}
+                              animate={animatedKeys.has(key)}
+                              style={{ display: "flex", flexDirection: "column" }}
+                            >
+                              {inner}
+                            </FadeIn>
+                          );
+                        })}
+                        {/* A queued message, drawn as itself; the one being handed over is skipped, being a row already. */}
+                        {queuedMessages.map((message, index) =>
+                          message.id === deliveringMessage ? null : (
+                            <UserMessageCard
+                              key={message.id}
+                              message={{
+                                id: message.id,
+                                role: "user",
+                                content: message.text,
+                                timestamp: "",
+                              }}
+                              queued={{
+                                status: translation(
+                                  outboxHold === "unreachable"
+                                    ? "queuedUnreachable"
+                                    : outboxHold === "decision"
+                                      ? "queuedForDecision"
+                                      : "queued",
+                                ),
+                                failed: outboxHold === "unreachable",
+                                onDelete: () => dequeueMessage(index),
+                                ...(outboxHold === "unreachable" && index === 0
+                                  ? { onRetry: retryOutbox, retryLabel: translation("queuedRetry") }
+                                  : {}),
+                              }}
+                            />
+                          ),
+                        )}
+                      </VStack>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
+            </Box>
+            {!isAtBottom && timelineMounted && (
+              <Button
+                variant="outline"
+                position="absolute"
+                bottom={3}
+                left="50%"
+                transform="translateX(-50%)"
+                zIndex={2}
+                bg="bg.subtle"
+                color="fg"
+                fontWeight="medium"
+                px={2}
+                onClick={scrollToBottom}
+              >
+                <LuArrowDown />
+                {translation("jumpToLatest")}
+              </Button>
+            )}
+          </Box>
+
+          {/* The overlay sits in the same centred column as the messages, with no clipping to slice its shadow. */}
+          {/* One owner for the transition, keyed by the request, so two decisions are never on screen at once. */}
+          <AnimatePresence mode="wait" initial={false}>
+            {pendingPrompt && (
+              <FadeIn key={pendingPromptId} seconds={0.15}>
+                <Box px={4}>
+                  <Box w="full" maxW="80rem" mx="auto">
+                    {pendingPrompt.kind === "question" && (
+                      <QuestionOverlay
+                        question={pendingPrompt.question}
+                        onQuestion={handleQuestion}
+                        onDismiss={declineQuestion}
+                      />
+                    )}
+                    {pendingPrompt.kind === "permission" && (
+                      <PermissionOverlay
+                        permission={pendingPrompt.permission}
+                        title={pendingPrompt.title}
+                        detail={pendingPrompt.detail}
+                        detailPaths={pendingPrompt.detailPaths}
+                        command={pendingPrompt.command}
+                        arguments={pendingPrompt.arguments}
+                        onPermission={handlePermission}
+                      />
+                    )}
+                  </Box>
+                </Box>
+              </FadeIn>
+            )}
+          </AnimatePresence>
+          {/* The composer mirrors the transcript's horizontal geometry, with the scrollbar gutter reserved on both edges. */}
+          {/* The bottom padding is the phone's home indicator, and zero everywhere else. */}
+          {chatReady && (
+            <Box
+              px={4}
+              pb="var(--safe-bottom, 0px)"
+              overflowY="hidden"
+              // Never gives up its height, so a growing composer cannot push itself past the bottom of the window.
+              flexShrink={0}
+              style={{ scrollbarGutter: "stable both-edges" }}
+            >
+              <Box w="full" maxW="80rem" mx="auto">
+                {/* Above the composer, because a session with a goal is one the person typing should see and be able to end. */}
+                {activeGoal && <GoalBar goal={activeGoal} onClear={handleClearGoal} />}
+                <ChatInput
+                  onSend={handleSend}
+                  onAbort={abort}
+                  isStreaming={isStreaming}
+                  // Two reasons the composer is closed, kept apart because they read as different things to the person looking at it.
+                  disabled={!isConnected || directoryPending}
+                  awaitingDecision={!!pendingPrompt}
+                  sessionId={sessionId}
+                  initialDraft={initialInputDraft}
+                  onDraftChange={handleInputDraftChange}
+                  workingDirectory={workingDirectory}
+                  directoryValid={directoryValid}
+                  agents={agents}
+                  selectedAgent={agent}
+                  onAgentChange={onAgentChange}
+                  models={models}
+                  modelProviders={modelProviders}
+                  recentModels={recentModels}
+                  agentModel={agentModel}
+                  onAgentModelChange={onAgentModelChange}
+                  permissionMode={effectivePermissionMode}
+                  onPermissionModeChange={handlePermissionModeChange}
+                  sandboxEnforce={sandboxEnforce}
+                  sandboxBackend={sandboxBackend.backend}
+                  onSandboxEnforceChange={onSandboxEnforceChange}
+                  tokenUsage={tokenUsage}
+                  onCompact={compact}
+                  isCompacting={isCompacting}
+                />
+              </Box>
+            </Box>
+          )}
+        </Flex>
+
+        {/* The right region tiles every open panel into a resizable grid, flush to the chat with an overlapping handle. */}
+        <AnimatePresence initial={false}>
+          {sidePanels.length > 0 && (
+            <MotionBox
+              key="panel-region"
+              data-layout="side-panel-region"
+              flexShrink={0}
+              h="100%"
+              w={{ base: "100%", md: `min(${sidePanelWidth}px, 55%)` }}
+              minW={{ base: "100%", md: "min(360px, 55%)" }}
+              maxW={{ base: "100%", md: "80vw" }}
+              pr={2}
+              // Full-screen at `base`, so its bottom edge is the device's rather than the panel's.
+              pb={{ base: "calc(var(--safe-bottom, 0px) + 0.5rem)", md: 2 }}
+              position={{ base: "absolute", md: "relative" }}
+              inset={{ base: 0, md: "auto" }}
+              zIndex={{ base: 3, md: "auto" }}
+              // The same slide and fade as the history sidebar, mirrored, with only transform and opacity animating.
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 24 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            >
+              <Box
+                display={{ base: "none", md: "block" }}
+                position="absolute"
+                top={0}
+                bottom={0}
+                left={-1}
+                w={2}
+                cursor="col-resize"
+                zIndex={1}
+                onPointerDown={startSidePanelResize}
+              />
+              <PanelTiles gap={8} panels={sidePanels} />
+            </MotionBox>
           )}
         </AnimatePresence>
-        {/* The composer mirrors the transcript's horizontal geometry, with the scrollbar gutter reserved on both edges. */}
-        {/* The bottom padding is the phone's home indicator, and zero everywhere else. */}
-        {chatReady && (
-        <Box
-          px={4}
-          pb="var(--safe-bottom, 0px)"
-          overflowY="hidden"
-          // Never gives up its height, so a growing composer cannot push itself past the bottom of the window.
-          flexShrink={0}
-          style={{ scrollbarGutter: "stable both-edges" }}
-        >
-        <Box w="full" maxW="80rem" mx="auto">
-        {/* Above the composer, because a session with a goal is one the person typing should see and be able to end. */}
-        {activeGoal && <GoalBar goal={activeGoal} onClear={handleClearGoal} />}
-        <ChatInput
-          onSend={handleSend}
-          onAbort={abort}
-          isStreaming={isStreaming}
-          // Two reasons the composer is closed, kept apart because they read as different things to the person looking at it.
-          disabled={!isConnected || directoryPending}
-          awaitingDecision={!!pendingPrompt}
-          sessionId={sessionId}
-          initialDraft={initialInputDraft}
-          onDraftChange={handleInputDraftChange}
+
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          section={settingsSection}
+          onSectionChange={setSettingsSection}
+          workspaceId={workspaceId}
           workingDirectory={workingDirectory}
-          directoryValid={directoryValid}
-          agents={agents}
-          selectedAgent={agent}
-          onAgentChange={onAgentChange}
           models={models}
           modelProviders={modelProviders}
           recentModels={recentModels}
-          agentModel={agentModel}
-          onAgentModelChange={onAgentModelChange}
-          permissionMode={effectivePermissionMode}
+          agents={agents}
+          selectedAgent={agent}
+          onAgentChange={onAgentChange}
+          livePermissionMode={permissionMode}
           onPermissionModeChange={handlePermissionModeChange}
-          sandboxEnforce={sandboxEnforce}
-          sandboxBackend={sandboxBackend.backend}
+          liveSandboxEnforce={sandboxEnforce}
+          sandboxBackend={sandboxBackend}
           onSandboxEnforceChange={onSandboxEnforceChange}
-          tokenUsage={tokenUsage}
-          onCompact={compact}
-          isCompacting={isCompacting}
+          liveWorktreeStrategy={worktreeStrategy}
+          onWorktreeStrategyChange={onWorktreeStrategyChange}
         />
-        </Box>
-        </Box>
-        )}
-      </Flex>
 
-      {/* The right region tiles every open panel into a resizable grid, flush to the chat with an overlapping handle. */}
-      <AnimatePresence initial={false}>
-      {sidePanels.length > 0 && (
-        <MotionBox
-          key="panel-region"
-          data-layout="side-panel-region"
-          flexShrink={0}
-          h="100%"
-          w={{ base: "100%", md: `min(${sidePanelWidth}px, 55%)` }}
-          minW={{ base: "100%", md: "min(360px, 55%)" }}
-          maxW={{ base: "100%", md: "80vw" }}
-          pr={2}
-          // Full-screen at `base`, so its bottom edge is the device's rather than the panel's.
-          pb={{ base: "calc(var(--safe-bottom, 0px) + 0.5rem)", md: 2 }}
-          position={{ base: "absolute", md: "relative" }}
-          inset={{ base: 0, md: "auto" }}
-          zIndex={{ base: 3, md: "auto" }}
-          // The same slide and fade as the history sidebar, mirrored, with only transform and opacity animating.
-          initial={{ opacity: 0, x: 24 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 24 }}
-          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onOpenChange={setDeleteConfirmOpen}
+          title={translation("deleteSessionConfirmTitle")}
+          confirmLabel={translation("delete")}
+          confirmIcon={<LuTrash2 size={14} />}
+          danger
+          onConfirm={() => {
+            if (sessionId) onDeleteSession?.(sessionId);
+          }}
         >
-          <Box
-            display={{ base: "none", md: "block" }}
-            position="absolute"
-            top={0}
-            bottom={0}
-            left={-1}
-            w={2}
-            cursor="col-resize"
-            zIndex={1}
-            onPointerDown={startSidePanelResize}
-          />
-            <PanelTiles gap={8} panels={sidePanels} />
-        </MotionBox>
-      )}
-      </AnimatePresence>
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        section={settingsSection}
-        onSectionChange={setSettingsSection}
-        workspaceId={workspaceId}
-        workingDirectory={workingDirectory}
-        models={models}
-        modelProviders={modelProviders}
-        recentModels={recentModels}
-        agents={agents}
-        selectedAgent={agent}
-        onAgentChange={onAgentChange}
-        livePermissionMode={permissionMode}
-        onPermissionModeChange={handlePermissionModeChange}
-        liveSandboxEnforce={sandboxEnforce}
-        sandboxBackend={sandboxBackend}
-        onSandboxEnforceChange={onSandboxEnforceChange}
-        liveWorktreeStrategy={worktreeStrategy}
-        onWorktreeStrategyChange={onWorktreeStrategyChange}
-      />
-
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        title={translation("deleteSessionConfirmTitle")}
-        confirmLabel={translation("delete")}
-        confirmIcon={<LuTrash2 size={14} />}
-        danger
-        onConfirm={() => { if (sessionId) onDeleteSession?.(sessionId); }}
-      >
-        {translation("deleteSessionConfirmBody")}
-      </ConfirmDialog>
-    </Flex>
+          {translation("deleteSessionConfirmBody")}
+        </ConfirmDialog>
+      </Flex>
     </AgentNamesProvider>
   );
 }

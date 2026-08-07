@@ -82,10 +82,14 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
                     git_commit_author = commit_metadata["author"]
                     git_commit_author_email = commit_metadata["author_email"]
                     git_commit_author_date = commit_metadata["author_date"]
-                upstream = _run_git_probe(path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+                upstream = _run_git_probe(
+                    path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
+                )
                 git_upstream = upstream.stdout.strip() if upstream.returncode == 0 else ""
                 if git_upstream:
-                    ahead_behind = _run_git_probe(path, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+                    ahead_behind = _run_git_probe(
+                        path, "rev-list", "--left-right", "--count", "HEAD...@{u}"
+                    )
                     if ahead_behind.returncode == 0:
                         counts = ahead_behind.stdout.strip().split()
                         if len(counts) == 2:
@@ -94,11 +98,17 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
                 staged = _run_git_probe(path, "diff", "--cached", "--name-only")
                 git_staged_count = len(staged.stdout.splitlines()) if staged.returncode == 0 else 0
                 unstaged = _run_git_probe(path, "diff", "--name-only")
-                git_unstaged_count = len(unstaged.stdout.splitlines()) if unstaged.returncode == 0 else 0
+                git_unstaged_count = (
+                    len(unstaged.stdout.splitlines()) if unstaged.returncode == 0 else 0
+                )
                 untracked = _run_git_probe(path, "ls-files", "--others", "--exclude-standard")
-                git_untracked_count = len(untracked.stdout.splitlines()) if untracked.returncode == 0 else 0
+                git_untracked_count = (
+                    len(untracked.stdout.splitlines()) if untracked.returncode == 0 else 0
+                )
                 conflicted = _run_git_probe(path, "diff", "--name-only", "--diff-filter=U")
-                git_conflicted_count = len(conflicted.stdout.splitlines()) if conflicted.returncode == 0 else 0
+                git_conflicted_count = (
+                    len(conflicted.stdout.splitlines()) if conflicted.returncode == 0 else 0
+                )
                 git_dirty = any(
                     count > 0
                     for count in (
@@ -162,7 +172,8 @@ def _git_commit_metadata(commit_text: str) -> dict[str, str]:
             timedelta(
                 hours=int(timezone_text[1:3]),
                 minutes=int(timezone_text[3:5]),
-            ) * (1 if timezone_text[0] == "+" else -1)
+            )
+            * (1 if timezone_text[0] == "+" else -1)
         )
         metadata["author_date"] = datetime.fromtimestamp(timestamp, timezone_offset).isoformat()
         break
@@ -258,7 +269,9 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
         return False
 
 
-def _git_status_changes_relevant(directory: str, payload: dict[str, object], changes: set[tuple[object, str]]) -> bool:
+def _git_status_changes_relevant(
+    directory: str, payload: dict[str, object], changes: set[tuple[object, str]]
+) -> bool:
     repository_root_text = str(payload.get("repository_root") or "")
     if not repository_root_text:
         return True
@@ -266,8 +279,14 @@ def _git_status_changes_relevant(directory: str, payload: dict[str, object], cha
     git_paths = [
         path
         for path in (
-            _resolve_git_path(repository_root, _run_git_probe(Path(directory), "rev-parse", "--git-dir").stdout.strip()),
-            _resolve_git_path(repository_root, _run_git_probe(Path(directory), "rev-parse", "--git-common-dir").stdout.strip()),
+            _resolve_git_path(
+                repository_root,
+                _run_git_probe(Path(directory), "rev-parse", "--git-dir").stdout.strip(),
+            ),
+            _resolve_git_path(
+                repository_root,
+                _run_git_probe(Path(directory), "rev-parse", "--git-common-dir").stdout.strip(),
+            ),
         )
         if path is not None
     ]
@@ -303,7 +322,11 @@ def _open_folder_picker() -> dict[str, object]:
     try:
         if system == "Darwin":
             result = subprocess.run(
-                ["osascript", "-e", 'POSIX path of (choose folder with prompt "Choose a working directory")'],
+                [
+                    "osascript",
+                    "-e",
+                    'POSIX path of (choose folder with prompt "Choose a working directory")',
+                ],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -338,7 +361,11 @@ def _open_folder_picker() -> dict[str, object]:
     except subprocess.TimeoutExpired:
         return {"path": "", "cancelled": True, "error": "Folder selection timed out."}
     except FileNotFoundError as exception:
-        return {"path": "", "cancelled": True, "error": f"Folder picker is unavailable: {exception.filename}"}
+        return {
+            "path": "",
+            "cancelled": True,
+            "error": f"Folder picker is unavailable: {exception.filename}",
+        }
 
 
 def _folder_picker_result(result: subprocess.CompletedProcess[str]) -> dict[str, object]:

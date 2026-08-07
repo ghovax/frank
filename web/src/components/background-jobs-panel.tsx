@@ -3,8 +3,25 @@
 import { Box, Flex, IconButton, Menu, Text } from "@chakra-ui/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuActivity, LuClock, LuFolder, LuMoveDownRight, LuPlus, LuServer, LuSquare, LuTerminal } from "react-icons/lu";
-import { abortToolCall, deleteTerminal, fetchBackgroundJobs, listTerminals, sendToolToBackground, type BackgroundJob, type Location } from "@/lib/api";
+import {
+  LuActivity,
+  LuClock,
+  LuFolder,
+  LuMoveDownRight,
+  LuPlus,
+  LuServer,
+  LuSquare,
+  LuTerminal,
+} from "react-icons/lu";
+import {
+  abortToolCall,
+  deleteTerminal,
+  fetchBackgroundJobs,
+  listTerminals,
+  sendToolToBackground,
+  type BackgroundJob,
+  type Location,
+} from "@/lib/api";
 import type { ChatMessage } from "@/lib/use-chat";
 import type { ToolEventStatus } from "@/lib/tool-event";
 import { ToolCall } from "./tool-call";
@@ -93,12 +110,16 @@ function mergeTasks(messageTasks: ShellJob[], liveTasks: ShellJob[]): ShellJob[]
   for (const task of liveTasks) {
     const messageTask = tasksByIdentifier.get(task.toolCallId);
     const transcriptExplanation = messageTask?.arguments.explanation;
-    tasksByIdentifier.set(task.toolCallId, transcriptExplanation && !task.arguments.explanation
-      ? { ...task, arguments: { ...task.arguments, explanation: transcriptExplanation } }
-      : task);
+    tasksByIdentifier.set(
+      task.toolCallId,
+      transcriptExplanation && !task.arguments.explanation
+        ? { ...task, arguments: { ...task.arguments, explanation: transcriptExplanation } }
+        : task,
+    );
   }
-  return Array.from(tasksByIdentifier.values())
-    .sort((first, second) => second.timestamp.localeCompare(first.timestamp));
+  return Array.from(tasksByIdentifier.values()).sort((first, second) =>
+    second.timestamp.localeCompare(first.timestamp),
+  );
 }
 
 // A running shell command, with the actions that only make sense while it is live.
@@ -138,7 +159,9 @@ function RunningTaskRow({ task, sessionId }: { task: ShellJob; sessionId: string
           {task.canBackground && !task.backgrounded && (
             <Tooltip content={translation("sendToBackgroundHint")} openDelay={300}>
               <IconButton
-                aria-label={busy === "background" ? translation("sending") : translation("sendToBackground")}
+                aria-label={
+                  busy === "background" ? translation("sending") : translation("sendToBackground")
+                }
                 variant="plain"
                 colorPalette="blue"
                 boxSize="5"
@@ -146,7 +169,13 @@ function RunningTaskRow({ task, sessionId }: { task: ShellJob; sessionId: string
                 disabled={!sessionId || busy !== null}
                 onClick={handleBackground}
               >
-                {busy === "background" ? <ActivitySpinner /> : <ActivityIcon><LuMoveDownRight /></ActivityIcon>}
+                {busy === "background" ? (
+                  <ActivitySpinner />
+                ) : (
+                  <ActivityIcon>
+                    <LuMoveDownRight />
+                  </ActivityIcon>
+                )}
               </IconButton>
             </Tooltip>
           )}
@@ -160,7 +189,13 @@ function RunningTaskRow({ task, sessionId }: { task: ShellJob; sessionId: string
               disabled={!sessionId || busy !== null}
               onClick={handleStop}
             >
-              {busy === "stop" ? <ActivitySpinner /> : <ActivityIcon><LuSquare /></ActivityIcon>}
+              {busy === "stop" ? (
+                <ActivitySpinner />
+              ) : (
+                <ActivityIcon>
+                  <LuSquare />
+                </ActivityIcon>
+              )}
             </IconButton>
           </Tooltip>
         </>
@@ -272,7 +307,9 @@ export function BackgroundJobsPanel({
     <PanelCard>
       <PanelHeader
         icon={activeView === "terminal" ? <LuTerminal size={14} /> : <LuActivity size={14} />}
-        title={activeView === "terminal" ? translation("terminal") : translation("backgroundProcesses")}
+        title={
+          activeView === "terminal" ? translation("terminal") : translation("backgroundProcesses")
+        }
         onClose={onClose}
         closeLabel={translation("collapseSidebar")}
       >
@@ -287,7 +324,12 @@ export function BackgroundJobsPanel({
       </PanelHeader>
 
       <Box flex={1} minH={0} position="relative" overflow="hidden">
-        <Flex position="absolute" inset={0} direction="column" visibility={activeView === "terminal" ? "visible" : "hidden"}>
+        <Flex
+          position="absolute"
+          inset={0}
+          direction="column"
+          visibility={activeView === "terminal" ? "visible" : "hidden"}
+        >
           {/* Terminal tabs, plus a control to spawn a new terminal and the location switcher, all at one height. */}
           <Flex px={4} py={2} overflowX="auto" flexShrink={0}>
             <Flex gap={1.5} align="center">
@@ -295,12 +337,24 @@ export function BackgroundJobsPanel({
                 const terminalLocation = locationForTerminal(key);
                 const tabTooltip = (
                   <Box fontSize="xs" lineHeight="1.6" maxW="300px">
-                    <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">{translation("terminalNumber", { number: index + 1 })}</Text>
+                    <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">
+                      {translation("terminalNumber", { number: index + 1 })}
+                    </Text>
                     {terminalLocation ? (
                       <Flex direction="column" gap={1}>
-                        <InlineField label={translation("location")}><Text>{locationTargetLabel(terminalLocation)}</Text></InlineField>
-                        <InlineField label={translation("type")}><Text>{terminalLocation.kind === "remote" ? translation("remoteSsh") : translation("local")}</Text></InlineField>
-                        <Text color="fg.muted" wordBreak="break-all" mt={0.5}>{locationTargetAddress(terminalLocation)}</Text>
+                        <InlineField label={translation("location")}>
+                          <Text>{locationTargetLabel(terminalLocation)}</Text>
+                        </InlineField>
+                        <InlineField label={translation("type")}>
+                          <Text>
+                            {terminalLocation.kind === "remote"
+                              ? translation("remoteSsh")
+                              : translation("local")}
+                          </Text>
+                        </InlineField>
+                        <Text color="fg.muted" wordBreak="break-all" mt={0.5}>
+                          {locationTargetAddress(terminalLocation)}
+                        </Text>
                       </Flex>
                     ) : null}
                   </Box>
@@ -322,15 +376,26 @@ export function BackgroundJobsPanel({
                 // Multiple environments: "＋" opens a menu to pick where the new terminal runs.
                 <DropdownMenu
                   trigger={
-                    <IconButton aria-label={translation("newTerminal")} title={translation("newTerminal")} variant="ghost" flexShrink={0}>
+                    <IconButton
+                      aria-label={translation("newTerminal")}
+                      title={translation("newTerminal")}
+                      variant="ghost"
+                      flexShrink={0}
+                    >
                       <LuPlus size={14} />
                     </IconButton>
                   }
                   minW="200px"
                 >
-                  <Text px={2} py={1} textStyle="sectionLabel">{translation("newTerminalIn")}</Text>
+                  <Text px={2} py={1} textStyle="sectionLabel">
+                    {translation("newTerminalIn")}
+                  </Text>
                   {locations.map((location) => (
-                    <Menu.Item key={location.id} value={location.id} onClick={() => addTerminal(location.id)}>
+                    <Menu.Item
+                      key={location.id}
+                      value={location.id}
+                      onClick={() => addTerminal(location.id)}
+                    >
                       {location.kind === "remote" ? <LuServer size={14} /> : <LuFolder size={14} />}
                       <Box flex={1}>{locationTargetLabel(location)}</Box>
                     </Menu.Item>
@@ -338,7 +403,12 @@ export function BackgroundJobsPanel({
                 </DropdownMenu>
               ) : (
                 <Tooltip content={translation("newTerminal")} openDelay={300}>
-                  <IconButton aria-label={translation("newTerminal")} variant="ghost" flexShrink={0} onClick={() => addTerminal()}>
+                  <IconButton
+                    aria-label={translation("newTerminal")}
+                    variant="ghost"
+                    flexShrink={0}
+                    onClick={() => addTerminal()}
+                  >
                     <LuPlus size={14} />
                   </IconButton>
                 </Tooltip>
@@ -350,14 +420,29 @@ export function BackgroundJobsPanel({
             {terminals.map((key) => {
               const terminalLocation = locationForTerminal(key);
               return (
-              <Box key={key} position="absolute" inset={0} visibility={activeView === "terminal" && key === activeTerminal ? "visible" : "hidden"}>
-                <TerminalSurface
-                  sessionId={sessionId}
-                  workingDirectory={workingDirectory}
-                  terminalKey={key}
-                  location={terminalLocation ? { kind: terminalLocation.kind, base_directory: terminalLocation.base_directory, host_alias: terminalLocation.host_alias } : undefined}
-                />
-              </Box>
+                <Box
+                  key={key}
+                  position="absolute"
+                  inset={0}
+                  visibility={
+                    activeView === "terminal" && key === activeTerminal ? "visible" : "hidden"
+                  }
+                >
+                  <TerminalSurface
+                    sessionId={sessionId}
+                    workingDirectory={workingDirectory}
+                    terminalKey={key}
+                    location={
+                      terminalLocation
+                        ? {
+                            kind: terminalLocation.kind,
+                            base_directory: terminalLocation.base_directory,
+                            host_alias: terminalLocation.host_alias,
+                          }
+                        : undefined
+                    }
+                  />
+                </Box>
               );
             })}
           </Box>
@@ -386,12 +471,11 @@ export function BackgroundJobsPanel({
                   maxH="360px"
                   followTailKey={running.length}
                   icon={<LuActivity />}
-                  title={<DisclosureLabel shimmer>{translation("processesActive")}</DisclosureLabel>}
+                  title={
+                    <DisclosureLabel shimmer>{translation("processesActive")}</DisclosureLabel>
+                  }
                   badges={
-                    <Pill
-                      colorPalette="blue"
-                      icon={<ActivitySpinner />}
-                    >
+                    <Pill colorPalette="blue" icon={<ActivitySpinner />}>
                       {running.length}
                     </Pill>
                   }

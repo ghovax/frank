@@ -52,21 +52,30 @@ class RequestTrace:
 
 def trace(pieces: Sequence[Piece]) -> RequestTrace:
     """Measure a request's pieces into segments."""
-    return RequestTrace([
-        Segment(
-            kind=piece.kind, position=piece.position, role=piece.role,
-            digest=hashlib.blake2b(piece.text.encode(), digest_size=8).hexdigest(),
-            tokens=count_tokens(piece.text),
-        )
-        for piece in pieces
-    ])
+    return RequestTrace(
+        [
+            Segment(
+                kind=piece.kind,
+                position=piece.position,
+                role=piece.role,
+                digest=hashlib.blake2b(piece.text.encode(), digest_size=8).hexdigest(),
+                tokens=count_tokens(piece.text),
+            )
+            for piece in pieces
+        ]
+    )
 
 
 def diagnose(current: RequestTrace, previous: Optional[RequestTrace]) -> dict[str, object]:
     """What this request kept from the last one, as fields to record beside the cache figure."""
     if previous is None:
-        return {"prefix_intact": False, "reachable_tokens": 0, "segments": len(current.segments),
-                "shared_segments": 0, "divergence": None}
+        return {
+            "prefix_intact": False,
+            "reachable_tokens": 0,
+            "segments": len(current.segments),
+            "shared_segments": 0,
+            "divergence": None,
+        }
     shared = 0
     for mine, theirs in zip(previous.segments, current.segments):
         if mine.digest != theirs.digest:

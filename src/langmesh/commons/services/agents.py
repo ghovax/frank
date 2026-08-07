@@ -49,19 +49,25 @@ def _record_model_selection(model_identifier: str) -> None:
     else:
         assert definition is not None
         provider, suffix = definition.provider, definition.identifier.split("/", 1)[1]
-    label = definition.name if definition is not None else suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
+    label = (
+        definition.name
+        if definition is not None
+        else suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
+    )
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
             record = database_session.get(ModelHistoryRecord, model_identifier)
             selected_at = datetime.now(timezone.utc).isoformat()
             if record is None:
-                database_session.add(ModelHistoryRecord(
-                    model_id=model_identifier,
-                    name=label,
-                    provider=provider,
-                    selected_at=selected_at,
-                ))
+                database_session.add(
+                    ModelHistoryRecord(
+                        model_id=model_identifier,
+                        name=label,
+                        provider=provider,
+                        selected_at=selected_at,
+                    )
+                )
             else:
                 record.name = label
                 record.provider = provider
@@ -85,10 +91,7 @@ def _recent_models(limit: int = 8) -> list[dict[str, str]]:
             .limit(limit)
             .all()
         )
-        return [
-            {"id": row.model_id, "name": row.name, "provider": row.provider}
-            for row in rows
-        ]
+        return [{"id": row.model_id, "name": row.name, "provider": row.provider} for row in rows]
     finally:
         database_session.close()
 
@@ -96,7 +99,9 @@ def _recent_models(limit: int = 8) -> list[dict[str, str]]:
 def _card_for(agent_name: str, working_directory: str = ""):
     """Build an agent's card from its configuration and the skills scoped to the given working directory."""
     assert state.global_configuration is not None
-    configuration = load_agent_configuration(agent_name, state.global_configuration.agent_directories())
+    configuration = load_agent_configuration(
+        agent_name, state.global_configuration.agent_directories()
+    )
     skill_roots = (
         state.global_configuration.skill_directories_for(working_directory)
         if working_directory
@@ -105,7 +110,9 @@ def _card_for(agent_name: str, working_directory: str = ""):
     all_skills = load_skills(skill_roots)
     agent_skills = skills_for_agent(all_skills, configuration.skills)
     return configuration, build_agent_card(
-        configuration, agent_skills, _catalogue_base_url(),
+        configuration,
+        agent_skills,
+        _catalogue_base_url(),
     )
 
 
@@ -119,7 +126,9 @@ def _agent_directories_for_request(working_directory: str) -> list[Path]:
 
 
 #: Profiles as last read from disk, emptied by the same watcher that rebuilds the cards.
-_resolved_profiles: dict[tuple[str, tuple[str, ...]], tuple[Path, _configuration.AgentConfiguration]] = {}
+_resolved_profiles: dict[
+    tuple[str, tuple[str, ...]], tuple[Path, _configuration.AgentConfiguration]
+] = {}
 
 
 #: Which profiles exist, per set of directories, held on the same terms as the parsed ones.
@@ -142,19 +151,25 @@ def available_agent_names(directories) -> list[str]:
     return names
 
 
-def _agent_configuration_for_request(agent_name: str, working_directory: str) -> tuple[Path, _configuration.AgentConfiguration]:
+def _agent_configuration_for_request(
+    agent_name: str, working_directory: str
+) -> tuple[Path, _configuration.AgentConfiguration]:
     """A profile parsed from disk once and held until the watcher says the files moved."""
     directories = _agent_directories_for_request(working_directory)
     key = (agent_name, tuple(str(directory) for directory in directories))
     held = _resolved_profiles.get(key)
     if held is None:
-        held = (agent_configuration_path(agent_name, directories),
-                load_agent_configuration(agent_name, directories))
+        held = (
+            agent_configuration_path(agent_name, directories),
+            load_agent_configuration(agent_name, directories),
+        )
         _resolved_profiles[key] = held
     return held
 
 
-def _agent_configuration_payload(agent_name: str, working_directory: str) -> AgentConfigurationResponse:
+def _agent_configuration_payload(
+    agent_name: str, working_directory: str
+) -> AgentConfigurationResponse:
     path, configuration = _agent_configuration_for_request(agent_name, working_directory)
     return AgentConfigurationResponse(
         id=configuration.identifier,
