@@ -2,7 +2,7 @@ Update the status of one or more tasks at once.
 
 Mark a task `in_progress` when the work starts. Mark it `completed` only when it is truly done. Mark it `blocked` where reality stops the work.
 
-Update on a real change of state, never as busy-work. Never end a turn with completed work still shown as unresolved.
+Reconcile the list before you end a turn, and read it at the start of each turn to orient yourself. Update on a real change of state, never as busy-work. Never end a turn with completed work still shown as unresolved.
 
 Arguments:
   - updates: A list of update objects. Each holds:

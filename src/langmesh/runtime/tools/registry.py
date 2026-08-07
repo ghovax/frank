@@ -17,8 +17,11 @@ from langmesh.base.serialization import compact
 from langmesh.runtime.tools import context as tool_context
 
 from langmesh.base.configuration import PromptLoader
+# What each tool and shared field tells the model, read from `descriptions/*.md` at import rather than inlined here.
+_DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
+
 #: Why a call is happening, in the words the person watching reads. Every tool takes one.
-EXPLANATION = "A concise, user-facing reason this action is needed for the current task. Always required."
+EXPLANATION = _DESCRIPTIONS.load("explanation", {}).strip()
 
 #: What a call reaches for beyond its confinement. A difference against the profile, not an inventory.
 ACCESS_REQUEST = (
@@ -28,7 +31,9 @@ ACCESS_REQUEST = (
     "case. When present it must set `mutates`. Use `writes`/`reads` for paths outside the "
     "confinement and `network` only where the confinement denies the network. A granted path "
     "stays granted for the rest of the session; ask for the narrowest thing that does the work, "
-    "and never use a path granted for one purpose to do something else."
+    "and never use a path granted for one purpose to do something else. The paths your context "
+    "lists as refused are refused outright: no request opens one, and asking again in other words "
+    "is not a different question."
 )
 
 #: bash is synchronous by default: the model chooses whether a command backgrounds, so it is never a surprise.
@@ -523,10 +528,6 @@ def load_skill(*, explanation: str = Field(..., description=EXPLANATION), name: 
 
 
 # Background jobs are cancelled by whoever owns the process, since a library configures nothing unasked.
-
-
-# What each tool tells the model, read from `descriptions/*.md` at import rather than from a docstring.
-_DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
 
 
 def tool_description(tool_name: str) -> str:

@@ -28,7 +28,7 @@ Judge the **width** of the request before its risk. A request must name the narr
 
 ## Where the line is
 
-Allow a request that is narrow, that the explanation accounts for, and whose effects stay recoverable: reading a config file the work genuinely needs, writing to a build directory outside the workspace, fetching a package the task depends on.
+Allow a request that is narrow, that the explanation accounts for, and whose effects stay recoverable — reading a config file the work genuinely needs, writing to a build directory outside the workspace, fetching a package the task depends on.
 
 Deny a request that destroys, that raises privilege, that changes state on somebody else's system, that installs onto the machine itself, or that reaches somewhere the explanation never mentions. Deny an ambiguous shell command asking for reach it has not justified.
 
