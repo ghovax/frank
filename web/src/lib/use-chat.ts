@@ -638,8 +638,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "status": {
       // Paused on tool execution: tools surface their own status, so just close the thinking indicator.
       if (event.code === "waiting_for_tools") finishRunningThinking(state);
-      // The request is with the provider, and its first token is a second or two away. Opening the row now
-      // is the difference between a turn that looks started and one that looks stuck; reasoning appends to it.
+      // The request is with the provider, so the wait is said out loud rather than looking idle.
       if (event.code === "awaiting_model") applyThinking(state, "");
       // Anything else a status says is shown by its own row; this arm stops it reaching the unknown path.
       break;
@@ -859,9 +858,7 @@ export function replayTurns(turns: A2ATurn[]): {
   tokenUsage: TokenUsage | null;
   keyCounts: Map<string, number>;
 } {
-  // Left in the order the server sent them, which is the order they began — the append order is the chronology.
-  // Pages of one turn are joined back into that turn first: every decision below is about a whole turn, and
-  // a page is only a slice of one, so judging a slice would answer a question the slice cannot answer.
+  // Left in the order the server sent them, with a turn's pages joined before anything judges it.
   const mainTurns = coalesceTurnPages(turns.filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length));
   const state: ReduceState = newReduceState();
   for (const turn of mainTurns) {
@@ -1299,10 +1296,7 @@ export function useChat(
         );
       };
 
-      // Drawn now, in the same tick the outbox stopped drawing its card, so the message is in exactly one
-      // place at every instant: never twice — once plainly and once wearing a queue's affordances — and
-      // never in neither list while a session is being created. It also lands above anything the session
-      // goes on to say, because nothing of the session's has been asked for yet.
+      // Drawn in the same tick the outbox stopped drawing its card, so it is in exactly one place.
       showOptimistically();
 
       // A turn is two calls: ensure a session, then send. `send` carries no settings and cannot change them.
@@ -1363,8 +1357,7 @@ export function useChat(
     if (!isStreamingRef.current || !context) return startTurnRef.current(message);
     const key = stableMessageId(stateRef.current, "user", message.id);
     try {
-      // Drawn before the send, for the same reason as a turn's first message: the session is already
-      // streaming, so anything it says during the round trip would otherwise land above this row.
+      // Drawn before the send, or anything the session says lands above it.
       upsertMessage(stateRef.current, {
         id: key,
         role: "user",

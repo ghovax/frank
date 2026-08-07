@@ -3,7 +3,7 @@
 // One session as a row, rendered by both the sidebar and the delegated-work panel.
 
 import { Box, Flex, IconButton, Menu, Span, Text } from "@chakra-ui/react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LuEllipsis, LuFolderOpen, LuMessagesSquare, LuTrash2 } from "react-icons/lu";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
@@ -11,6 +11,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { revealInFinder, type AgentSummary, type PermissionMode, type SessionGoal } from "@/lib/api";
 import { PERMISSION_MODES } from "@shared/controls";
 import { InlineField } from "./ui/display";
+import { RelativeTime } from "./ui/relative-time";
 import { TreeRow, type TreeRowDisclosure } from "./ui/tree-row";
 
 // What a session is doing, as the daemon derives it, distinct from whether it still exists.
@@ -47,7 +48,6 @@ export function SessionHoverCard({
 }: { entry: SessionEntry; statusLabel: string; agents: AgentSummary[] }) {
   const translation = useTranslations("SessionsSidebar");
   const permissions = useTranslations("SessionControls");
-  const format = useFormatter();
   const title = entry.title || translation("untitledConversation");
   const created = new Date(entry.createdAt);
   // Both of these are identifiers on the wire and names on screen, resolved from their own catalogues.
@@ -67,7 +67,7 @@ export function SessionHoverCard({
         </InlineField>
         {Number.isNaN(created.getTime()) ? null : (
           <InlineField label={translation("fieldCreated")}>
-            <Text>{format.dateTime(created, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Text>
+            <RelativeTime date={created} />
           </InlineField>
         )}
         {permissionKey ? (

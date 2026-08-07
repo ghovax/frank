@@ -11,7 +11,7 @@ import {
   Text,
   Textarea,
 } from "@chakra-ui/react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
 import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
@@ -243,6 +243,22 @@ function ContextUsageChip({
         </Text>
       </Flex>
     </Tooltip>
+  );
+}
+
+// Lucide glyphs fill their 24-unit box by different amounts, so a shared box size draws them at different heights;
+// `draw` is the box that makes this one's ink match the icon-only buttons next to it.
+function ComposerIcon({ draw, children }: { draw: number; children: ReactNode }) {
+  return (
+    <Box
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+      flexShrink={0}
+      css={{ "& svg": { width: `${draw}px`, height: `${draw}px` } }}
+    >
+      {children}
+    </Box>
   );
 }
 
@@ -784,9 +800,7 @@ export function ChatInput({
                 disabled={stopPending || isCompacting}
                 title={isCompacting ? translation("stopUnavailableWhileCompacting") : undefined}
               >
-                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                  <LuSquare />
-                </Box>
+                <ComposerIcon draw={18}><LuSquare /></ComposerIcon>
                 {translation("stop")}
               </Button>
             ) : (
@@ -799,9 +813,7 @@ export function ChatInput({
                 loadingText={translation("sending")}
                 disabled={sendPending || composerClosed || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
               >
-                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                  <LuArrowUp />
-                </Box>
+                <ComposerIcon draw={22}><LuArrowUp /></ComposerIcon>
                 {translation("send")}
               </Button>
             )}

@@ -86,7 +86,7 @@ function Workspace() {
       })
       .catch((caught) => swallowed({ component: "workspace-page", operation: "read the home directory" }, caught));
     return () => { cancelled = true; };
-    // The workspace readers close over the preferences and are rebuilt every render, so naming them here would re-run this constantly.
+    // The workspace readers close over preferences, so naming them here would re-run this constantly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, router]);
 
@@ -389,7 +389,7 @@ function Workspace() {
     if (candidates.length === 0) return;
     const target = candidates.find((entry) => entry.sessionId === rememberedSession) ?? candidates[0];
     void handleResumeSession(target);
-    // `handleResumeSession` is redefined every render, and the ref above is what bounds this to once.
+    // Redefined every render, and the ref above is what bounds this to running once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsLoaded, sessions, workspaceId, activeSessionId, rememberedSession]);
 

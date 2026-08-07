@@ -309,8 +309,7 @@ export function SessionsSidebar({
           <VStack gap={1} align="stretch">
             {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
               const label = workspaceName(workspace);
-              // Keyed by the workspace alone. Keying it by the search text as well meant every keystroke
-              // wrote a new key, so a workspace you had opened fell back to the default and closed itself.
+              // Keyed by the workspace alone: including the search text made every keystroke discard the choice.
               const workspaceOpen = workspaceOpenOverrides[workspace.id]
                 ?? (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
               const tooltipContent = (

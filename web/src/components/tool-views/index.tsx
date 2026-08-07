@@ -4,7 +4,7 @@ import { PERMISSION_MODES } from "@shared/controls";
 import { useAgentName } from "@/lib/agent-names";
 import { Alert, Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@chakra-ui/react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
 import { openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { MarkdownContent } from "../markdown-content";
@@ -12,6 +12,7 @@ import { Tooltip } from "../ui/tooltip";
 import { Frame } from "../ui/semantic";
 import { CenteredNumber } from "../ui/centered-number";
 import { PanelEmptyState } from "../ui/panel";
+import { RelativeTime } from "../ui/relative-time";
 import {
   Card,
   EmptyHint,
@@ -942,7 +943,6 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
 
 function WebResultCard({ result }: { result: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
-  const format = useFormatter();
   const title = asString(result.title) || translation("untitled");
   const url = asString(result.url);
   const summary = asString(result.summary);
@@ -951,7 +951,6 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
   const publishedAt = published ? new Date(published) : null;
   const publishedKnown = publishedAt !== null && !Number.isNaN(publishedAt.getTime());
   // A bare `2026-08-04` carries no time, so showing one would be inventing midnight.
-  const publishedHasTime = /[T ]\d{2}:\d{2}/.test(published);
   return (
     <Card>
       {/* A column, so each part of the result is a line and the ellipsis has a box to happen in. */}
@@ -970,9 +969,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
         {published && (
           <InlineField label={translation("published")}>
             {publishedKnown
-              ? format.dateTime(publishedAt, publishedHasTime
-                  ? { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }
-                  : { year: "numeric", month: "long", day: "numeric" })
+              ? <RelativeTime date={publishedAt} />
               // Whatever the provider sent, unparsed rather than dropped, since a date we cannot read is one the reader might.
               : published}
           </InlineField>

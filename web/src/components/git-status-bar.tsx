@@ -1,25 +1,16 @@
 "use client";
 
 import { Box, Flex, Separator, Text } from "@chakra-ui/react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { LuArrowDown, LuArrowUp, LuFileDiff, LuGitBranch } from "react-icons/lu";
 import { Tooltip } from "./ui/tooltip";
 import { InlineField } from "./ui/display";
+import { RelativeTime } from "./ui/relative-time";
 import type { DirectoryStatus } from "@/lib/use-directory-status";
 
 // The workspace's Git status, rendering nothing for a plain folder since there is nothing to show.
 export function GitStatusBar({ status }: { status: DirectoryStatus }) {
   const translation = useTranslations("GitStatusBar");
-  const format = useFormatter();
-
-  // Spelled out in full: the hover card is opened because somebody wants the detail.
-  const formatCommitDate = (value: string): string => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    return format.dateTime(date, {
-      year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit",
-    });
-  };
 
   if (!status.valid || !status.isGitRepository) return null;
 
@@ -39,7 +30,7 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
       <Flex direction="column" ps={2} gap={1}>
         {status.gitCommitSubject && <InlineField label={translation("commit")}><Text truncate maxW="260px">{status.gitCommitSubject}</Text></InlineField>}
         {status.gitCommitAuthor && <InlineField label={translation("author")}><Text>{status.gitCommitAuthor}</Text></InlineField>}
-        {status.gitCommitAuthorDate && <InlineField label={translation("date")}><Text>{formatCommitDate(status.gitCommitAuthorDate)}</Text></InlineField>}
+        {status.gitCommitAuthorDate && <InlineField label={translation("date")}><RelativeTime date={status.gitCommitAuthorDate} /></InlineField>}
         {status.gitUpstream && <InlineField label={translation("upstream")}><Text>{status.gitUpstream}</Text></InlineField>}
       </Flex>
       {changedCount > 0 && (

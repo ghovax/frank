@@ -8,8 +8,7 @@ import type { PermissionMode } from "@/lib/api";
 
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 
-// One house control size, with `layout` deciding only whether the control hugs its content or fills its column.
-//: Every control in the composer row draws its icon at this size, so none can drift from its neighbours.
+// One control size for the row, with `layout` deciding only what varies between the two shapes.
 export const CONTROL_ICON_SIZE = 14;
 
 function controlMetrics(layout: "chip" | "field") {

@@ -17,6 +17,7 @@ import { swallowed } from "@/lib/swallowed";
 import { PERMISSION_MODES } from "@shared/controls";
 import { ScheduleForm } from "./schedule-form";
 import { Pill } from "./ui/pill";
+import { useRelative } from "./ui/relative-time";
 import { toaster } from "./ui/toaster";
 import { errorMessage } from "@/lib/errors";
 
@@ -34,6 +35,7 @@ function PermissionModePill({ mode }: { mode: string }) {
 
 export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; agents: AgentSummary[] }) {
   const translation = useTranslations("SchedulesPanel");
+  const relative = useRelative();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState("");
@@ -119,8 +121,7 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
   function nextFiring(schedule: Schedule): string {
     if (!schedule.enabled) return translation("paused");
     if (!schedule.next_firing) return "—";
-    const at = new Date(schedule.next_firing);
-    return Number.isNaN(at.getTime()) ? "—" : at.toLocaleString();
+    return relative(schedule.next_firing) || "—";
   }
 
   if (failed) return <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>;

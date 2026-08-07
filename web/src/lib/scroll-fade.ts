@@ -9,10 +9,21 @@ const topGradient = `linear-gradient(to bottom, transparent 0, #000 ${TOP}px, #0
 const bottomGradient = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${BOTTOM}px), transparent 100%)`;
 const topBottomGradient = `linear-gradient(to bottom, transparent 0, #000 ${TOP}px, #000 calc(100% - ${BOTTOM}px), transparent 100%)`;
 
-export const scrollFade = {
-  maskImage: topGradient,
-  WebkitMaskImage: topGradient,
-} as const;
+export const scrollFade = { maskImage: topGradient, WebkitMaskImage: topGradient } as const;
+
+/** The fade as an overlay: painted above the scroller, so it cannot alter the layout it sits on. */
+export const fadeOverlay = (edge: "top" | "bottom", height: number) => ({
+  position: "absolute" as const,
+  left: 0,
+  right: 0,
+  [edge]: 0,
+  height: `${height}px`,
+  pointerEvents: "none" as const,
+  zIndex: 1,
+  backgroundImage: `linear-gradient(to ${edge === "top" ? "bottom" : "top"}, var(--chakra-colors-bg-panel), transparent)`,
+});
+export const FADE_TOP = TOP;
+export const FADE_BOTTOM = BOTTOM;
 
 export const scrollFadeBottom = {
   maskImage: bottomGradient,
@@ -32,16 +43,15 @@ export function useScrollEdgeFade() {
   const measure = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    // A tolerance either side, because the mask this drives can move the metrics by a fraction of a pixel,
-    // and an edge decided on that fraction flips back and forth instead of settling.
+    // A tolerance, because the mask this drives moves the metrics by a fraction of a pixel.
     setHiddenAbove(container.scrollTop > 2);
     setHiddenBelow(container.scrollHeight - (container.scrollTop + container.clientHeight) > 8);
   }, []);
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    // Measured from the element, never from a render: measuring on every render fed the state that
-    // decides the mask, and the mask fed the observer that measured again — a cycle with no exit.
+    // Measured from the element and never from a render, and by size only: watching the subtree meant
+    // markdown's own DOM churn fed the mask, and the mask fed the watcher that saw it.
     let scheduled = 0;
     const settle = () => {
       window.cancelAnimationFrame(scheduled);
@@ -50,16 +60,13 @@ export function useScrollEdgeFade() {
     settle();
     const observer = new ResizeObserver(settle);
     observer.observe(container);
-    const watcher = new MutationObserver(settle);
-    watcher.observe(container, { childList: true, subtree: true, characterData: true });
     return () => {
       window.cancelAnimationFrame(scheduled);
       observer.disconnect();
-      watcher.disconnect();
     };
   }, [measure]);
   const fade = hiddenAbove
     ? (hiddenBelow ? scrollFadeTopBottom : scrollFade)
     : (hiddenBelow ? scrollFadeBottom : undefined);
-  return { containerRef, onScroll: measure, fade };
+  return { containerRef, onScroll: measure, fade, hiddenAbove, hiddenBelow };
 }

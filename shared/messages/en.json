@@ -282,14 +282,19 @@
     "findings": "Findings",
     "instructions": "Instructions",
     "kind": {
-      "correction": "Correction",
       "preference": "Preference",
       "requirement": "Requirement"
     },
     "lifted": "No longer binding",
     "loading": "Reading the record",
     "refresh": "Refresh",
-    "revises": "Revised an earlier entry",
+    "revision": {
+      "correction": "Corrected",
+      "merge": "Merged",
+      "refinement": "Refined",
+      "retraction": "Retracted"
+    },
+    "revisions": "{count, plural, one {# earlier version} other {# earlier versions}}",
     "standing": {
       "inferred": "Inferred",
       "reported": "Reported",
@@ -488,7 +493,6 @@
       "_": "Conversation compaction",
       "automatic": "Compact automatically",
       "reclaim_at_fraction": "Compact at (share of window)",
-      "condense_log_at_fraction": "Condense the log at (share)",
       "output_reserve_fraction": "Reserved for the answer (share)",
       "recent_working_set_fraction": "Kept verbatim (share)",
       "verbatim_user_fraction": "Your own messages kept (share)"
@@ -698,7 +702,6 @@
       "_": "How conversation history is folded as it grows.",
       "automatic": "Reclaim context on its own as it fills. Manual compaction works either way.",
       "reclaim_at_fraction": "Fold once the conversation passes this share of the usable window. Late on purpose: a fold is the one thing that rewrites the prefix a provider had cached, so the fewer of them the better.",
-      "condense_log_at_fraction": "Condense the observation log once the log itself passes this share.",
       "output_reserve_fraction": "Share of the window held back for the answer, so folding still has room to run. The rest is the usable window every other fraction here is measured against.",
       "recent_working_set_fraction": "Share of the usable window kept verbatim rather than folded into the log. Sized in tokens rather than turns because an unattended run is one turn and hundreds of tool results.",
       "verbatim_user_fraction": "Share of the usable window that carries the user's own messages through a fold, word for word. Their instructions are the specification, and a paraphrase of a specification is a different specification."

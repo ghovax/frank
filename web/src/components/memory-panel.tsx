@@ -2,18 +2,52 @@
 
 // What a session remembers: the findings its work established, and the instructions it was given.
 
-import { Box, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
-import { memo, useEffect, useMemo, useState } from "react";
-import { useFormatter, useTranslations } from "next-intl";
-import { LuBookMarked, LuRefreshCw } from "react-icons/lu";
+import { Badge, Box, Button, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
+import { LuBookMarked, LuDot, LuHistory, LuRefreshCw } from "react-icons/lu";
 import { PanelBody, PanelCard, PanelEmptyState, PanelHeader } from "@/components/ui/panel";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { fetchSessionRecord, type RecordEntry } from "@/lib/api";
 import { swallowed } from "@/lib/swallowed";
 import { InlineMarkdown } from "./markdown-content";
 
+// A live entry and the versions it grew out of, newest first, so the reader sees one item rather than a pile.
+interface Revised {
+  entry: RecordEntry;
+  earlier: RecordEntry[];
+}
+
+/** The record is append-only, so a revision is a new entry naming the old one; only the unreplaced ones are current. */
+function current(all: RecordEntry[]): Revised[] {
+  const byId = new Map(all.map((entry) => [entry.id, entry]));
+  const replaced = new Set(all.flatMap((entry) => entry.supersedes ?? []));
+  // Walk each chain back through what it replaced, guarding against a cycle the store cannot rule out.
+  const history = (entry: RecordEntry): RecordEntry[] => {
+    const seen = new Set<string>([entry.id]);
+    const earlier: RecordEntry[] = [];
+    let pending = [...(entry.supersedes ?? [])];
+    while (pending.length > 0) {
+      const id = pending.shift() as string;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const older = byId.get(id);
+      if (!older) continue;
+      earlier.push(older);
+      pending = pending.concat(older.supersedes ?? []);
+    }
+    return earlier.sort((one, other) => (other.written_at ?? "").localeCompare(one.written_at ?? ""));
+  };
+  return all
+    .filter((entry) => !replaced.has(entry.id))
+    .map((entry) => ({ entry, earlier: history(entry) }))
+    // Most recent first: a record spanning months is read from what it has just learned, not from its beginning.
+    .sort((one, other) => (other.entry.written_at ?? "").localeCompare(one.entry.written_at ?? ""));
+}
+
 /** Whether a poll brought anything new: the record is append-only, so identity and count settle it. */
-function sameEntries(current: RecordEntry[], found: RecordEntry[]): boolean {
-  return current.length === found.length && current.every((entry, index) => entry.id === found[index]?.id);
+function sameEntries(held: Revised[], found: Revised[]): boolean {
+  return held.length === found.length && held.every((one, index) => one.entry.id === found[index]?.entry.id);
 }
 
 // How sure the record is of an entry, which the reader needs before acting on it.
@@ -24,29 +58,25 @@ interface EntryLabels {
   kind: Record<string, string>;
   standing: Record<string, string>;
   lifted: string;
-  revises: string;
+  revisions: (count: number) => string;
+  revision: Record<string, string>;
 }
 
-// The separator between the qualifiers under an entry.
+// The separator between the qualifiers under an entry, drawn rather than typed so it sits on the line.
 function Dot() {
-  return <Dot />;
+  return <LuDot size={16} style={{ flexShrink: 0, opacity: 0.7 }} />;
 }
 
-const Entry = memo(function Entry({ entry, labels, format }: {
-  entry: RecordEntry;
-  labels: EntryLabels;
-  format: ReturnType<typeof useFormatter>;
-}) {
-  // Named by the catalogue rather than by the wire, which spells its values for a machine.
-  const label = entry.category ? labels.category[entry.category] : entry.kind ? labels.kind[entry.kind] : "";
-  const standing = entry.standing ? labels.standing[entry.standing] : "";
-  // Absolute rather than relative: a record can span months, and "3 months ago" locates nothing.
-  const written = entry.written_at ? new Date(entry.written_at) : null;
-  const learned = written && !Number.isNaN(written.getTime()) ? written : null;
+// A qualifier reads as a word on the line, not as a chip: the colour carries the meaning, so a background only adds noise.
+function Qualifier({ children, tone }: { children: string; tone?: string }) {
+  return <Badge size="sm" variant="plain" px={0} colorPalette={tone}>{children}</Badge>;
+}
+
+// Every field the model writes is prose it may have marked up, so all three are rendered as markdown.
+function Body({ entry, muted }: { entry: RecordEntry; muted?: boolean }) {
   return (
-    <Box borderWidth="1px" borderColor="border" borderRadius="md" px={2} py={1.5} bg="bg.subtle">
-      {/* The finding leads. What kind it is and how sure we are of it qualify it, so they sit under it. */}
-      <Text textStyle="xs" fontWeight="medium">
+    <>
+      <Text textStyle="xs" fontWeight="medium" color={muted ? "fg.muted" : undefined}>
         <InlineMarkdown content={entry.claim ?? entry.summary ?? ""} />
       </Text>
       {entry.detail ? (
@@ -54,49 +84,72 @@ const Entry = memo(function Entry({ entry, labels, format }: {
           <InlineMarkdown content={entry.detail} />
         </Text>
       ) : null}
-      {entry.evidence ? (
-        <Text textStyle="2xs" color="fg.subtle" mt={1} fontFamily="var(--app-font-mono)" truncate>
-          {entry.evidence}
+      {entry.evidence || entry.occasion ? (
+        // Prose as often as a path, so it is set as prose and the model's own backticks mark what is literal.
+        <Text textStyle="2xs" color="fg.subtle" mt={1}>
+          <InlineMarkdown content={entry.evidence || entry.occasion || ""} />
         </Text>
       ) : null}
-      <Flex align="center" gap={1.5} mt={1.5} color="fg.subtle" wrap="wrap">
-        {label ? <Text textStyle="2xs" fontWeight="medium">{label}</Text> : null}
-        {standing ? (
-          <>
-            <Dot />
-            <Text textStyle="2xs" color={`${STANDING_TONE[entry.standing ?? ""] ?? "gray"}.fg`}>{standing}</Text>
-          </>
-        ) : null}
-        {learned ? (
-          <>
-            <Dot />
-            <Text textStyle="2xs">
-              {format.dateTime(learned, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-            </Text>
-          </>
-        ) : null}
-        {entry.still_binding === false ? (
-          <>
-            <Dot />
-            <Text textStyle="2xs">{labels.lifted}</Text>
-          </>
-        ) : null}
-        {entry.supersedes?.length ? (
-          <>
-            <Dot />
-            <Text textStyle="2xs" color="blue.fg">{labels.revises}</Text>
-          </>
-        ) : null}
+    </>
+  );
+}
+
+const Entry = memo(function Entry({ revised, labels }: { revised: Revised; labels: EntryLabels }) {
+  const { entry, earlier } = revised;
+  const [showHistory, setShowHistory] = useState(false);
+  const label = entry.category ? labels.category[entry.category] : entry.kind ? labels.kind[entry.kind] : "";
+  const standing = entry.standing ? labels.standing[entry.standing] : "";
+  const qualifiers = [
+    label ? <Qualifier key="label">{label}</Qualifier> : null,
+    standing ? <Qualifier key="standing" tone={STANDING_TONE[entry.standing ?? ""] ?? "gray"}>{standing}</Qualifier> : null,
+    entry.still_binding === false ? <Qualifier key="lifted">{labels.lifted}</Qualifier> : null,
+    entry.written_at ? <RelativeTime key="learned" date={entry.written_at} textStyle="xs" color="fg.subtle" /> : null,
+    // Only the current version is shown; how it got here is one click away rather than another entry in the list.
+    earlier.length > 0 ? (
+      <Button
+        key="revisions"
+        variant="plain"
+        px={0}
+        h="auto"
+        minW={0}
+        gap={1}
+        textStyle="xs"
+        fontWeight="medium"
+        colorPalette="blue"
+        aria-expanded={showHistory}
+        onClick={() => setShowHistory((shown) => !shown)}
+      >
+        <LuHistory size={12} />
+        {entry.revision ? labels.revision[entry.revision] : labels.revisions(earlier.length)}
+      </Button>
+    ) : null,
+  ].filter(Boolean);
+  return (
+    <Box borderWidth="1px" borderColor="border" borderRadius="md" px={2} py={1.5} bg="bg.subtle">
+      <Body entry={entry} />
+      <Flex align="center" gap={0.5} mt={1.5} wrap="wrap" color="fg.muted">
+        {qualifiers.map((qualifier, index) => (
+          <Fragment key={index}>{index > 0 ? <Dot /> : null}{qualifier}</Fragment>
+        ))}
       </Flex>
+      {showHistory ? (
+        <VStack align="stretch" gap={1.5} mt={2} ps={2} borderLeftWidth="2px" borderColor="border.emphasized">
+          {earlier.map((older) => (
+            <Box key={older.id} opacity={0.65}>
+              <Body entry={older} muted />
+              {older.written_at ? <RelativeTime date={older.written_at} textStyle="2xs" color="fg.subtle" /> : null}
+            </Box>
+          ))}
+        </VStack>
+      ) : null}
     </Box>
   );
 });
 
-export function MemoryPanel({ sessionId, onClose }: { sessionId: string; onClose?: () => void }) {
+export function MemoryPanel({ sessionId, onClose }: { sessionId: string | null; onClose?: () => void }) {
   const translation = useTranslations("MemoryPanel");
-  const format = useFormatter();
-  const [findings, setFindings] = useState<RecordEntry[]>([]);
-  const [instructions, setInstructions] = useState<RecordEntry[]>([]);
+  const [findings, setFindings] = useState<Revised[]>([]);
+  const [instructions, setInstructions] = useState<Revised[]>([]);
   // Set only once a read has come back, so an empty panel says "nothing yet" rather than "nothing".
   const [read, setRead] = useState(false);
   // Bumped by the refresh control, which is how the record is re-read now that nothing polls.
@@ -106,16 +159,22 @@ export function MemoryPanel({ sessionId, onClose }: { sessionId: string; onClose
   useEffect(() => {
     let cancelled = false;
     async function readRecord() {
-      if (!sessionId) return;
+      // A conversation with no session yet has an empty record rather than an unfinished read.
+      if (!sessionId) {
+        setRead(true);
+        return;
+      }
       try {
+        // The whole chain, not the live view: superseded versions are what the history under an entry is made of.
         const [established, asked] = await Promise.all([
-          fetchSessionRecord(sessionId, "observations"),
-          fetchSessionRecord(sessionId, "directives"),
+          fetchSessionRecord(sessionId, "observations", undefined, false),
+          fetchSessionRecord(sessionId, "directives", undefined, false),
         ]);
         if (cancelled) return;
+        const [live, given] = [current(established), current(asked)];
         // Same entries, new objects: replacing them would re-render and re-parse every one of them.
-        setFindings((current) => sameEntries(current, established) ? current : established);
-        setInstructions((current) => sameEntries(current, asked) ? current : asked);
+        setFindings((held) => sameEntries(held, live) ? held : live);
+        setInstructions((held) => sameEntries(held, given) ? held : given);
         setRead(true);
       } catch (caught) {
         if (!cancelled) swallowed({ component: "memory-panel", operation: "read the session's record" }, caught);
@@ -125,10 +184,10 @@ export function MemoryPanel({ sessionId, onClose }: { sessionId: string; onClose
     return () => {
       cancelled = true;
     };
-    // Read when the panel opens and when the conversation changes, and not on a timer: the record only
-    // grows when a turn settles, and a heartbeat that re-reads it is work nobody asked for.
+    // Read on open and on request, not on a timer: the record only grows when a turn settles.
   }, [sessionId, refreshCount]);
 
+  const countRevisions = useCallback((count: number) => translation("revisions", { count }), [translation]);
   const labels: EntryLabels = useMemo(() => ({
     category: {
       fact: translation("category.fact"), decision: translation("category.decision"),
@@ -136,18 +195,21 @@ export function MemoryPanel({ sessionId, onClose }: { sessionId: string; onClose
       artifact: translation("category.artifact"), open: translation("category.open"),
     },
     kind: {
-      requirement: translation("kind.requirement"), correction: translation("kind.correction"),
-      preference: translation("kind.preference"),
+      requirement: translation("kind.requirement"), preference: translation("kind.preference"),
     },
     standing: {
       verified: translation("standing.verified"), reported: translation("standing.reported"),
       inferred: translation("standing.inferred"),
     },
     lifted: translation("lifted"),
-    revises: translation("revises"),
-  }), [translation]);
+    revisions: countRevisions,
+    revision: {
+      correction: translation("revision.correction"), refinement: translation("revision.refinement"),
+      merge: translation("revision.merge"), retraction: translation("revision.retraction"),
+    },
+  }), [translation, countRevisions]);
   // What was asked for comes first: an instruction governs the findings under it.
-  const sections: Array<[string, RecordEntry[]]> = [
+  const sections: Array<[string, Revised[]]> = [
     [translation("instructions"), instructions],
     [translation("findings"), findings],
   ];
@@ -180,9 +242,9 @@ export function MemoryPanel({ sessionId, onClose }: { sessionId: string; onClose
           <VStack align="stretch" gap={2.5}>
             {sections.map(([heading, entries]) => entries.length === 0 ? null : (
               <VStack key={heading} align="stretch" gap={1}>
-                <Text textStyle="fieldLabel" color="fg.subtle">{heading}</Text>
-                {entries.map((entry) => (
-                  <Entry key={entry.id} entry={entry} labels={labels} format={format} />
+                <Text textStyle="sectionLabel">{heading}</Text>
+                {entries.map((revised) => (
+                  <Entry key={revised.entry.id} revised={revised} labels={labels} />
                 ))}
               </VStack>
             ))}

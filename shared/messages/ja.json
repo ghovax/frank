@@ -282,14 +282,19 @@
     "findings": "判明したこと",
     "instructions": "指示",
     "kind": {
-      "correction": "訂正",
       "preference": "希望",
       "requirement": "要件"
     },
     "lifted": "解除済み",
     "loading": "記録を読み込み中",
     "refresh": "再読み込み",
-    "revises": "以前の項目を修正",
+    "revision": {
+      "correction": "訂正",
+      "merge": "統合",
+      "refinement": "詳細化",
+      "retraction": "撤回"
+    },
+    "revisions": "以前のバージョン {count} 件",
     "standing": {
       "inferred": "推論",
       "reported": "報告",
@@ -488,7 +493,6 @@
       "_": "会話の圧縮",
       "automatic": "自動で圧縮",
       "reclaim_at_fraction": "圧縮を始める割合",
-      "condense_log_at_fraction": "ログを要約する割合",
       "output_reserve_fraction": "回答用に確保する割合",
       "recent_working_set_fraction": "そのまま残す割合",
       "verbatim_user_fraction": "ユーザー発言を残す割合"
@@ -698,7 +702,6 @@
       "_": "会話が長くなったときの畳み方。",
       "automatic": "コンテキストが埋まってきたら自動で圧縮します。手動の圧縮はどちらの設定でも使えます。",
       "reclaim_at_fraction": "使用可能なウィンドウのこの割合を超えたら圧縮します。あえて遅めです。圧縮は情報を捨てる唯一の操作だからです。",
-      "condense_log_at_fraction": "観測ログ自体がこの割合を超えたら、ログを要約します。",
       "output_reserve_fraction": "回答のために残しておくウィンドウの割合。残りが使用可能なウィンドウです。",
       "recent_working_set_fraction": "圧縮せずそのまま残す割合。ターン数ではなくトークン量で決めます。",
       "verbatim_user_fraction": "圧縮後もユーザーの発言をそのまま残す割合。指示は要約すべきものではありません。"

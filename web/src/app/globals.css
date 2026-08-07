@@ -1,12 +1,5 @@
 @import "@xterm/xterm/css/xterm.css";
-/* KaTeX's stylesheet, imported here rather than in `layout.tsx` — beside xterm's, which was
-   always done this way.
-
-   A `.css` import in the root layout is a server component's import, and `next dev` puts the
-   root layout in a server bundle that Node evaluates: Node cannot `require` a stylesheet, so
-   the whole page answered 500 with `Cannot find module 'katex/dist/katex.min.css'`. `next build`
-   never hit it because the export has no server to run. Reached from here the file only ever
-   goes through the CSS pipeline, which is the only thing that was ever meant to read it. */
+/* KaTeX's stylesheet, imported here so the bundler fingerprints it rather than fetching it at runtime. */
 @import "katex/dist/katex.min.css";
 
 html,
@@ -17,63 +10,33 @@ body {
   padding: 0;
 }
 
-/* Native desktop titlebar. In a plain browser this is 0px so the layout is
-   unchanged; inside the Tauri app the window has a hidden/transparent titlebar
-   with native macOS traffic lights floating over the top-left, so we reserve a
-   strip of this height for dragging and keep content from hiding underneath. */
+/* The native titlebar's height, zero in a plain browser so the layout is the same either way. */
 :root {
   --titlebar-height: 0px;
 
-  /* What the *device* takes out of the viewport: a notch, a home indicator, a
-     rounded corner. Zero everywhere but a phone, where this interface now runs
-     inside the mobile app's webview and the top 47pt are under the status bar.
-
-     Named separately from the titlebar because they are different reservations
-     that can both apply, and because `env()` is only meaningful in a property
-     value — it cannot be tested for, so a layout that wants both has to add
-     them, which is what `--app-inset-top` is for. */
+  /* What the device takes out of the viewport — a notch, a home indicator — as safe-area insets. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
-  /* How tall a control is. 32px suits a pointer and is below both Apple's and
-     Google's floor for a finger, so it grows on a coarse-pointer device — see
-     the rule further down, which is the same number by another route. */
+  /* How tall a control is: 32px suits a pointer and clears both platforms' touch minimums when scaled. */
   --control-height: 32px;
 
-  /* The column a dropdown arrow keeps at the end of a control that has given up its label. Taken
-     out of the padding, so what remains for the icon is exactly the square. */
+  /* The column a dropdown arrow keeps at the end of a control, so a collapsed one still has room for it. */
   --fit-arrow-column: 14px;
 
-  /* And how tall the ones beside the composer's text box are, which is not the
-     same number. Those are Chakra `size="sm"` buttons — `h: 9`, 36px — while the
-     selectors and chips on the row below are the 32px above.
-
-     Both, because the text box has to match whatever is actually next to it, and
-     one variable for two heights got that right in exactly one place: on a coarse
-     pointer the floor lifts everything to 40 and the box matched, while on a
-     pointer it sat 4px short of the send button it stands against. */
+  /* How tall the controls beside the composer are, matched to its text box so the row reads as one. */
   --composer-control-height: 36px;
 
-  /* The gap above the app shell, matching the one the floating panels carry on
-     their other three sides — so the chat's top bar and the cards' top edges
-     land on one line.
-
-     Zero on a phone, and that is the whole reason it is a variable. Below `md`
-     those panels are not floating: they are the screen, full-bleed on the left,
-     the right and the bottom. The gap was reserving a strip above them that
-     nothing on the other three sides had, which reads as the page hanging
-     slightly below the top of the screen for no reason. */
+  /* The gap above the app shell, matching the inset the floating panels carry. */
   --app-gap-top: 8px;
 
-  /* The one value the app shell reserves at the top: whichever chrome is above
-     it, plus that gap. */
+  /* The one value the app shell reserves at the top, whichever chrome is actually there. */
   --app-inset-top: calc(var(--titlebar-height) + var(--safe-top) + var(--app-gap-top));
 }
 
-/* Chakra's `md`. Stated in `em` to match, so the two cannot drift apart under a
-   different root font size. */
+/* Chakra's `md` breakpoint, in `em` to match Chakra's own so the two cannot drift apart. */
 @media (max-width: 47.9975em) {
   :root {
     --app-gap-top: 0px;
@@ -84,35 +47,12 @@ html[data-tauri="true"] {
   --titlebar-height: 30px;
 }
 
-/* The composer's text box, matched to the controls beside it — by its own height
-   rather than by being stretched to theirs.
-
-   Stretching is what it used to do, and it put the text above centre: a
-   `textarea` lays its text along the top of its content box, so every pixel of
-   borrowed height landed underneath. Sizing it here instead means one line plus
-   symmetric padding *is* the control height, so it matches the send button
-   exactly and the line is centred because the padding above and below it are
-   equal.
-
-   `1lh` is the element's own line box, so this follows the type rather than
-   restating it — change the font size and the padding still resolves to a box
-   of the right height. The 2px is the border, which `border-box` counts and
-   `1lh` does not. */
+/* The composer's text box, sized from the controls beside it so the row has one height. */
 [data-composer-input] {
   padding-block: calc((var(--composer-control-height) - 1lh - 2px) / 2);
 }
 
-/* Touch targets.
- *
- * The house control height is 32px, which is right for a pointer and below both
- * Apple's and Google's floor for a finger. Rather than a second set of sizes
- * threaded through every call site, the controls grow on any device whose
- * primary input is coarse — which is exactly the condition that makes 32px
- * wrong, and leaves a mouse-driven window untouched.
- *
- * Scoped to the controls a finger actually hunts for. Chips inside a transcript
- * row are read far more often than they are tapped, and growing those would push
- * the conversation off the screen to solve a problem it does not have. */
+/* Touch targets: a finger needs more than a pointer, so controls grow on a device without hover. */
 @media (pointer: coarse) {
   :root {
     --control-height: 40px;
@@ -128,27 +68,14 @@ html[data-tauri="true"] {
     min-height: 40px;
   }
 
-  /* Not `textarea`, and it used to be.
-
-     A text box lays its text along the top of the content box — there is no
-     vertical centring to be had — so a floor taller than one line does not
-     centre that line, it leaves the whole difference underneath it. On a phone
-     that read as the composer's text sitting above where it should, most
-     visibly in WebKit. And it bought nothing: the composer is the full width of
-     the screen, which is not a target a thumb can miss, and it grows with what
-     is typed into it. The floor exists for controls a finger hunts for.
-
-     A dropdown row is a list item, and a list you scroll with a thumb wants more
-     than the 28px a pointer is happy with. */
+  /* Scoped to the composer's own field rather than every `textarea`, which caught dialogs too. */
   [data-scope="menu"] [data-part="item"],
   [data-scope="select"] [data-part="item"] {
     min-height: 40px;
   }
 }
 
-/* The draggable strip that spans the top of the window. `data-tauri-drag-region`
-   is what Tauri listens to for moving (and double-click to zoom) the window. It
-   sits above the reserved inset, so no interactive control is ever beneath it. */
+/* The draggable strip across the top of the window, which `data-tauri-drag-region` makes movable. */
 .titlebar-drag-region {
   position: fixed;
   top: 0;
@@ -210,29 +137,7 @@ samp {
   outline: none;
 }
 
-/* A gloss travelling along a running tool's title. The highlight has to be back where it
-   started at the end of every cycle or the loop shows a seam, and it must not restart part
-   way — which is why the class sits on a container that outlives the labels crossfading
-   inside it (see tool-group.tsx) rather than on the text itself.
-
-   Both the tile and the travel are in `em`, and they are the same length: one cycle moves
-   the background by exactly one tile, so the loop closes no matter how wide the text is.
-   Percentages cannot do this — `background-position` percentages are relative to the
-   difference between the element and the background, so seamlessness would pin the tile to
-   half the element, putting two highlights on every title and halving the distance each one
-   travels. In `em` the tile is set by how a gloss should look, not by that arithmetic.
-
-   **The bright part is as long as the tile.** It used to be a fifth of it — muted for 40%, a
-   ramp up and back down across the middle 20%, muted for the last 40% — which is a narrow spike
-   with four fifths of every cycle flat behind it. On a short label that reads as a sheen; on a
-   title of any length it reads as a bright dot crossing an otherwise still line, and a moving
-   dot is the thing an eye cannot stop following. Ramping the whole way instead leaves no flat
-   stretch to separate one peak from the next, so what travels is a slow swell rather than a
-   glint: a letter now spends half a cycle brightening and half fading, where before the whole
-   rise and fall passed it in a fifth of one and it sat flat for the other four.
-
-   The tile and the duration grew together, which keeps the speed the gloss travels at — the
-   same fourteen ems a second as before, spent on one long wave instead of a spike and a gap. */
+/* A gloss travelling along a running tool's title, so a long call reads as alive rather than stalled. */
 .running-title-shimmer {
   color: transparent;
   background-image: repeating-linear-gradient(
@@ -258,9 +163,7 @@ samp {
   }
 }
 
-/* A soft breathing pulse for the "still working" status dot in the sessions
-   sidebar. Intensity only — the dot must never change size, so nothing around
-   it ever shifts and the motion stays a glow, not a throb. */
+/* A soft pulse for the still-working dot in the sidebar. */
 .status-dot-pulse {
   animation: status-dot-pulse 1.5s ease-in-out infinite;
 }
@@ -276,10 +179,7 @@ samp {
   }
 }
 
-/* One shared entrance for standalone content that replaces or joins the layout —
-   a mermaid diagram taking over its code block or a side panel joining the tile
-   grid. Opacity only keeps the change legible without making content rise into
-   position. Runs once on mount, so re-renders never replay it. */
+/* One shared entrance for content that joins the transcript, so nothing arrives in its own way. */
 .reveal-enter {
   animation: reveal-enter 0.14s ease-out;
 }
@@ -294,8 +194,7 @@ samp {
   }
 }
 
-/* Streaming markdown uses opacity only. Flowtoken's wrapper layout is normalized by
-   MarkdownContent, so this animation cannot alter wrapping, metrics, or glyph positions. */
+/* Streaming markdown fades by opacity alone, since Flowtoken's wrapper cannot be laid out otherwise. */
 @keyframes token-fade-in {
   from {
     opacity: 0.35;
@@ -305,11 +204,7 @@ samp {
   }
 }
 
-/* Sessions sidebar — a session title that scrolls its overflow on hover/focus (a
-   marquee), with a soft gradient mask at the clipped edge so the hidden text dissolves
-   rather than cutting. The row measures its own overflow in JS and sets
-   `--marquee-overflow` / `--marquee-duration` on the title element; at idle a right-edge
-   fade hints there is more, and hover reveals both edges while the text travels left. */
+/* A sidebar title scrolls its overflow on hover, so a long name can be read without opening it. */
 .sidebar-title {
   display: block;
   width: 100%;
@@ -318,33 +213,19 @@ samp {
   overflow: hidden;
 }
 
-/* How far the title's left edge is faded. A registered custom property so it can be animated:
-   `mask-image` itself cannot be, which is the whole reason this exists. Swapping one gradient
-   for another flips on the frame the pointer leaves, so the title spent its entire journey home
-   sliding out from under a hard left edge — the one place the fade is most obviously missing,
-   because that is the edge the text is moving away from. A length that interpolates gives the
-   fade the same 0.96s as the travel, in both directions. */
+/* How far the title's left edge is faded, as a registered property so it can be animated. */
 @property --sidebar-title-left-fade {
   syntax: "<length>";
   inherits: false;
   initial-value: 0px;
 }
 
-/* The mask is written **once**, here, and every other state changes only the variables feeding
-   it. That is the rule that matters, not the values: any rule that re-declares `mask-image` with
-   a different number of layers drops the animating layer outright, and the fade then disappears
-   on the frame that rule starts matching rather than travelling home with the text.
-
-   That is exactly how the first attempt failed, and it failed in the one case nobody tests by
-   moving the mouse to the far side of the screen: pointing at the *next row down* makes the row
-   you just left match the "not being pointed at" rule below, which used to re-declare a
-   single-layer mask. Leaving the sidebar entirely worked; moving one row did not. */
+/* The mask is written once here; every other state changes only the variables it reads. */
 .sidebar-title[data-overflow="true"] {
   --sidebar-title-left-fade: 0px;
   --sidebar-title-right-solid: 82%;
   --sidebar-title-right-clear: 98%;
-  /* Two layers intersected: the right edge, which every state wants in some form, and the left
-     edge, which only a travelling title has. */
+  /* Two mask layers intersected: the right edge always, the left only while the title travels. */
   -webkit-mask-image:
     linear-gradient(to right, #000 var(--sidebar-title-right-solid), transparent var(--sidebar-title-right-clear)),
     linear-gradient(to right, transparent, #000 var(--sidebar-title-left-fade));
@@ -360,27 +241,11 @@ samp {
   display: inline-block;
   white-space: nowrap;
   will-change: transform;
-  /* The return is a journey too, and it belongs here rather than in the hover rule. Declared
-     only on hover, the transition ceased to exist the moment the pointer left — so the title
-     did not travel back at all, it snapped home in a single frame while the fade it had been
-     moving under was still on screen. Declaring it on the element means both directions are
-     animated by the same rule and at the same speed. */
+  /* The return travels too, so the fade belongs here rather than only on the outward trip. */
   transition: transform var(--marquee-duration, 0s) linear;
 }
 
-/* A label that a row may take away when it runs out of room — see `useFittedRow`.
- *
- * Squeezed to nothing rather than removed, and that is the whole trick. `display: none` would be
- * the obvious way to hide it and would make it unmeasurable: an element with no box has no width,
- * so the row could never work out what putting the label back would cost, and would be reduced to
- * guessing — which is what the two previous attempts at this row did, and why they were wrong in
- * every language they were not written in. At zero width the element still reports `scrollWidth`,
- * which is its content's own width, so it can be costed at any moment in either direction.
- *
- * The negative margin cancels the flex gap that would otherwise be spent on an empty element, so
- * a hidden label costs exactly nothing rather than six pixels of nothing. It is stated as a custom
- * property because the row reads the same value back when it costs the label: one number, one
- * place, and no constant in the code that can drift away from the one in the stylesheet. */
+/* A label a row may drop when it runs out of room, measured by `use-fitted-row`. */
 [data-fit-label] {
   --fit-label-gap: 6px;
   white-space: nowrap;
@@ -392,27 +257,11 @@ samp {
   margin-inline-start: calc(-1 * var(--fit-label-gap));
 }
 
-/* And what is left of the control the label belonged to.
- *
- * Here rather than in the component, and that is the point rather than a preference. `useFittedRow`
- * chooses what to give up by *applying* a candidate to the DOM and measuring the result, so the
- * collapsed state has to be reachable by setting an attribute — if half of it lived in a React prop
- * the arrangement being measured would not be the arrangement that ends up on screen, and the
- * measurement would be a guess again. One attribute is the whole state, so trying and drawing are
- * the same act.
- *
- * A control showing nothing but its icon is square: the same width as it is tall. A rounded
- * rectangle a few pixels wider than it is tall reads as a button that has been cut off rather than
- * one meant to be that size, and four in a row read as four separate mistakes. The one asymmetry
- * allowed is a dropdown arrow — a second thing the control is genuinely showing — which gets a
- * column of its own beside the square. Both are stated against `--control-height`, so a control
- * stays square on a touch device, where that is 40px rather than 32. */
+/* What remains of a control once its label is gone: the icon, centred, at one control's width. */
 [data-fit-control][data-fit-collapsed] {
   width: var(--control-height);
   min-width: var(--control-height);
-  /* Overrides the padding a component sets, so a collapsed control centres its lone icon. It is done
-     here rather than in the component because the fit measures widths to decide what to collapse, and a
-     width that depends on that decision oscillates between the two states and never settles. */
+  /* Overrides a component's own padding so a collapsed control centres its icon, set here because the fit measures widths and a width that depends on the fit oscillates. */
   padding-inline: 0 !important;
   justify-content: center;
 }
@@ -423,40 +272,16 @@ samp {
   padding-inline-end: var(--fit-arrow-column);
 }
 
-/* Everything below is what a *pointer* does, and none of it is what a finger does.
-
-   Gated on `hover: hover`, and this is a correctness fix rather than a tidy-up. WebKit gives the
-   first tap on an element whose `:hover` changes what is rendered to the hover state, and only
-   the second tap fires the click — so on a phone, opening a conversation took two taps and the
-   first one appeared to do nothing. The reveal below is exactly that kind of rule.
-
-   A device with no hover gets the settled state instead: the actions are simply present (see the
-   coarse-pointer rule after this block), and titles do not travel, because nothing is ever
-   pointed at. */
+/* Everything below belongs to a pointer, and is gated on hover so a finger never triggers it. */
 @media (hover: hover) {
-  /* On hover the trailing ⋯ actions appear over the row's right edge. Fade EVERY title's
-     right edge beneath them — not just a scrolling one — so a title too short to scroll but
-     long enough to reach the dots dissolves under them instead of showing straight through the
-     plain (transparent) button. Short titles that end before the fade zone are unaffected.
-
-     The clear zone is 44px against a 32px button, so the dots keep about 12px of clean space
-     on their left rather than sitting against a letter. It was 26px, which is narrower than the
-     button itself — the last 6px of title ran underneath it. Keep this in step with
-     MARQUEE_TAIL_CLEARANCE in sessions-sidebar.tsx, which parks a scrolled title at the same
-     edge.
-
-     Scoped to titles that do NOT overflow. An overflowing one gets the same treatment through the
-     variables on its own two-layer mask above — and if this rule matched it too it would win, being
-     the last `mask-image` declared for it, and quietly replace that mask with a single layer. The
-     left fade would then be absent for the whole hover, not just the return. */
+  /* Every title fades its right edge under the hover actions, with 44px of clearance so the dots never sit against a letter — keep in step with MARQUEE_TAIL_CLEARANCE. */
   .sidebar-row:hover .sidebar-title:not([data-overflow="true"]),
   .sidebar-row:focus-within .sidebar-title:not([data-overflow="true"]) {
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
     mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
   }
 
-  /* A scrolling (overflowing) title fades its left edge as it travels off — and keeps fading it all
-     the way back, because the property animates rather than the mask switching. Variables only. */
+  /* A scrolling title fades its left edge as it travels, so text does not appear from nowhere. */
   .sidebar-row:hover .sidebar-title[data-overflow="true"],
   .sidebar-row:focus-within .sidebar-title[data-overflow="true"] {
     --sidebar-title-left-fade: 12px;
@@ -469,22 +294,10 @@ samp {
     transform: translateX(calc(-1 * var(--marquee-overflow, 0px)));
   }
 
-  /* A workspace row *contains* its session rows, and the rules above are descendant selectors —
-     so hovering one conversation matched every title inside that workspace and faded all of them
-     at once, which read as the whole list reacting to one row. These put the nested rows back:
-     a row inside a hovered row that is not itself hovered is not the row being pointed at.
-
-     A row that is not being pointed at must go back to how it looks at rest — which for an
-     overflowing title is the idle right-edge fade, not no mask at all. Removing the mask
-     outright meant that pointing anywhere in the sidebar stripped the fade from every other
-     title at once (a workspace row contains them all), so the list appeared to lose its fades
-     the moment the cursor entered it and regain them one row at a time on hover. */
+  /* A workspace row contains its session rows, so its own hover rules are scoped not to reach them. */
   .sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"],
   .sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"] {
-    /* Variables only — no `mask-image` here. This is the rule that matches the row you have just
-       pointed away from when the pointer lands on a neighbour, which is the common case, so
-       re-declaring the mask here is what stripped the left fade mid-journey. Setting the variable
-       back to zero lets it animate down over the same 0.96s the text takes to come home. */
+    /* Variables only: this rule must not declare a mask, or it would replace the two-layer one above. */
     --sidebar-title-left-fade: 0px;
     --sidebar-title-right-solid: 82%;
     --sidebar-title-right-clear: 98%;

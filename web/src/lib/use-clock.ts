@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-// One timer for the whole window, not one per caller: a transcript holds hundreds of timestamps, and a
-// hundred intervals waking a hundred components every minute is what makes an interface feel erratic.
+// One timer for the window rather than one per caller, since a transcript holds hundreds of these.
 const listeners = new Set<(now: Date) => void>();
 let ticker: number | null = null;
 
@@ -24,11 +23,7 @@ function subscribe(listener: (now: Date) => void): () => void {
   };
 }
 
-/** A clock that starts on the client and keeps ticking, for anything measured against "now".
- *
- * The provider's `now` is frozen at mount so that static rendering does not warn, which makes it wrong
- * by however long the window has been open — a message sent now would read as being in the future.
- */
+/** A client clock that keeps ticking, since the provider's is frozen at mount and drifts into the past. */
 export function useClock(): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => subscribe(setNow), []);

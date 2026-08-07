@@ -1,11 +1,11 @@
 "use client";
 
 import { Box, Button, Flex, Separator, Span, Text } from "@chakra-ui/react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LuCheck, LuClock, LuCopy, LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTrash2, LuTriangleAlert } from "react-icons/lu";
 import { swallowed } from "@/lib/swallowed";
-import { useClock } from "@/lib/use-clock";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { toolStatus } from "@/lib/tool-event";
@@ -142,9 +142,7 @@ export interface QueuedMessageState {
 /** What is under a message you sent: when it was sent, and the small things you can do to it. */
 function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: string; queued?: QueuedMessageState }) {
   const translation = useTranslations("ChatMessage");
-  const format = useFormatter();
   // A minute is the finest step the wording has, so re-reading the clock more often would change nothing.
-  const now = useClock();
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
 
@@ -186,13 +184,7 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
         ) : null
       ) : dated ? (
         // How long ago, worded by the reader's locale and re-read as it ages; the exact instant is on the title.
-        <Text
-          textStyle="fieldLabel"
-          pe={1}
-          title={format.dateTime(dated, { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-        >
-          {format.relativeTime(dated, now)}
-        </Text>
+        <RelativeTime date={dated} textStyle="fieldLabel" pe={1} />
       ) : null}
       {queued?.onRetry && queued.retryLabel && (
         <Button size="2xs" variant="outline" onClick={queued.onRetry}>{queued.retryLabel}</Button>

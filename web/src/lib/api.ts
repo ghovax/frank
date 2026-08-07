@@ -691,7 +691,6 @@ export interface CompactionSettings {
   // Reclaiming context on its own as it fills (manual compaction always works).
   automatic: boolean;
   reclaim_at_fraction: number;
-  condense_log_at_fraction: number;
   output_reserve_fraction: number;
   recent_working_set_fraction: number;
   verbatim_user_fraction: number;
@@ -736,7 +735,6 @@ const DEFAULT_SANDBOX: SandboxSettings = {
 const DEFAULT_COMPACTION: CompactionSettings = {
   automatic: false,
   reclaim_at_fraction: 0.85,
-  condense_log_at_fraction: 0.3,
   output_reserve_fraction: 0.1,
   recent_working_set_fraction: 0.25,
   verbatim_user_fraction: 0.1,
@@ -1463,11 +1461,13 @@ export interface RecordEntry {
   claim?: string;
   detail?: string;
   evidence?: string;
+  occasion?: string;
   standing?: "verified" | "reported" | "inferred";
   kind?: string;
   summary?: string;
   still_binding?: boolean;
   supersedes?: string[];
+  revision?: "correction" | "refinement" | "merge" | "retraction" | "";
   written_at?: string;
 }
 

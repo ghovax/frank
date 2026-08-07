@@ -249,9 +249,7 @@ export function ChatPanel({
   // Whether the chat body has resolved enough to render without flashing, so opening a workspace does not flicker.
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
   const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
-  // The composer stays mounted whenever there is a daemon: a directory check runs on every conversation
-  // switch, and unmounting on it made the composer vanish and come back, remounting its whole subtree.
-  // Not being ready is a disabled composer, which is a state, rather than an absent one, which is a jump.
+  // Mounted whenever a daemon is there: a directory check runs on every switch, and unmounting on it jumped.
   const chatReady = isConnected;
   // The one condition under which the transcript is in the DOM, read by the render and by everything touching scroll.
   const transcriptVisible = chatReady && !isHistoryLoading;
@@ -279,7 +277,7 @@ export function ChatPanel({
       setPermissionModeState(settings.permission_mode);
     }).catch((caught) => swallowed({ component: "chat-panel", operation: "read the settings" }, caught));
     return () => { cancelled = true; };
-  // Only without a session, since a session's own permission mode is authoritative.
+  // Only without a session, since a session's own permission mode is the one that governs it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSessionId]);
 
@@ -687,6 +685,52 @@ export function ChatPanel({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
   }, [sidePanelWidth, onSidePanelWidthChange]);
 
+  // Built before the return so the region can be gated on the tiles themselves: an open panel with
+  // nothing to render would otherwise reserve a full-width column of empty space.
+  const sidePanels = ([
+      backgroundPanelOpen && {
+        key: "background",
+        onActivate: () => markSidePanelActive("background"),
+        content: (
+          <BackgroundJobsPanel
+            open={backgroundPanelOpen}
+            onClose={() => setSidePanelOpen("background", false)}
+            messages={messages}
+            sessionId={sessionId}
+            workingDirectory={workingDirectory || homeDirectory || ""}
+            locations={workspaceLocations}
+          />
+        ),
+      },
+      memoryPanelOpen && {
+        key: "memory",
+        onActivate: () => markSidePanelActive("memory"),
+        content: (
+          <MemoryPanel
+            key={sessionId}
+            sessionId={sessionId}
+            onClose={() => setSidePanelOpen("memory", false)}
+          />
+        ),
+      },
+      delegatedPanelOpen && {
+        key: "delegated",
+        onActivate: () => markSidePanelActive("delegated"),
+        content: (
+          <DelegatedWorkPanel
+            sessions={sessions}
+            rootSessionId={rootSessionId}
+            activeSessionId={sessionId}
+            unseenCompletions={unseenCompletions ?? EMPTY_UNSEEN_COMPLETIONS}
+            agents={agents}
+            onResume={(entry) => onResumeSession?.(entry)}
+            onDeleteSession={(entry) => onDeleteSession?.(entry.sessionId)}
+            onClose={() => setSidePanelOpen("delegated", false)}
+          />
+        ),
+      },
+    ].filter(Boolean) as TilePanel[]);
+
   return (
     // Every profile name is resolved from this one catalogue, so the transcript and the sidebar cannot disagree.
     <AgentNamesProvider agents={agents}>
@@ -904,9 +948,7 @@ export function ChatPanel({
                           </FadeIn>
                         );
                     })}
-                    {/* A message the session has not taken yet, drawn as the message it is, with its footer naming the wait.
-                        The one being handed over is skipped: it is already a transcript row above, and drawing it
-                        here as well would show the message twice, the second time wearing a queue's affordances. */}
+                    {/* A queued message, drawn as itself; the one being handed over is skipped, being a row already. */}
                     {queuedMessages.map((message, index) => message.id === deliveringMessage ? null : (
                       <UserMessageCard
                         key={message.id}
@@ -984,8 +1026,7 @@ export function ChatPanel({
           px={4}
           pb="var(--safe-bottom, 0px)"
           overflowY="hidden"
-          // Never gives up its height: the transcript above shrinks instead, so a growing composer
-          // cannot push itself past the bottom of the window when a side panel narrows the column.
+          // Never gives up its height, so a growing composer cannot push itself past the bottom of the window.
           flexShrink={0}
           style={{ scrollbarGutter: "stable both-edges" }}
         >
@@ -1028,7 +1069,7 @@ export function ChatPanel({
 
       {/* The right region tiles every open panel into a resizable grid, flush to the chat with an overlapping handle. */}
       <AnimatePresence initial={false}>
-      {openSidePanels.length > 0 && (
+      {sidePanels.length > 0 && (
         <MotionBox
           key="panel-region"
           data-layout="side-panel-region"
@@ -1060,51 +1101,7 @@ export function ChatPanel({
             zIndex={1}
             onPointerDown={startSidePanelResize}
           />
-            <PanelTiles
-              gap={8}
-              panels={[
-                backgroundPanelOpen && {
-                  key: "background",
-                  onActivate: () => markSidePanelActive("background"),
-                  content: (
-                    <BackgroundJobsPanel
-                      open={backgroundPanelOpen}
-                      onClose={() => setSidePanelOpen("background", false)}
-                      messages={messages}
-                      sessionId={sessionId}
-                      workingDirectory={workingDirectory || homeDirectory || ""}
-                      locations={workspaceLocations}
-                    />
-                  ),
-                },
-                memoryPanelOpen && !!sessionId && {
-                  key: "memory",
-                  onActivate: () => markSidePanelActive("memory"),
-                  content: (
-                    <MemoryPanel
-                      sessionId={sessionId}
-                      onClose={() => setSidePanelOpen("memory", false)}
-                    />
-                  ),
-                },
-                delegatedPanelOpen && {
-                  key: "delegated",
-                  onActivate: () => markSidePanelActive("delegated"),
-                  content: (
-                    <DelegatedWorkPanel
-                      sessions={sessions}
-                      rootSessionId={rootSessionId}
-                      activeSessionId={sessionId}
-                      unseenCompletions={unseenCompletions ?? EMPTY_UNSEEN_COMPLETIONS}
-                      agents={agents}
-                      onResume={(entry) => onResumeSession?.(entry)}
-                      onDeleteSession={(entry) => onDeleteSession?.(entry.sessionId)}
-                      onClose={() => setSidePanelOpen("delegated", false)}
-                    />
-                  ),
-                },
-              ].filter(Boolean) as TilePanel[]}
-            />
+            <PanelTiles gap={8} panels={sidePanels} />
         </MotionBox>
       )}
       </AnimatePresence>
