@@ -198,7 +198,11 @@ export function ToolCall({
       }
       title={
         <DisclosureLabel shimmer={status === "running"}>
-          <ToolCallLabel name={name} args={toolArguments} />
+          <ToolCallLabel
+            name={name}
+            args={toolArguments}
+            settled={result !== undefined || status !== "running"}
+          />
         </DisclosureLabel>
       }
       badges={

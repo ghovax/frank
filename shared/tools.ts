@@ -189,9 +189,13 @@ assertDistinctGlyphs();
 export function toolCallDisplay(
   name: string,
   args: Record<string, unknown> | undefined,
+  settled = false,
 ): ToolDisplay {
+  // `explanation` is first in every schema, so it is whole once anything after it has arrived; until then it
+  // is a prefix, and a prefix read as a label says "Writing" for a call that has not said what it writes.
+  const whole = settled || Object.keys(args ?? {}).length > 1;
   return {
     ...(TOOL_GLYPHS[name] ?? { glyph: "wrench", tint: "fg.muted" }),
-    label: args?.explanation ? String(args.explanation) : "",
+    label: whole && args?.explanation ? String(args.explanation) : "",
   };
 }
