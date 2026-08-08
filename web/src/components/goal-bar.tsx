@@ -1,20 +1,24 @@
 "use client";
 
-import { Box, Button, Flex, Text } from "@chakra-ui/react";
+import { Box, Flex, IconButton, Spinner, Text } from "@chakra-ui/react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuTarget } from "react-icons/lu";
+import { LuCircleSlash, LuDot, LuSquare, LuTarget } from "react-icons/lu";
 import { Tooltip } from "./ui/tooltip";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 import { ProseList } from "./ui/display";
 import type { SessionGoal } from "@/lib/api";
 
 // What the session is working toward, above the composer because it is a state rather than an event.
 export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => void }) {
   const translation = useTranslations("GoalBar");
+  const [confirming, setConfirming] = useState(false);
   const text = (goal.text ?? "").trim();
   if (!text) return null;
 
   const status = goal.status || "active";
-  const tone = status === "blocked" ? "red.fg" : status === "parked" ? "orange.fg" : "fg.muted";
+  // The status is the one thing here that changes, so it is the one thing that carries a colour.
+  const tone = status === "blocked" ? "red.fg" : status === "parked" ? "orange.fg" : "blue.fg";
   const statusLabel =
     status === "blocked"
       ? translation("blocked")
@@ -50,37 +54,72 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
   );
 
   return (
-    <Flex
-      align="center"
-      gap={2}
-      mb={2}
-      px={2}
-      py={1.5}
-      borderRadius="md"
-      border="1px solid"
-      borderColor="border"
-      bg="bg.subtle"
-    >
-      <Tooltip
-        content={detail}
-        rich
-        openDelay={200}
-        closeDelay={60}
-        positioning={{ placement: "top" }}
+    <>
+      <Flex
+        align="center"
+        gap={2}
+        mb={3}
+        px={3}
+        py={2}
+        borderRadius="md"
+        borderWidth="1px"
+        borderColor="border.muted"
+        boxShadow="panel"
+        bg="bg.panel"
       >
-        <Flex align="center" gap={2} flex={1} minW={0} color={tone}>
-          <LuTarget size={12} />
-          <Text textStyle="fieldLabel" flexShrink={0}>
-            {statusLabel}
-          </Text>
-          <Text fontSize="sm" color="fg.muted" truncate>
-            {text}
-          </Text>
-        </Flex>
-      </Tooltip>
-      <Button size="2xs" variant="outline" flexShrink={0} onClick={onClear}>
-        {translation("stop")}
-      </Button>
-    </Flex>
+        <Tooltip content={detail} rich openDelay={200} closeDelay={60} positioning={{ placement: "top" }}>
+          <Flex align="center" gap={2} flex={1} minW={0} color={tone}>
+            {/* Work in progress is shown as motion; a stopped goal is shown as the thing that stopped it. */}
+            <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0} boxSize="13px">
+              {status === "active" ? (
+                <Spinner boxSize="13px" borderWidth="1.5px" color={tone} />
+              ) : (
+                <LuCircleSlash size={13} />
+              )}
+            </Box>
+            {/* One size, so the two read as one line, but told apart three ways: the label carries the
+                status colour and the heavier weight, the goal carries the plain foreground, and a dot
+                sits between them — the same separator the record's qualifiers use. */}
+            <Text textStyle="xs" fontWeight="medium" flexShrink={0} display={{ base: "none", sm: "block" }}>
+              {statusLabel}
+            </Text>
+            <Box
+              display={{ base: "none", sm: "flex" }}
+              alignItems="center"
+              flexShrink={0}
+              // The glyph's box is mostly empty around a small dot, so the row's gap is pulled back in.
+              mx="-9px"
+            >
+              <LuDot size={20} style={{ opacity: 0.7 }} />
+            </Box>
+            <Text textStyle="xs" color="fg" truncate minW={0}>
+              {text}
+            </Text>
+          </Flex>
+        </Tooltip>
+        <IconButton
+          aria-label={translation("stop")}
+          title={translation("stop")}
+          size="2xs"
+          variant="plain"
+          colorPalette="red"
+          color="red.fg"
+          flexShrink={0}
+          onClick={() => setConfirming(true)}
+        >
+          <LuSquare size={13} />
+        </IconButton>
+      </Flex>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={translation("stopTitle")}
+        confirmLabel={translation("stopConfirm")}
+        danger
+        onConfirm={onClear}
+      >
+        {translation("stopBody")}
+      </ConfirmDialog>
+    </>
   );
 }
