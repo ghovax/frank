@@ -514,12 +514,15 @@ export function ChatPanel({
     if (!grantedPermissionMode || announcedClampRef.current === grantedPermissionMode) return;
     announcedClampRef.current = grantedPermissionMode;
     onPermissionModeChange?.(grantedPermissionMode);
-    toaster.create({
-      type: "info",
-      title: translation("permissionClampedTitle"),
-      description: translation("permissionClampedBody", { mode: grantedPermissionMode }),
-      closable: true,
-    });
+    // Raised on a microtask: the toaster flushes synchronously, which React refuses from inside a lifecycle.
+    queueMicrotask(() =>
+      toaster.create({
+        type: "info",
+        title: translation("permissionClampedTitle"),
+        description: translation("permissionClampedBody", { mode: grantedPermissionMode }),
+        closable: true,
+      }),
+    );
   }, [grantedPermissionMode, onPermissionModeChange, translation]);
 
   // The session's goal, read from the session list the daemon already pushes rather than kept as a second copy.
@@ -866,8 +869,7 @@ export function ChatPanel({
     [sidePanelWidth, onSidePanelWidthChange],
   );
 
-  // Built before the return so the region can be gated on the tiles themselves: an open panel with
-  // nothing to render would otherwise reserve a full-width column of empty space.
+  // Built before the return so the region is gated on the tiles themselves, since an open panel with nothing to draw would reserve an empty column.
   const sidePanels = [
     backgroundPanelOpen && {
       key: "background",
