@@ -357,6 +357,8 @@ export function ModelSelect({
           <Span
             data-fit-label={fitted ? "model" : undefined}
             data-fit-hidden={fitted && labelHidden ? "" : undefined}
+            // This label sits between two of the row's gaps rather than one, so its absence reclaims both.
+            css={{ "--fit-label-gap": "12px" }}
             display="flex"
             alignItems="center"
             minW={0}

@@ -253,6 +253,9 @@ samp {
 
 [data-fit-label][data-fit-hidden] {
   max-width: 0;
+  /* A flex item's `min-width` defaults to its content, which `max-width: 0` cannot override, so a hidden
+     label would still hold its icon's width and push the control's own icon past the edge. */
+  min-width: 0;
   overflow: hidden;
   margin-inline-start: calc(-1 * var(--fit-label-gap));
 }
@@ -269,7 +272,7 @@ samp {
 [data-fit-control][data-fit-arrow][data-fit-collapsed] {
   width: calc(var(--control-height) + var(--fit-arrow-column));
   min-width: calc(var(--control-height) + var(--fit-arrow-column));
-  padding-inline-end: var(--fit-arrow-column);
+  padding-inline-end: var(--fit-arrow-column) !important;
 }
 
 /* Everything below belongs to a pointer, and is gated on hover so a finger never triggers it. */
