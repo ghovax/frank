@@ -225,22 +225,33 @@ class SessionExecutor(AgentExecutor):
         )
 
     async def continue_goal(self, session_id: str) -> None:
-        """Read the goal against the session, then open a turn on what the review wrote, if it wrote one."""
+        """Read the goal against the session, then open a turn on what the review wrote, if it wrote one.
+
+        The turn that led here deliberately did not report the session idle, because it is not: this reads the
+        work and usually opens another turn. Whichever way it goes, this is the place that says so.
+        """
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         if runtime is None:
             return
-        goal = runtime.apply_goal_review(await runtime.review_goal())
-        # Written before the turn opens: a verdict held only in memory is one a restart would lose.
-        await self._persist_session_state(session_id, runtime)
-        if goal is None or not goal.is_open or not goal.direction.strip():
-            return
-        await self._drive_self_sent_turn(
-            session_id,
-            GOAL_CONTINUATION_KIND,
-            metadata_flags={Metadata.GOAL_CONTINUATION: True},
-            text=goal.direction,
-        )
+        self._notify_goal_state(session_id, runtime.goal, reviewing=True)
+        try:
+            try:
+                goal = runtime.apply_goal_review(await runtime.review_goal())
+            finally:
+                self._notify_goal_state(session_id, runtime.goal)
+            # Written before the turn opens: a verdict held only in memory is one a restart would lose.
+            await self._persist_session_state(session_id, runtime)
+            if goal is not None and goal.is_open and goal.direction.strip():
+                await self._drive_self_sent_turn(
+                    session_id,
+                    GOAL_CONTINUATION_KIND,
+                    metadata_flags={Metadata.GOAL_CONTINUATION: True},
+                    text=goal.direction,
+                )
+        finally:
+            # Exactly one release for the hold the turn took on our behalf, whichever way the review went.
+            self._notify_turn_state(session_id, False)
 
     def clear_goal(self, session_id: str) -> bool:
         """The person's own hand on the goal, and the only thing that ever calls one off rather than resolving it.
@@ -271,13 +282,19 @@ class SessionExecutor(AgentExecutor):
             return
         runtime.clear_session_dirty()
 
-    def _notify_goal_state(self, session_id: str, goal) -> None:
-        """Tell the daemon what the goal is now, so the interface can show it and offer to call it off."""
+    def _notify_goal_state(self, session_id: str, goal, reviewing: bool = False) -> None:
+        """Tell the daemon what the goal is now, so the interface can show it and offer to call it off.
+
+        `reviewing` rides along rather than being stored: it says the work is being read right now, which is
+        true of a moment and not of a goal, and a person watching a session go quiet deserves to know which.
+        """
         asyncio.create_task(
             self._turn_store.publish_event(
                 {
                     "session_id": session_id,
-                    "goal": goal.public() if goal is not None else None,
+                    "goal": (
+                        {**goal.public(), "reviewing": reviewing} if goal is not None else None
+                    ),
                 }
             )
         )

@@ -209,9 +209,19 @@ class _CompactsContext:
             if _opens_an_exchange(message)
         }
 
-    async def observe_exchange(self) -> None:
-        """Record what the exchange just established, stored now and shown only once its turns are gone."""
+    def observe_exchange_soon(self) -> None:
+        """Take the exchange now, before compaction can rewrite it, and fold it after the person has their answer."""
         exchange = self._current_exchange()
+        if len(exchange) < 2 or self._turn_store is None:
+            return
+        task = asyncio.create_task(self.observe_exchange(exchange))
+        # Held, or the loop may collect a fold mid-flight and drop the record it was writing.
+        self._folds_in_flight.add(task)
+        task.add_done_callback(self._folds_in_flight.discard)
+
+    async def observe_exchange(self, exchange: list | None = None) -> None:
+        """Record what the exchange established, stored now and shown only once its turns are gone."""
+        exchange = self._current_exchange() if exchange is None else exchange
         if len(exchange) < 2 or self._turn_store is None:
             return
         tag = self._exchange_of(exchange[0])

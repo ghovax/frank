@@ -1363,6 +1363,8 @@ export interface SessionGoal {
   evidence?: string;
   // The last thing the review told the session to do, which is also what opened its most recent turn.
   direction?: string;
+  // True only while the review is actually reading the work, which is a moment rather than a state.
+  reviewing?: boolean;
 }
 
 export interface SessionSummary {

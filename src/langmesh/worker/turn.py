@@ -622,6 +622,12 @@ class _TurnRunner:
             state.running = False
         if state is not None and state.runtime is not None:
             state.runtime.discard_pending_steering()
+        # A goal about to be reviewed keeps the session occupied: the turn is over but the work is not, and
+        # reporting idle here is what puts a Send button in front of somebody whose session is still going.
+        # A hold of its own rather than a skipped release, because turns in flight are counted: a release
+        # skipped is one the count never gets back. `continue_goal` releases it, and one predicate decides both.
+        if self._on_turn_state is not None and self._goal_carries_on():
+            self._on_turn_state(task.context_id, True)
         if self._track_context_activity and self._on_turn_state is not None:
             self._on_turn_state(task.context_id, False)
         if self._context_serialization_lock is not None:
@@ -631,25 +637,42 @@ class _TurnRunner:
         await self._maybe_continue_goal()
         self._maybe_nudge_to_report()
 
-    async def _maybe_continue_goal(self) -> None:
-        """Open another turn when this one ended with the goal unfinished, which is what makes a goal outlive a turn."""
+    def _goal_carries_on(self) -> bool:
+        """Whether this turn ending leads straight into a review rather than into a wait for the person."""
         if not self._completed:
-            return
+            return False
         state = self._executor._contexts.get(self._task.context_id)
         if state is None or state.aborted:
+            return False
+        runtime = self._runtime
+        goal = runtime.goal if runtime is not None else None
+        if goal is None or not goal.is_open or runtime.has_pending_jobs():
+            return False
+        return goal.continuations < active_tuning().amount(Tunable.goal_continuation_turns)
+
+    async def _maybe_continue_goal(self) -> None:
+        """Open another turn when this one ended with the goal unfinished, which is what makes a goal outlive a turn."""
+        if self._goal_carries_on():
+            asyncio.create_task(self._executor.continue_goal(self._task.context_id))
             return
         runtime = self._runtime
         goal = runtime.goal if runtime is not None else None
-        if goal is None or not goal.is_open:
+        state = self._executor._contexts.get(self._task.context_id)
+        if goal is None or not goal.is_open or runtime is None:
             return
-        if runtime is not None and runtime.has_pending_jobs():
+        # A compaction turn runs no model and decides nothing about the goal, so it neither continues nor parks.
+        if self._compaction:
             return
-        if goal.continuations >= active_tuning().amount(Tunable.goal_continuation_turns):
-            # Written now: parking is what stops the session, and a stop only in memory is one a restart undoes.
-            runtime.park_goal()
-            await self._executor._persist_session_state(self._task.context_id, runtime)
+        # A turn the person stopped hands the work back to them, so the goal waits rather than pretending to
+        # run: left active it shows a session working toward something while nothing at all is happening.
+        # Read off the abort itself, not off "did not complete", which is also true of turns nobody stopped.
+        stopped = state is not None and state.aborted
+        spent = goal.continuations >= active_tuning().amount(Tunable.goal_continuation_turns)
+        if not stopped and (state is None or runtime.has_pending_jobs() or not spent):
             return
-        asyncio.create_task(self._executor.continue_goal(self._task.context_id))
+        # Written now: parking is what stops the session, and a stop only in memory is one a restart undoes.
+        runtime.park_goal()
+        await self._executor._persist_session_state(self._task.context_id, runtime)
 
     def _maybe_nudge_to_report(self) -> None:
         """Remind the session once if a completed turn left its creator with no answer. A nudge, not a gate."""

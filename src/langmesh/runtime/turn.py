@@ -662,6 +662,8 @@ class _RunsTurns:
                         self._abort_event.clear()
                         aborted_for_steering = True
                         break
+                    # Stopped, not undone: what these turns established is worth as much as if they had finished.
+                    self.observe_exchange_soon()
                     yield Done(text="", stop_reason="cancelled")
                     outcome.cancelled = True
                     return
@@ -801,9 +803,8 @@ class _RunsTurns:
             "completed",
             turn_tool_calls_log,
         )
-        # The exchange is complete, so it is recorded now, while its turns are whole. Off the turn's path,
-        # because the person is waiting on the answer and not on the note taken about it.
-        asyncio.create_task(self.observe_exchange())
+        # The exchange is complete, so it is taken now, while its turns are whole.
+        self.observe_exchange_soon()
         yield Done(text=final_text, stop_reason="completed")
         step.directive = _STOP
 
@@ -927,5 +928,6 @@ class _RunsTurns:
                 step.directive = _CONTINUE
                 return
             self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
+            self.observe_exchange_soon()
             yield Done(text="", stop_reason="cancelled")
             step.directive = _STOP

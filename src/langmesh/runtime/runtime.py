@@ -632,6 +632,8 @@ class AgentRuntime(
         self._on_goal_change: Optional[Callable[[Optional[Goal]], None]] = None
         # Set when the goal or tasks change, so durable state is written on mutation rather than every checkpoint.
         self._session_dirty = False
+        # Folds still running after the turn that started them, held so the loop cannot collect one mid-write.
+        self._folds_in_flight: set[asyncio.Task] = set()
         self._execution_history: list[dict] = []
         # The permission policy as one value, clamped at creation against the parent and the card's ceiling.
         self._a2a_turn_id: str = ""

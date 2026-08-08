@@ -17,6 +17,8 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
   if (!text) return null;
 
   const status = goal.status || "active";
+  // Being read is not a status the goal holds, so it colours the label without becoming one.
+  const reviewing = !!goal.reviewing && status === "active";
   // A resolved goal stops driving the session but stays on the record, so the bar keeps showing it.
   const resolved = status === "satisfied" || status === "cleared";
   // The status is the one thing here that changes, so it is the one thing that carries a colour.
@@ -30,8 +32,9 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
           : status === "cleared"
             ? "fg.muted"
             : "blue.fg";
-  const statusLabel =
-    status === "blocked"
+  const statusLabel = reviewing
+    ? translation("reviewing")
+    : status === "blocked"
       ? translation("blocked")
       : status === "parked"
         ? translation("waiting")
