@@ -281,7 +281,7 @@ An approver that raises escalates the gate rather than allowing it. A broken pol
 
 ### Observation
 
-`Observer` receives what the harness decided but did not say out loud: a bash command auto-approved and why, a goal updated, a message appended. Turn *events* are not this — those come out of `stream()`.
+`Observer` receives what the harness decided but did not say out loud: a bash command auto-approved and why, a goal set, a message appended. Turn *events* are not this — those come out of `stream()`. The goal *review*'s verdict is not observed either: what it decided is visible in the goal itself, whose status and evidence the session carries.
 
 ```python
 class LogObserver:
@@ -420,7 +420,9 @@ async for event in session.stream("Refactor the parser to use the streaming read
             ...
 ```
 
-Both drive one turn, unless the agent sets itself a goal with `update_goal`. A goal is a contract for an outcome rather than a note about one, so while it is open the session keeps taking turns toward it and keeps yielding their events — until the agent satisfies it, clears it, reports it blocked, or reaches the allowance in `Tunable.goal_continuation_turns`, at which point the goal is parked and waits. Asking again gives the allowance back and picks a parked goal up where it stopped.
+Both drive one turn, unless the agent sets itself a goal with `update_goal`. A goal is a contract for an outcome rather than a note about one, so while it is open the session keeps taking turns toward it and keeps yielding their events.
+
+What decides whether it keeps going is not the agent, which can set a goal but cannot end one. Between turns the harness makes **one extra model call**: a review that reads the session against the goal and answers with a verdict and, unless the goal is reached, the instruction that opens the next turn. Budget for it — a goal that runs for eight turns costs eight reviews on top of the turns themselves, on the same model the session uses. It is a plain call and not a streamed turn, so nothing from it reaches `stream()`; what you see is the next turn beginning with the review's words. The loop ends when the review reports the goal satisfied or blocked, when the allowance in `Tunable.goal_continuation_turns` runs out and the goal is parked, or when the review cannot be reached often enough to matter — a review that fails leaves the goal exactly as it was. Asking again gives the allowance back and picks a parked goal up where it stopped.
 
 The harness checkpoints the conversation when a turn ends, including when it ends badly. A turn that raised still changed the conversation. To lose that is worse than to record a failure.
 

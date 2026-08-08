@@ -157,17 +157,23 @@ A session's permission mode is chosen when the session is created and can be cha
 - **Screen control** (`control_screen`), against the local machine.
 - **MCP**, against the session's own connections. Stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's.
 5. Results stream back as structured events. The session posts them to the daemon, which is the only writer of `history.db`, and fans them out to whoever is attached.
-6. The turn ends when the model stops asking for tools — unless the session holds a **goal**, in which case the session opens itself another turn and carries on. See below.
+6. The turn ends when the model stops asking for tools — unless the session holds a **goal**, in which case a separate model call reads the work, decides whether the outcome is real, and writes what the session does next. See below.
 
 ## Goals
 
 A turn ends when the model stops talking. That is the wrong unit for work that was asked for as an outcome, because the model can stop for reasons that have nothing to do with the outcome being real.
 
-So a session can hold one **goal**: the end state in a sentence, plus the conditions that must hold for it to be true, both written by the agent through `update_goal` and both durable beside the conversation. While a goal is open, the end of a turn is not the end of the work — the session opens itself another turn, with the goal restated, until the agent satisfies it (naming the evidence for each condition), clears it, or reports it blocked.
+So a session can hold one **goal**: the end state, what that end state is for, and the conditions that must hold for it to be true — all three written by the agent through `update_goal`, and all three durable beside the conversation.
 
-Two bounds keep that from being an unattended machine that never stops. `Tunable.goal_continuation_turns` is how many turns a session may open in a row with nobody watching; reaching it *parks* the goal, which is neither abandoning it nor calling it stuck — the session simply waits, and anything anyone says gives the allowance back and picks the goal up where it stopped. And the goal itself is visible in the app above the composer, with a control that calls it off outright.
+**Setting a goal is the whole of the agent's authority over it.** It cannot satisfy one, clear one or declare one blocked. A session grading its own work is the failure this exists to prevent, and a session that can stop its own goal will stop it on the turn it gets tired.
 
-What opens those turns is the layer that owns the session, never the model: the agent is shown the goal and the conditions, and nothing about the counting behind it.
+Deciding where the goal stands is instead a **review**: a separate model call, made when a turn ends, given the session as it is and the goal as it was written. It answers with a structured verdict — the requirements it could not find proof for, whether the goal is unmet, satisfied or blocked, and, unless it is satisfied, an instruction addressed to the session. That instruction is what opens the next turn. There is no template; the review writes prose about this goal and this session's own work, which is why it can send the session down a route it has not tried instead of restating a goal it has already failed at once.
+
+The review is written to keep the work going. `unmet` is its ordinary answer; `satisfied` requires it to name what proves each requirement; `blocked` requires it to establish that no route is open, and an impasse it reports before the goal has been pushed `Tunable.goal_blocked_turns` times is treated as one more push instead. A review that cannot be reached resolves nothing — the goal carries on unchanged, because a failure to look at a goal is not a verdict on it.
+
+Two bounds sit outside the review, since a reviewer biased toward continuing should not also be the only thing that can stop. `Tunable.goal_continuation_turns` is how many turns a session may open in a row with nobody watching; reaching it *parks* the goal, which is neither abandoning it nor calling it stuck — the session simply waits, and anything anyone says gives the allowance back and picks the goal up where it stopped. And the goal is visible in the app above the composer, with a control that calls it off outright, which is the only thing that ever *clears* one: the person whose goal it was.
+
+What opens those turns is the layer that owns the session. The agent is shown the review's instruction and nothing else — not the verdict, not the assessment behind it, and not the counting.
 
 ## Prompt caching, and what is recorded about it
 

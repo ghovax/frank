@@ -29,13 +29,17 @@ A session can also install what it does not have. Where the machine has Nix, eac
 | Tool | What it does |
 |------|--------------|
 | `set_tasks` / `update_tasks` | Maintain a task list for a multi-step job. |
-| `update_goal` | Set the outcome the session is working toward, and say when it is met, blocked, or no longer wanted. |
+| `update_goal` | Set the outcome the session is working toward, what it is for, and what would prove it reached. |
 | `read_turn` | Read a sibling turn handed to this session from outside. |
 | `load_skill` | Load a `SKILL.md` capability on demand. |
 | `ask_user` | Ask the user a question and wait for the answer. |
 | `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
 
-A goal is not a longer task list. The task list is the steps; the goal is the outcome the steps are for, and the difference is what happens when a turn ends. A session with an open goal keeps going: it opens itself another turn, with the goal restated, until the agent satisfies it, clears it, or reports it blocked — bounded by an allowance for how long it runs with nobody watching, after which the goal is parked and waits for you. Setting one takes both the end state and the conditions that would prove it, and satisfying one takes the evidence that each was met; a goal that cannot be audited is one that gets called done from memory. See [Architecture](architecture.md#goals).
+A goal is not a longer task list. The task list is the steps; the goal is the outcome the steps are for, and the difference is what happens when a turn ends. A session with an open goal keeps going — but the agent does not decide that, and cannot end its own goal. When the turn ends, a separate model call reads the session against the goal and answers: what is still unproven, whether it is reached, and what to do about it. Its answer is written to the session as the message that opens the next turn, so what carries the work on is an instruction about this work rather than the goal restated.
+
+That review is written to push. It only accepts a goal as reached when it can name what proves each condition, and only accepts an impasse once no route is left. What stops a run instead is an allowance for how long it goes with nobody watching, after which the goal is parked and waits for you — or you, calling it off from the bar above the composer.
+
+Setting one takes the end state, what the end state is for, and the conditions that would prove it. The purpose is what lets the review send the session another way to the same place rather than back down a road that already failed; the conditions are what it checks against. A goal that cannot be audited is one that never closes, or closes on somebody's impression. See [Architecture](architecture.md#goals).
 
 **Peer sessions**
 
