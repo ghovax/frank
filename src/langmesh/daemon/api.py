@@ -363,7 +363,9 @@ async def _session_permission_mode(params: dict) -> dict:
     mode = PermissionMode.more_restrictive(
         requested,
         parent.permission_mode if parent is not None else None,
-        None if requested is PermissionMode.AUTOMATIC else _agent_permission_ceiling(record.agent, record.working_directory),
+        None
+        if requested is PermissionMode.AUTOMATIC
+        else _agent_permission_ceiling(record.agent, record.working_directory),
     )
     changed = [record] if record.permission_mode != str(mode) else []
     state.registry.mark(record.id, permission_mode=str(mode), updated_at=_now())

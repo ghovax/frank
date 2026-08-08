@@ -1,15 +1,31 @@
-Set, satisfy, clear or report the session's single goal.
+Set the session's single goal: the outcome the work is for, and what would prove it reached.
 
 A goal is not a task list. The task list is the steps; the goal is the outcome those steps are for, and it stays until the outcome is real. Set one where the user asks for a concrete end state that will take several calls, edits or checks to reach. Skip it for a small one-shot answer.
 
-Setting a goal is a claim about what "done" means, so state it well enough that somebody else could check it. `goal` is the end state in one sentence. `requirements` are the conditions that must hold for that sentence to be true, each one something you can actually go and look at — a command that passes, a file that exists and says a particular thing, a behaviour you can reproduce. Vague requirements make a goal that cannot be audited, and one that cannot be audited is one you will end up calling done from memory.
+Setting a goal is what keeps the session working past the end of a turn, so set it early — at the point you understand what is being asked, not once you are nearly done.
 
-While a goal is set, work toward it. Mark it `satisfied` only once you have checked the requirements against the current state and can say what proved each one — not from your recollection of having done the work. Mark it `blocked` when the same obstacle has stopped you repeatedly and you cannot go around it without the user or something outside your reach; hard, slow and unfinished are none of them blocked. Mark it `cleared` when the outcome stopped being what the user wants.
+## Deciding where the goal stands is not yours
+
+You set the goal. You do not close it. Whether it is reached is read off the work by a separate review that sees this session and judges it against what you wrote here, and what it decides is what happens next: another turn with an instruction it writes for you, or an end. There is no argument to make to it and no call that ends a goal early.
+
+Two things follow. Write the goal for that reader, since it has only your words and this session to go on — a requirement it cannot check is one that will never be marked met. And do not spend a turn declaring yourself finished: state what you did and what it showed, and let it be read.
+
+Replacing a goal is for a goal that changed, not for one that got hard. A smaller goal set to be done with a larger one is the one misuse of this tool.
+
+## Writing it well
+
+`goal` is the end state, in one or two sentences, written as something that is either true or not — "the importer handles paginated responses and the existing tests still pass", not "work on the importer". Somebody who has not read this conversation should be able to tell from it alone what would count as done.
+
+`purpose` is what that end state is for: the reason the user wants it, the problem it solves, the thing that would still be wrong if it were skipped. It is what lets a closed route be told apart from a lost goal — a reviewer who knows what the outcome is for can send you down a different road to the same place, and one who does not can only ask you to try the same road again. Write the need, not a restatement of the goal.
+
+`requirements` are the conditions that must hold for the goal to be true, each one something a reader could go and look at: a command that passes, a file that exists and says a particular thing, a behaviour that can be reproduced, a number that lands inside a range. Say what would be looked at and what it would show. Cover the whole of the goal — a requirement missing from this list is a part of the outcome nobody will check — and keep them independent, since one condition that folds three things together cannot be half met.
+
+Vague requirements make a goal that cannot be audited. "Tests pass" names no tests; "it works" names no behaviour; "the code is clean" names nothing at all. A goal like that either never closes or closes on somebody's impression.
+
+Write all three in the language the user is speaking: the goal is shown to them, above where they type.
 
 Arguments:
-  - status: "active" sets or replaces the goal. "satisfied" ends it because the outcome is real. "blocked" reports an impasse and leaves the goal standing. "cleared" ends it because it no longer applies.
-  - goal: The end state, in one sentence. Required for "active".
-  - requirements: The conditions that must hold, each checkable. Required for "active".
-  - evidence: What you checked and what it showed, for each requirement. Required for "satisfied".
-  - blocker: What is in the way, and what would clear it. Required for "blocked".
-  - explanation: A short reason for the update, in the words the user reads.
+  - goal: The end state, written so it is either true or not.
+  - purpose: What that end state is for, in the user's terms.
+  - requirements: The conditions that would prove it, each one checkable.
+  - explanation: A short reason for setting it, in the words the user reads.

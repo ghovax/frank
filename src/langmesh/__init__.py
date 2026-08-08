@@ -407,7 +407,7 @@ class Session:
             await self.save()
 
     async def _pursue_goal(self) -> AsyncIterator[TurnEventUnion]:
-        """Keep driving turns while the session's goal is open, up to its allowance."""
+        """Keep driving turns while the review says the goal is unreached, up to its allowance."""
         from langmesh.base.tuning import Tunable, active_tuning
 
         allowance = active_tuning().amount(Tunable.goal_continuation_turns)
@@ -418,24 +418,13 @@ class Session:
             if goal.continuations >= allowance:
                 self.runtime.park_goal()
                 return
+            # A pass of its own reads the work and writes what comes next, so the session never grades itself.
+            goal = self.runtime.apply_goal_review(await self.runtime.review_goal())
+            if goal is None or not goal.is_open or not goal.direction.strip():
+                return
             self.runtime.note_goal_continuation()
-            async for event in self.runtime.stream(
-                self._goal_continuation_note(goal), as_system_note=True
-            ):
+            async for event in self.runtime.stream(goal.direction, as_system_note=True):
                 yield event
-
-    def _goal_continuation_note(self, goal) -> str:
-        """The goal, restated as the next turn's opening message."""
-        from langmesh.base.tuning import Tunable, active_tuning
-
-        return self.runtime._prompt_loader.load(
-            "goal_continuation",
-            {
-                "goal": goal.text,
-                "requirements": "\n".join(f"- {requirement}" for requirement in goal.requirements),
-                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
-            },
-        )
 
     async def ask(self, message: str, *, attachments: Sequence[str | Path] = ()) -> str:
         """Drive a turn, or a goal to its end, and answer with the agent's prose."""

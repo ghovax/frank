@@ -81,6 +81,7 @@ from langmesh.runtime.compaction import (
 from langmesh.base.serialization import compact
 from langmesh.base.toolbox import toolbox_for
 from langmesh.runtime.goal import Goal
+from langmesh.runtime.goal_review import _ReviewsGoal
 from langmesh.runtime.internals import (
     _cap_model_result_payload,
     _maybe_json,
@@ -439,7 +440,9 @@ class TaskManager:
         self._next_identifier = int(snapshot.get("next_identifier", len(self._tasks) + 1))
 
 
-class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _RunsTurns):
+class AgentRuntime(
+    _DispatchesTools, _DecidesPermissions, _CompactsContext, _ReviewsGoal, _RunsTurns
+):
     # A turn runs until the model is done or the user interrupts: no ceiling and no stuck-detector.
 
     # Tool name to handler. `_execute_tool` resolves the shared preamble once, then dispatches here.
@@ -1016,9 +1019,13 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         )
 
     def restore_goal_allowance(self) -> None:
-        """A person spoke, so the allowance restarts and a parked goal resumes. A blocked one is left alone."""
+        """A person spoke, so the allowance restarts and a goal that only ran out of it resumes.
+
+        Parking is the one status this undoes. A goal the review settled, or the person called off, is a goal
+        with an answer; speaking again is not asking for that answer to be thrown away and the loop restarted.
+        """
         goal = self._goal
-        if goal is None or goal.status == Goal.BLOCKED:
+        if goal is None or goal.status not in (Goal.ACTIVE, Goal.PARKED):
             return
         if goal.continuations == 0 and goal.status == Goal.ACTIVE:
             return

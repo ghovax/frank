@@ -12,11 +12,11 @@ from langmesh.runtime.internals import (
     DirectiveBatch,
     ObservationBatch,
     conversation_tokens,
+    emit_structured,
     message_tokens,
 )
 from langmesh.runtime.turn_events import CompactionDone, CompactionStarted, TurnEvent
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from pydantic import ValidationError
 from typing import AsyncIterator
 from langmesh.base.errors import log_fields
 from langmesh.base.serialization import content_address, lines
@@ -37,42 +37,10 @@ class _CompactsContext:
     """Keeping a conversation inside its window: what each exchange establishes is recorded, then its turns are dropped."""
 
     async def _emit_batch(self, schema, request: list, what: str):
-        """One structured call: offered rather than forced, insisted on by the prompt, retried, and validated."""
-        # The tool is offered and the prompt insists on it: forcing it, a thinking model behind a gateway refuses.
-        model = self._llm.bind_tools([schema], tool_choice="auto")
-        attempts = active_tuning().amount(Tunable.compaction_attempts)
-        for attempt in range(1, attempts + 1):
-            try:
-                response = await model.ainvoke(request)
-            except Exception:  # noqa: BLE001 — one dropped call is not the end of the fold
-                logger.warning(
-                    "the %s pass could not be reached (attempt %d of %d)",
-                    what,
-                    attempt,
-                    attempts,
-                    exc_info=True,
-                )
-                continue
-            if response is None or not response.tool_calls:
-                logger.warning(
-                    "the %s pass answered without recording anything (attempt %d of %d)",
-                    what,
-                    attempt,
-                    attempts,
-                )
-                continue
-            try:
-                return schema.model_validate(response.tool_calls[0]["args"])
-            except ValidationError:
-                logger.warning(
-                    "the %s pass did not fit its schema (attempt %d of %d)",
-                    what,
-                    attempt,
-                    attempts,
-                    exc_info=True,
-                )
-                continue
-        return None
+        """One structured call against this runtime's model, which is the shared pass every fold is built on."""
+        return await emit_structured(
+            self._llm, schema, request, what, active_tuning().amount(Tunable.compaction_attempts)
+        )
 
     async def _emit_observations(self, request: list) -> list:
         """Run one observer call and read its entries from the tool call it makes."""

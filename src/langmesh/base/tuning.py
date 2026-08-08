@@ -122,6 +122,8 @@ class Tunable(Enum):
 
     goal_blocked_turns = Default(3, Scaling.NONE)
 
+    goal_review_attempts = Default(3, Scaling.NONE)
+
     # The control plane and the processes it supervises.
     attach_snapshot_rows = Default(400, Scaling.NONE)
     session_title_attempts = Default(3, Scaling.NONE)

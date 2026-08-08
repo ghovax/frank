@@ -21,11 +21,13 @@ PEER_SENDER_FIELD = "peerSender"
 
 
 class TurnKind(StrEnum):
-    """What opened a turn: a person, a peer, a background result, or compaction."""
+    """What opened a turn: a person, a peer, the goal review, a background result, or compaction."""
 
     USER = "user"
     # A message from another session. Distinct from USER, or a peer's report reads as the user's instruction.
     PEER = "peer"
+    # The goal review's instruction. Distinct again, since it is neither the person nor the session's own voice.
+    GOAL = "goal"
     AUTONOMOUS = "autonomous"
     COMPACTION = "compaction"
 

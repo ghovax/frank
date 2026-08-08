@@ -1149,11 +1149,9 @@ class _DispatchesTools:
         policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        status = str(tool_arguments.get("status", "active"))
         goal = str(tool_arguments.get("goal", "")).strip()
+        purpose = str(tool_arguments.get("purpose", "")).strip()
         requirements = _goal_lines(tool_arguments.get("requirements"))
-        evidence = _goal_lines(tool_arguments.get("evidence"))
-        blocker = str(tool_arguments.get("blocker", "")).strip()
         current = self.goal
 
         def refuse(message: str) -> dict:
@@ -1163,63 +1161,36 @@ class _DispatchesTools:
                 "message": message,
             }
 
-        if status == "active":
-            # Both halves demanded at once: this is the only moment the goal meets a fresh reading of the request.
-            if not goal:
-                result = refuse("Say what the goal is: the end state, in one sentence.")
-            elif not requirements:
-                result = refuse(
-                    "A goal needs requirements: the conditions that must hold for it to be met, each one something you can check."
-                )
-            else:
-                # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
-                self.write_goal(
-                    Goal(
-                        text=goal,
-                        requirements=requirements,
-                        continuations=current.continuations if current is not None else 0,
-                    )
-                )
-                result = {"code": "goal_active", "goal": goal, "requirements": requirements}
-                self._record_event("goal_updated", result)
-        elif status == "satisfied":
-            if current is None:
-                result = refuse("There is no goal to satisfy.")
-            elif not evidence:
-                # The audit made structural, so "satisfied" cannot be asserted on memory alone.
-                result = refuse(
-                    "Say what proves it: for each requirement, what you looked at and what it showed."
-                )
-            else:
-                self.write_goal(
-                    current.model_copy(update={"status": Goal.SATISFIED, "evidence": evidence})
-                )
-                result = {
-                    "code": "goal_satisfied",
-                    "previous_goal": current.text,
-                    "evidence": evidence,
-                }
-                self._record_event("goal_updated", result)
-        elif status == "blocked":
-            if current is None:
-                result = refuse("There is no goal to report blocked.")
-            elif not blocker:
-                result = refuse("Say what is in the way, and what would clear it.")
-            else:
-                self.write_goal(
-                    current.model_copy(update={"status": Goal.BLOCKED, "blocker": blocker})
-                )
-                result = {"code": "goal_blocked", "goal": current.text, "blocker": blocker}
-                self._record_event("goal_updated", result)
-        elif status == "cleared":
-            if current is None:
-                result = refuse("There is no goal to clear.")
-            else:
-                self.write_goal(current.model_copy(update={"status": Goal.CLEARED}))
-                result = {"code": "goal_cleared", "previous_goal": current.text}
-                self._record_event("goal_updated", result)
+        # All three demanded at once: this is the only moment the goal meets a fresh reading of the request.
+        if not goal:
+            result = refuse(
+                "Say what the goal is: the end state, written so it is either true or not."
+            )
+        elif not purpose:
+            result = refuse(
+                "Say what the end state is for, so a closed route can be told from a lost goal."
+            )
+        elif not requirements:
+            result = refuse(
+                "A goal needs requirements: the conditions that must hold for it to be met, each one something a reader can go and check."
+            )
         else:
-            result = refuse("Status must be one of 'active', 'satisfied', 'blocked', or 'cleared'.")
+            # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
+            self.write_goal(
+                Goal(
+                    text=goal,
+                    purpose=purpose,
+                    requirements=requirements,
+                    continuations=current.continuations if current is not None else 0,
+                )
+            )
+            result = {
+                "code": "goal_active",
+                "goal": goal,
+                "purpose": purpose,
+                "requirements": requirements,
+            }
+            self._record_event("goal_updated", result)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
     async def _tool_session(

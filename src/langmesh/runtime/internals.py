@@ -12,10 +12,14 @@ from langmesh.base.providers import resolve_api_key
 from langmesh.base.tuning import active_tuning, clip_to_tokens, count_tokens, Tunable
 from langchain_core.messages import AIMessageChunk
 from pathlib import Path
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from typing import Any, AsyncIterator, Literal, Optional
 import json
+import logging
 from langmesh.base.serialization import compact, content_address
+
+
+_logger = logging.getLogger(__name__)
 
 
 #: The kinds an entry can be, each answering a different question the next reader will have.
@@ -29,7 +33,7 @@ ENTRY_REVISION = Literal["", "correction", "refinement", "merge", "retraction"]
 _FIELDS = PromptLoader(Path(__file__).parent / "descriptions")
 
 
-def _says(name: str) -> str:
+def says(name: str) -> str:
     """One field's description, from its own file, so the wording is edited as prose and not as code."""
     text = _FIELDS.load(name, {}).strip()
     if not text:
@@ -40,13 +44,13 @@ def _says(name: str) -> str:
 class Observation(BaseModel):
     """One immutable finding in the ledger. A correction is a new entry naming the old, never an edit."""
 
-    category: ENTRY_CATEGORY = Field(description=_says("observation_category"))
-    claim: str = Field(description=_says("observation_claim"))
-    detail: str = Field(description=_says("observation_detail"))
-    evidence: str = Field(default="", description=_says("observation_evidence"))
-    standing: ENTRY_STANDING = Field(description=_says("observation_standing"))
-    supersedes: list[str] = Field(default_factory=list, description=_says("observation_supersedes"))
-    revision: ENTRY_REVISION = Field(default="", description=_says("entry_revision"))
+    category: ENTRY_CATEGORY = Field(description=says("observation_category"))
+    claim: str = Field(description=says("observation_claim"))
+    detail: str = Field(description=says("observation_detail"))
+    evidence: str = Field(default="", description=says("observation_evidence"))
+    standing: ENTRY_STANDING = Field(description=says("observation_standing"))
+    supersedes: list[str] = Field(default_factory=list, description=says("observation_supersedes"))
+    revision: ENTRY_REVISION = Field(default="", description=says("entry_revision"))
 
     @model_validator(mode="after")
     def _drop_a_dangling_revision(self):
@@ -64,24 +68,62 @@ def _only_with_a_parent(entry):
     return entry
 
 
+async def emit_structured(llm, schema, request: list, what: str, attempts: int):
+    """One structured call: offered rather than forced, insisted on by the prompt, retried, and validated."""
+    # The tool is offered and the prompt insists on it: forcing it, a thinking model behind a gateway refuses.
+    model = llm.bind_tools([schema], tool_choice="auto")
+    for attempt in range(1, attempts + 1):
+        try:
+            response = await model.ainvoke(request)
+        except Exception:  # noqa: BLE001 — one dropped call is not the end of the pass
+            _logger.warning(
+                "the %s pass could not be reached (attempt %d of %d)",
+                what,
+                attempt,
+                attempts,
+                exc_info=True,
+            )
+            continue
+        if response is None or not response.tool_calls:
+            _logger.warning(
+                "the %s pass answered without recording anything (attempt %d of %d)",
+                what,
+                attempt,
+                attempts,
+            )
+            continue
+        try:
+            return schema.model_validate(response.tool_calls[0]["args"])
+        except ValidationError:
+            _logger.warning(
+                "the %s pass did not fit its schema (attempt %d of %d)",
+                what,
+                attempt,
+                attempts,
+                exc_info=True,
+            )
+            continue
+    return None
+
+
 class ObservationBatch(BaseModel):
     """Everything one pass appends to the ledger. Nothing is ever removed from it."""
 
     observations: list[Observation] = Field(
-        default_factory=list, description=_says("observation_batch")
+        default_factory=list, description=says("observation_batch")
     )
 
 
 class Directive(BaseModel):
     """Something the person asked for, kept because an instruction outlives the turn that carried it."""
 
-    kind: Literal["requirement", "preference"] = Field(description=_says("directive_kind"))
-    summary: str = Field(description=_says("directive_summary"))
-    detail: str = Field(default="", description=_says("directive_detail"))
-    occasion: str = Field(default="", description=_says("directive_occasion"))
-    still_binding: bool = Field(default=True, description=_says("directive_still_binding"))
-    supersedes: list[str] = Field(default_factory=list, description=_says("directive_supersedes"))
-    revision: ENTRY_REVISION = Field(default="", description=_says("entry_revision"))
+    kind: Literal["requirement", "preference"] = Field(description=says("directive_kind"))
+    summary: str = Field(description=says("directive_summary"))
+    detail: str = Field(default="", description=says("directive_detail"))
+    occasion: str = Field(default="", description=says("directive_occasion"))
+    still_binding: bool = Field(default=True, description=says("directive_still_binding"))
+    supersedes: list[str] = Field(default_factory=list, description=says("directive_supersedes"))
+    revision: ENTRY_REVISION = Field(default="", description=says("entry_revision"))
 
     @model_validator(mode="after")
     def _drop_a_dangling_revision(self):
@@ -95,7 +137,7 @@ class Directive(BaseModel):
 class DirectiveBatch(BaseModel):
     """Everything one pass appends to the directive ledger."""
 
-    directives: list[Directive] = Field(default_factory=list, description=_says("directive_batch"))
+    directives: list[Directive] = Field(default_factory=list, description=says("directive_batch"))
 
 
 # What ``_stream_next`` returns at the end, since a StopAsyncIteration inside a Task is mishandled.

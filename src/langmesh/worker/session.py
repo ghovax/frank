@@ -14,7 +14,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, MessageSendParams, Role, Task, TaskState
+from a2a.types import Message, MessageSendParams, Part, Role, Task, TaskState, TextPart
 from langchain_core.messages import messages_from_dict
 
 from langmesh.base.catalogue import machine_catalogue
@@ -37,6 +37,7 @@ from langmesh.protocol.metadata import (
 from langmesh.protocol.events import StatusEvent
 from langmesh.protocol.parts import _event_part
 from langmesh.protocol.turn_record import PendingInteraction, ToolGate, TurnRecord
+from langmesh.runtime.goal import Goal
 from langmesh.runtime.runtime import AgentRuntime
 from langmesh.runtime.turn_events import SuspensionGate
 from langmesh.worker.turn import _ContextState, _TurnRunner
@@ -193,14 +194,18 @@ class SessionExecutor(AgentExecutor):
         envelope_kind: str,
         *,
         metadata_flags: dict,
+        text: str = "",
     ) -> None:
         """Drive one harness-initiated turn as a self-sent message, so it is real, persisted and replayable."""
         handler = self._agent_handler()
         if handler is None:
             return
+        # A wake carries nothing and is composed at the far end; prose written for the session rides with it, and
+        # rides as a message addressed to the session, which is the only shape a transcript can show.
         message = Message(
-            role=Role.agent,
-            parts=[envelope_part(envelope_kind)],
+            role=Role.user if text else Role.agent,
+            parts=([Part(root=TextPart(text=text))] if text else [])
+            + [envelope_part(envelope_kind)],
             message_id=uuid.uuid4().hex,
             context_id=session_id,
             metadata=turn_metadata_envelope(metadata_flags),
@@ -220,20 +225,37 @@ class SessionExecutor(AgentExecutor):
         )
 
     async def continue_goal(self, session_id: str) -> None:
-        """Open one turn for an unfinished goal, so the transcript shows the agent carrying on rather than a mechanism."""
+        """Read the goal against the session, then open a turn on what the review wrote, if it wrote one."""
+        state = self._contexts.get(session_id)
+        runtime = state.runtime if state is not None else None
+        if runtime is None:
+            return
+        goal = runtime.apply_goal_review(await runtime.review_goal())
+        # Written before the turn opens: a verdict held only in memory is one a restart would lose.
+        await self._persist_session_state(session_id, runtime)
+        if goal is None or not goal.is_open or not goal.direction.strip():
+            return
         await self._drive_self_sent_turn(
             session_id,
             GOAL_CONTINUATION_KIND,
             metadata_flags={Metadata.GOAL_CONTINUATION: True},
+            text=goal.direction,
         )
 
     def clear_goal(self, session_id: str) -> bool:
-        """Call the goal off because the person said so. It is dropped, not parked: they are not asking to be reminded."""
+        """The person's own hand on the goal, and the only thing that ever calls one off rather than resolving it.
+
+        Twice over, because one control does both: a goal still being worked is stopped and kept on the record,
+        and one already resolved is dropped, since the second press is asking to stop seeing it.
+        """
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
-        if runtime is None or runtime.goal is None:
+        goal = runtime.goal if runtime is not None else None
+        if runtime is None or goal is None:
             return False
-        runtime.write_goal(None)
+        runtime.write_goal(
+            goal.model_copy(update={"status": Goal.CLEARED}) if goal.is_open else None
+        )
         asyncio.create_task(self._persist_session_state(session_id, runtime))
         return True
 

@@ -379,9 +379,12 @@ class _TurnRunner:
         # One trace per turn, grouped by session, nesting under the peer that sent it when there is one.
         task, ingested = resolved.task, resolved.ingested
         self._turn_kind = (
+            # A goal turn carries prose somebody has to be able to read, so it is not folded in with the wakes.
+            TurnKind.GOAL
+            if ingested.goal_continuation
             # The reminder is harness-initiated like a wake, and differs only in having nothing to deliver.
-            TurnKind.AUTONOMOUS
-            if ingested.autonomous or ingested.report_reminder or ingested.goal_continuation
+            else TurnKind.AUTONOMOUS
+            if ingested.autonomous or ingested.report_reminder
             else TurnKind.COMPACTION
             if ingested.compaction
             # A peer's message is not the user speaking, or the model reads a report as an instruction.
@@ -488,20 +491,9 @@ class _TurnRunner:
         runtime = prepared.runtime
         self._as_system_note = self._autonomous or self._report_reminder or self._goal_continuation
         if self._goal_continuation:
-            # The goal as the turn's opening message, delivered as a reminder so nothing claims a person asked.
-            goal = runtime.goal
-            requirements = "\n".join(
-                f"- {requirement}" for requirement in (goal.requirements if goal else [])
-            )
-            self._turn_input = _PROMPTS.load(
-                "goal_continuation",
-                {
-                    "goal": goal.text if goal else "",
-                    "requirements": requirements,
-                    # From the same setting anything else reads, so the number told and the number configured cannot drift.
-                    "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
-                },
-            )
+            # The review wrote this and it rode in on the message; delivered as a reminder, so that neither the
+            # record nor the model takes the harness for the person whose instructions it keeps.
+            self._turn_input = self._user_text
         elif self._report_reminder:
             # A reminder, never user prose: this is the harness speaking, not the person the session works for.
             self._turn_input = _PROMPTS.load(

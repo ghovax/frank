@@ -415,11 +415,9 @@ def update_tasks(
 def update_goal(
     *,
     explanation: str = Field(..., description=EXPLANATION),
-    status: Literal["active", "satisfied", "blocked", "cleared"] = "active",
-    goal: str = "",
-    requirements: list[str] | None = None,
-    evidence: list[str] | None = None,
-    blocker: str = "",
+    goal: str,
+    purpose: str,
+    requirements: list[str],
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_goal.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
