@@ -94,7 +94,16 @@ export interface MessageMeta {
 export interface ChatMessage {
   id: string;
   role:
-    "user" | "peer" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
+    | "user"
+    | "peer"
+    // The goal review's instruction, addressed to the session but written by neither it nor the person.
+    | "goal"
+    | "assistant"
+    | "tool_call"
+    | "thinking"
+    | "error"
+    | "warning"
+    | "compaction";
   content: string;
   timestamp: string;
   meta?: MessageMeta;
@@ -570,8 +579,14 @@ function receivedAt(message: A2AMessage): string {
   return typeof stamp === "string" ? stamp : "";
 }
 
-// A message from outside the session. `peerSender` tells a peer's report from the user's own words.
-function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSender = ""): void {
+// A message addressed to the session. Three voices arrive this way and the reader has to tell them apart:
+// the person's own words, a peer's report, and the goal review's instruction.
+function reduceInboundMessage(
+  state: ReduceState,
+  message: A2AMessage,
+  peerSender = "",
+  fromGoalReview = false,
+): void {
   const text = (message.parts ?? [])
     .filter((part) => part.kind === "text")
     .map((part) => part.text ?? "")
@@ -583,9 +598,10 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(peerSender ? { peerSender } : {}),
   };
+  const role = fromGoalReview ? "goal" : peerSender ? "peer" : "user";
   upsertMessage(state, {
-    id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
-    role: peerSender ? "peer" : "user",
+    id: stableMessageId(state, role, message.messageId),
+    role,
     content: text,
     // When the session took it, from the message itself, or a reloaded transcript dates everything to now.
     timestamp: receivedAt(message) || new Date().toISOString(),
@@ -984,9 +1000,11 @@ export function replayTurns(turns: A2ATurn[]): {
       replayMessages.push(trailing);
     }
     // Stamped on the turn, not on the message, because it describes what opened the turn.
-    const peerSender = turnState(turn).peerSender ?? "";
+    const opened = turnState(turn);
+    const peerSender = opened.peerSender ?? "";
+    const fromGoalReview = opened.kind === "goal";
     for (const message of replayMessages) {
-      if (message.role === "user") reduceInboundMessage(state, message, peerSender);
+      if (message.role === "user") reduceInboundMessage(state, message, peerSender, fromGoalReview);
       else reduceAgentMessage(state, message);
     }
     if (!hasAssistantTextAfterLastUser(state)) {

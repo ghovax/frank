@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, IconButton, Spinner, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Span, Spinner, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuCircleCheck, LuCircleSlash, LuDot, LuSquare, LuTarget, LuX } from "react-icons/lu";
@@ -48,7 +48,7 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
         <LuTarget size={12} />
         <Text fontWeight="semibold">{statusLabel}</Text>
       </Flex>
-      <Text mb={goal.requirements?.length || goal.blocker ? 2 : 0}>{text}</Text>
+      <Text mb={goal.requirements?.length || goal.blocker || goal.evidence ? 2 : 0}>{text}</Text>
       {!!goal.requirements?.length && (
         <Box>
           <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>
@@ -57,12 +57,29 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
           <ProseList items={goal.requirements} />
         </Box>
       )}
+      {/* What the review last decided: why it is stuck, what convinced it, or what it asked for next. */}
       {!!goal.blocker && (
         <Box mt={2}>
           <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>
             {translation("blocker")}
           </Text>
           <Text>{goal.blocker}</Text>
+        </Box>
+      )}
+      {!!goal.evidence && (
+        <Box mt={2}>
+          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>
+            {translation("evidence")}
+          </Text>
+          <Text>{goal.evidence}</Text>
+        </Box>
+      )}
+      {status === "active" && !!goal.direction && (
+        <Box mt={2}>
+          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>
+            {translation("direction")}
+          </Text>
+          <Text>{goal.direction}</Text>
         </Box>
       )}
     </Box>
@@ -131,18 +148,24 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
             </Text>
           </Flex>
         </Tooltip>
-        <IconButton
-          aria-label={translation(resolved ? "dismiss" : "stop")}
+        {/* Named as well as drawn: the one control here ends the thing the bar is about, so it says which. */}
+        <Button
           title={translation(resolved ? "dismiss" : "stop")}
           size="2xs"
           variant="plain"
+          px={1}
+          gap={1}
           colorPalette={resolved ? "gray" : "red"}
           color={resolved ? "fg.subtle" : "red.fg"}
           flexShrink={0}
           onClick={() => (resolved ? onClear() : setConfirming(true))}
         >
           {resolved ? <LuX size={13} /> : <LuSquare size={13} />}
-        </IconButton>
+          {/* The goal itself yields the width first; on the narrowest bars the icon stands on its own. */}
+          <Span textStyle="xs" display={{ base: "none", sm: "inline" }}>
+            {translation(resolved ? "dismiss" : "stop")}
+          </Span>
+        </Button>
       </Flex>
       <ConfirmDialog
         open={confirming}

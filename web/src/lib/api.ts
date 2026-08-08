@@ -1353,12 +1353,16 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
 // A session as the registry knows it. `parent` is its creator, and the token is never listed.
 export interface SessionGoal {
   text: string;
+  // What the end state is for, which is what lets a closed route be told apart from a lost goal.
+  purpose?: string;
   requirements: string[];
   // `active` while worked, `blocked` on an obstacle it cannot pass, `parked` after a long unattended stretch,
   // `satisfied` or `cleared` once it is resolved and kept on the record rather than dropped.
   status: "active" | "blocked" | "parked" | "satisfied" | "cleared";
   blocker: string;
   evidence?: string;
+  // The last thing the review told the session to do, which is also what opened its most recent turn.
+  direction?: string;
 }
 
 export interface SessionSummary {
@@ -1891,8 +1895,9 @@ export interface A2APart {
 // A turn's control-state under one URI-namespaced key, which is A2A's convention for an extension.
 export const TURN_STATE_KEY = "urn:langmesh:ext:turn:v1";
 
-// What opened a turn. `peer` is another session speaking, and emphatically not the user.
-export type TurnKind = "user" | "peer" | "autonomous" | "compaction";
+// What opened a turn. `peer` is another session speaking, `goal` is the review that keeps one going, and
+// neither is the user.
+export type TurnKind = "user" | "peer" | "goal" | "autonomous" | "compaction";
 
 export interface TurnState {
   kind?: TurnKind;

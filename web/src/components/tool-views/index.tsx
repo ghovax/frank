@@ -216,23 +216,13 @@ const PROSE_FIELD_KEYS = new Set([
   "response",
 ]);
 
-/** The goal tool's outcome codes as words, read only by the result view. */
-const GOAL_OUTCOME_KEYS: Record<string, string> = {
-  goal_active: "goalActive",
-  goal_satisfied: "goalSatisfied",
-  goal_blocked: "goalBlocked",
-  goal_cleared: "goalCleared",
-};
-
 // Translation keys for raw argument and result labels, falling back to the raw key when unmapped.
 const FIELD_LABEL_KEYS: Record<string, string> = {
   // The goal tool, whose fields would otherwise fall through and be labelled with their own raw keys.
   status: "fieldStatus",
   goal: "goal",
-  previous_goal: "previousGoal",
+  purpose: "goalPurpose",
   requirements: "goalRequirements",
-  evidence: "goalEvidence",
-  blocker: "goalBlocker",
   message: "message",
   error: "error",
   result: "result",
@@ -710,9 +700,10 @@ function GoalLines({ label, lines }: { label: string; lines: string[] }) {
 function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const goal = asString(args.goal).trim();
-  // The requirements are the half of a goal that says what done means, so a call that sets one shows both.
+  const purpose = asString(args.purpose).trim();
+  // The three parts of a goal are what it can be judged against, so a call that sets one shows all of them.
   const requirements = asArray(args.requirements).map(asString).filter(Boolean);
-  if (!goal && !requirements.length) return null;
+  if (!goal && !purpose && !requirements.length) return null;
   return (
     <FieldList>
       {goal ? (
@@ -720,12 +711,16 @@ function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
           <MarkdownContent content={goal} fontSize="xs" />
         </Field>
       ) : null}
+      {purpose ? (
+        <Field label={translation("goalPurpose")}>
+          <MarkdownContent content={purpose} fontSize="xs" />
+        </Field>
+      ) : null}
       <GoalLines label={translation("goalRequirements")} lines={requirements} />
     </FieldList>
   );
 }
 
-/** What the goal is now, and what it was. One outcome, stated once. */
 // `wait_for` is entirely its own duration, which the heading already states, so its arguments render as nothing.
 function WaitForResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolDisplay");
@@ -736,45 +731,31 @@ function WaitForResultView({ data }: { data: Record<string, unknown> }) {
   return <EmptyHint>{translation("waited", { seconds })}</EmptyHint>;
 }
 
+/** The goal that is now set: setting one is the only outcome this tool has. */
 function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
-  const code = asString(data.code);
-  const outcome = GOAL_OUTCOME_KEYS[code];
   const goal = asString(data.goal).trim();
-  const previous = asString(data.previous_goal).trim();
+  const purpose = asString(data.purpose).trim();
   const requirements = asArray(data.requirements).map(asString).filter(Boolean);
-  // What was checked when a goal was satisfied, so a reader can disagree with a done rather than take it on trust.
-  const evidence = asArray(data.evidence).map(asString).filter(Boolean);
-  const blocker = asString(data.blocker).trim();
-  if (!outcome) return <ErrorView message={asString(data.message) || code} />;
+  if (asString(data.code) !== "goal_active") {
+    return <ErrorView message={asString(data.message) || asString(data.code)} />;
+  }
   return (
     <FieldList>
       <InlineField label={translation("fieldOutcome")}>
-        <Pill
-          colorPalette={
-            code === "goal_active" ? "blue" : code === "goal_blocked" ? "orange" : "green"
-          }
-        >
-          {translation(outcome as Parameters<typeof translation>[0])}
-        </Pill>
+        <Pill colorPalette="blue">{translation("goalActive")}</Pill>
       </InlineField>
       {goal ? (
         <Field label={translation("goal")}>
           <MarkdownContent content={goal} fontSize="xs" />
         </Field>
       ) : null}
-      {previous ? (
-        <Field label={translation("previousGoal")}>
-          <MarkdownContent content={previous} fontSize="xs" />
+      {purpose ? (
+        <Field label={translation("goalPurpose")}>
+          <MarkdownContent content={purpose} fontSize="xs" />
         </Field>
       ) : null}
       <GoalLines label={translation("goalRequirements")} lines={requirements} />
-      <GoalLines label={translation("goalEvidence")} lines={evidence} />
-      {blocker ? (
-        <Field label={translation("goalBlocker")}>
-          <MarkdownContent content={blocker} fontSize="xs" />
-        </Field>
-      ) : null}
     </FieldList>
   );
 }

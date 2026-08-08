@@ -2,7 +2,7 @@
 
 import { Box, Button, Flex, Separator, Span, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   LuCheck,
   LuClock,
@@ -10,6 +10,7 @@ import {
   LuFoldVertical,
   LuMessagesSquare,
   LuRotateCw,
+  LuTarget,
   LuTrash2,
   LuTriangleAlert,
 } from "react-icons/lu";
@@ -224,14 +225,17 @@ function MessageFooter({
   );
 }
 
-// A message addressed to this session, whether the person's own or one a peer sent, as one card.
+// A message addressed to this session — the person's own, a peer's, or the goal review's — as one card.
 export function UserMessageCard({
   message,
   banner = "",
+  bannerIcon,
   queued,
 }: {
   message: ChatMessage;
   banner?: string;
+  // The mark beside the banner, since who is speaking is read before the words are.
+  bannerIcon?: ReactNode;
   queued?: QueuedMessageState;
 }) {
   const translation = useTranslations("ChatMessage");
@@ -258,9 +262,7 @@ export function UserMessageCard({
     >
       {banner && (
         <Flex align="center" gap={1.5} color="fg.muted">
-          <ActivityIcon>
-            <LuMessagesSquare />
-          </ActivityIcon>
+          <ActivityIcon>{bannerIcon ?? <LuMessagesSquare />}</ActivityIcon>
           <Text fontSize="xs" fontWeight="medium">
             {banner}
           </Text>
@@ -328,6 +330,16 @@ export const ChatMessageItem = memo(function ChatMessageItem({
 
     case "peer": {
       return <UserMessageCard message={message} banner={translation("fromPeerSession")} />;
+    }
+
+    case "goal": {
+      return (
+        <UserMessageCard
+          message={message}
+          banner={translation("fromGoalReview")}
+          bannerIcon={<LuTarget />}
+        />
+      );
     }
 
     case "assistant": {
