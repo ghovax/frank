@@ -561,7 +561,9 @@ export function ChatPanel({
     }
     scrollMetricsRef.current = { scrollHeight: container.scrollHeight, firstKey, count };
     lastScrollTopRef.current = container.scrollTop;
-  }, [messages, queuedMessages, transcriptVisible]);
+    // Streaming is in here because it changes the transcript's height without changing its messages: the last
+    // row stops being throttled and shows its whole text, and the tool group above it stops being held open.
+  }, [messages, queuedMessages, transcriptVisible, isStreaming]);
 
   // Late-growing content keeps the bottom in view while pinned, re-running when the transcript container actually mounts.
   const timelineMounted = transcriptVisible && !historyError && messages.length > 0;

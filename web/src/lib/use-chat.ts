@@ -422,10 +422,14 @@ function finishActiveTools(state: ReduceState): void {
 function applyThinking(state: ReduceState, text: string): void {
   let index = state.messages.findLastIndex(isRunningThinkingMessage);
   if (index === -1) {
+    // Counted in its own right, not by the array's length nor by the shared anonymous counter: both advance
+    // differently on a live turn and on its replay, and any drift re-keys every reasoning row after it.
+    const issued = state.keyCounts.get("thinking") ?? 0;
+    state.keyCounts.set("thinking", issued + 1);
     state.messages = [
       ...state.messages,
       {
-        id: `status-${state.messages.length}`,
+        id: `status-${issued}`,
         role: "thinking",
         content: "",
         timestamp: new Date().toISOString(),
@@ -506,12 +510,7 @@ function messageHoldingBlock(state: ReduceState, blockIdentifier: string): strin
   return owner?.id ?? null;
 }
 
-function pushAssistantText(
-  state: ReduceState,
-  text: string,
-  blockIdentifier: string,
-  sourceId?: string,
-): void {
+function pushAssistantText(state: ReduceState, text: string, blockIdentifier: string): void {
   if (!text) return;
   if (!blockIdentifier) throw new Error("Assistant text requires a content-block identity.");
   finishRunningThinking(state);
@@ -525,7 +524,9 @@ function pushAssistantText(
   state.messages = [
     ...state.messages,
     {
-      id: stableMessageId(state, "asst", sourceId),
+      // The block it opened with, which the live stream and a replay both carry, so a settled turn is
+      // re-rendered rather than rebuilt: a new key here unmounts the prose, its highlighting and its diagrams.
+      id: `asst-${blockIdentifier}`,
       role: "assistant",
       content: text,
       contentBlocks: [{ identifier: blockIdentifier, content: text }],
@@ -595,12 +596,7 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
 // The one reduction of a part, walked by replay and by the live tail alike.
 function reduceAgentPart(state: ReduceState, part: A2APart, sourceId?: string): void {
   if (part.kind === "text") {
-    pushAssistantText(
-      state,
-      part.text ?? "",
-      requiredContentBlockIdentifier(part.metadata),
-      sourceId,
-    );
+    pushAssistantText(state, part.text ?? "", requiredContentBlockIdentifier(part.metadata));
     return;
   }
   if (part.kind !== "data" || !part.data) return;
@@ -997,12 +993,7 @@ export function replayTurns(turns: A2ATurn[]): {
       for (const artifact of turn.artifacts ?? []) {
         for (const part of artifact.parts ?? []) {
           if (part.kind !== "text" || !part.text?.trim()) continue;
-          pushAssistantText(
-            state,
-            part.text,
-            requiredContentBlockIdentifier(part.metadata),
-            artifact.artifactId,
-          );
+          pushAssistantText(state, part.text, requiredContentBlockIdentifier(part.metadata));
         }
       }
     }
