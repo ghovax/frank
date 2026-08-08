@@ -191,11 +191,10 @@ export function toolCallDisplay(
   args: Record<string, unknown> | undefined,
   settled = false,
 ): ToolDisplay {
-  // `explanation` is first in every schema, so it is whole once anything after it has arrived; until then it
-  // is a prefix, and a prefix read as a label says "Writing" for a call that has not said what it writes.
-  const whole = settled || Object.keys(args ?? {}).length > 1;
+  // Only once the call has settled. Watching a label being typed, and be replaced when the argument that was
+  // being typed turns out to have been a prefix, costs the reader more attention than the wait does.
   return {
     ...(TOOL_GLYPHS[name] ?? { glyph: "wrench", tint: "fg.muted" }),
-    label: whole && args?.explanation ? String(args.explanation) : "",
+    label: settled && args?.explanation ? String(args.explanation) : "",
   };
 }
