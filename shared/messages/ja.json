@@ -162,8 +162,6 @@
     "newConversation": "新しい会話",
     "openThisFolder": "このフォルダを開く",
     "path": "パス",
-    "permissionClampedBody": "セッションは「{mode}」で実行されます。エージェントのプロファイルに上限が設定されているため、選択したモードはそこまで引き下げられました。設定のエージェントから変更できます。",
-    "permissionClampedTitle": "このエージェントは権限に上限があります",
     "permissionModeFailedTitle": "権限モードを変更できませんでした",
     "queued": "キュー待ち",
     "queuedForDecision": "あなたの判断を待っています",

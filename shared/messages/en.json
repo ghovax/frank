@@ -162,8 +162,6 @@
     "newConversation": "New conversation",
     "openThisFolder": "Open this folder",
     "path": "Path",
-    "permissionClampedBody": "The session runs as “{mode}”. The agent's profile sets a ceiling, so the mode you picked was tightened to it. Change it in Settings → Agents.",
-    "permissionClampedTitle": "This agent caps its permissions",
     "permissionModeFailedTitle": "Couldn't change the permission mode",
     "queued": "Queued",
     "queuedForDecision": "Waiting for your decision",

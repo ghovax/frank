@@ -181,8 +181,12 @@ async def _session_create(params: dict) -> dict:
             parent.permission_mode if parent is not None else None,
             requested=params.get("permission_mode"),
             fallback=configured,
-            # The agent's ceiling, applied here too, so the record cannot claim a mode the session will not run under.
-            ceiling=_agent_permission_ceiling(agent, working_directory),
+            # The agent's ceiling shapes what is inherited, but a person who asks for automatic means it.
+            ceiling=(
+                None
+                if PermissionMode.parse(params.get("permission_mode")) is PermissionMode.AUTOMATIC
+                else _agent_permission_ceiling(agent, working_directory)
+            ),
         )
     except ValueError as conflict:
         # A session that cannot answer a gate asking for a peer that raises them: refused at creation.
@@ -355,10 +359,11 @@ async def _session_permission_mode(params: dict) -> dict:
             code="invalid_permission_mode",
         )
     parent = state.registry.get(record.parent) if record.parent else None
+    # A person choosing automatic is choosing it; the agent's ceiling still governs everything they did not choose.
     mode = PermissionMode.more_restrictive(
         requested,
         parent.permission_mode if parent is not None else None,
-        _agent_permission_ceiling(record.agent, record.working_directory),
+        None if requested is PermissionMode.AUTOMATIC else _agent_permission_ceiling(record.agent, record.working_directory),
     )
     changed = [record] if record.permission_mode != str(mode) else []
     state.registry.mark(record.id, permission_mode=str(mode), updated_at=_now())

@@ -507,23 +507,14 @@ export function ChatPanel({
     [agent, initialSessionId, scrollToBottom, send, translation],
   );
 
-  // A clamped session says so once, and the chip follows the truth rather than the request.
+  // The chip follows the mode the session actually runs under, which is the whole of what a person needs to know.
   const effectivePermissionMode = grantedPermissionMode ?? permissionMode;
   const announcedClampRef = useRef<string>("");
   useEffect(() => {
     if (!grantedPermissionMode || announcedClampRef.current === grantedPermissionMode) return;
     announcedClampRef.current = grantedPermissionMode;
     onPermissionModeChange?.(grantedPermissionMode);
-    // Raised on a microtask: the toaster flushes synchronously, which React refuses from inside a lifecycle.
-    queueMicrotask(() =>
-      toaster.create({
-        type: "info",
-        title: translation("permissionClampedTitle"),
-        description: translation("permissionClampedBody", { mode: grantedPermissionMode }),
-        closable: true,
-      }),
-    );
-  }, [grantedPermissionMode, onPermissionModeChange, translation]);
+  }, [grantedPermissionMode, onPermissionModeChange]);
 
   // The session's goal, read from the session list the daemon already pushes rather than kept as a second copy.
   const activeGoal = useMemo(
