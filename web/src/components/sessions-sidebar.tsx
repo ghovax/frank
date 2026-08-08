@@ -17,7 +17,7 @@ import {
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   LuArrowDownUp,
   LuChevronDown,
@@ -147,9 +147,13 @@ export function SessionsSidebar({
   const [workspaceOpenOverrides, setWorkspaceOpenOverrides] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const searchQuery = search.trim().toLowerCase();
-  const shownSessions = searchQuery
-    ? sessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
-    : sessions;
+  const shownSessions = useMemo(
+    () =>
+      searchQuery
+        ? sessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
+        : sessions,
+    [sessions, searchQuery],
+  );
 
   const refreshWorkspaces = useCallback(() => {
     listWorkspaces()
@@ -210,15 +214,21 @@ export function SessionsSidebar({
     return workspaceLabel(workspace.locations, locale, translation("untitledWorkspace"));
   }
 
-  const visibleWorkspaces = workspaces
-    .map((workspace) => ({
-      workspace,
+  // Grouped once per change rather than per render, since a scan per workspace is what every keystroke and
+  // every folder toggle would otherwise pay for.
+  const visibleWorkspaces = useMemo(() => {
+    const byWorkspace = new Map<string, SessionEntry[]>();
+    for (const session of shownSessions) {
       // Only the conversations you started; a session a session created is listed in the delegated panel.
-      sessions: shownSessions.filter(
-        (session) => session.workspaceId === workspace.id && !session.parentSessionId,
-      ),
-    }))
-    .filter(({ sessions: workspaceSessions }) => !searchQuery || workspaceSessions.length > 0);
+      if (session.parentSessionId) continue;
+      const held = byWorkspace.get(session.workspaceId ?? "");
+      if (held) held.push(session);
+      else byWorkspace.set(session.workspaceId ?? "", [session]);
+    }
+    return workspaces
+      .map((workspace) => ({ workspace, sessions: byWorkspace.get(workspace.id) ?? [] }))
+      .filter(({ sessions: workspaceSessions }) => !searchQuery || workspaceSessions.length > 0);
+  }, [workspaces, shownSessions, searchQuery]);
 
   return (
     <PanelCard flex={1}>
@@ -470,12 +480,13 @@ export function SessionsSidebar({
                   disclosureLabel={
                     workspaceOpen ? translation("hideWorkspace") : translation("showWorkspace")
                   }
+                  // Disclosure only shows what is inside; the name is what chooses the workspace, and choosing
+                  // one navigates the page and rebuilds the conversation, which is no price for a chevron.
                   onDisclosureChange={(nextOpen) => {
                     setWorkspaceOpenOverrides((current) => ({
                       ...current,
                       [workspace.id]: nextOpen,
                     }));
-                    if (nextOpen) onSwitchWorkspace(workspace.id);
                   }}
                   onActivate={() => onSwitchWorkspace(workspace.id)}
                   glyph={<LuFolderOpen size={13} />}

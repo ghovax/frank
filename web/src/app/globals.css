@@ -240,9 +240,13 @@ samp {
 .sidebar-title-inner {
   display: inline-block;
   white-space: nowrap;
-  will-change: transform;
   /* The return travels too, so the fade belongs here rather than only on the outward trip. */
   transition: transform var(--marquee-duration, 0s) linear;
+}
+
+/* Promised only to the row about to move, since a standing promise is a compositor layer per title. */
+.sidebar-row:hover .sidebar-title-inner {
+  will-change: transform;
 }
 
 /* A label a row may drop when it runs out of room, measured by `use-fitted-row`. */

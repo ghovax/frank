@@ -4,7 +4,7 @@
 
 import { Box, Flex, IconButton, Menu, Span, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { LuEllipsis, LuFolderOpen, LuMessagesSquare, LuTrash2 } from "react-icons/lu";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -173,8 +173,9 @@ export function MarqueeTitle({ text }: { text: string }) {
   );
 }
 
-// The row itself: a status dot, the title, and the menu, on the shared tree grid.
-export function SessionRow({
+// The row itself: a status dot, the title, and the menu, on the shared tree grid. Memoized because a row is
+// dear to build — two tooltips, a menu and a measured title — and folding a workspace re-renders every other.
+export const SessionRow = memo(function SessionRow({
   entry,
   agents,
   isActive,
@@ -315,4 +316,4 @@ export function SessionRow({
       {children}
     </TreeRow>
   );
-}
+});
