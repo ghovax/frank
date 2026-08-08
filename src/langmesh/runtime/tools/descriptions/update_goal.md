@@ -12,6 +12,18 @@ Two things follow. Write the goal for that reader, since it has only your words 
 
 Replacing a goal is for a goal that changed, not for one that got hard. A smaller goal set to be done with a larger one is the one misuse of this tool.
 
+## What a goal's status means
+
+The goal you are shown carries a status once it is anything other than being worked. You did not set it and cannot change it; it is there so you know where you stand.
+
+- `active` — being worked. This is the ordinary state and is not shown to you.
+- `satisfied` — the review found every requirement proven. The work is done; do not start it again.
+- `blocked` — the review found no route open from inside this session. The `blocker` beside it says what a person would have to do. Nothing further opens on its own.
+- `parked` — the goal ran as many turns unattended as it is allowed and stopped to wait. Not a judgement about the work: it picks up where it left off when somebody speaks.
+- `cleared` — the person called it off. It is no longer what they want, whatever state the work is in.
+
+A goal that is satisfied, blocked, cleared or parked is not one to keep working at. If the conversation moves on to something that needs a new outcome, set a new goal.
+
 ## Writing it well
 
 `goal` is the end state, in one or two sentences, written as something that is either true or not — "the importer handles paginated responses and the existing tests still pass", not "work on the importer". Somebody who has not read this conversation should be able to tell from it alone what would count as done.
