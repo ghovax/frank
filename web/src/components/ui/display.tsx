@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex, List, Span, Text, type SpanProps } from "@chakra-ui/react";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useId, type ReactNode } from "react";
 import { Pre } from "./semantic";
 
 // The structured-display building blocks shared across the app.
@@ -18,27 +18,34 @@ export function FieldList({ children }: { children: ReactNode }) {
   );
 }
 
-// One tool row, one scope: what the call already showed, the result does not repeat.
-const ShownFields = createContext<Set<string> | null>(null);
+// One tool row, one scope: what the call already showed, the result does not repeat. Each label is held by
+// the field that claimed it rather than merely marked taken, since React invokes a render more than once and
+// a claim that only records "seen" makes every field disappear on the second pass.
+const ShownFields = createContext<Map<string, string> | null>(null);
 
 export function FieldScope({ children }: { children: ReactNode }) {
-  // A fresh set per render pass, so a re-render starts from empty and every field is claimed again.
-  const shown = new Set<string>();
+  // A fresh map per render pass, so a re-render starts from empty and every field claims its label again.
+  const shown = new Map<string, string>();
   return <ShownFields.Provider value={shown}>{children}</ShownFields.Provider>;
 }
 
-/** Whether this label is the first of its name in this row. Outside a scope, everything shows. */
-function claimField(label: string, shown: Set<string> | null): boolean {
+/** Whether this field owns its label in this row. Outside a scope, everything shows. */
+function claimField(label: string, owner: string, shown: Map<string, string> | null): boolean {
   if (!shown) return true;
-  if (shown.has(label)) return false;
-  shown.add(label);
-  return true;
+  const claimed = shown.get(label);
+  if (claimed === undefined) {
+    shown.set(label, owner);
+    return true;
+  }
+  // Its own claim, seen again: the same field rendered twice is one field, not a duplicate to hide.
+  return claimed === owner;
 }
 
 /** A label stacked above its value — for long values (commands, prompts, output). */
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   const shown = useContext(ShownFields);
-  if (!claimField(label, shown)) return null;
+  const owner = useId();
+  if (!claimField(label, owner, shown)) return null;
   return (
     <Box>
       <Text textStyle="fieldLabel" color="fg.subtle" mb={1}>
@@ -61,7 +68,8 @@ export function InlineField({
   mt?: number;
 }) {
   const shown = useContext(ShownFields);
-  if (!claimField(label, shown)) return null;
+  const owner = useId();
+  if (!claimField(label, owner, shown)) return null;
   return (
     <Flex align="baseline" gap={2} mt={mt}>
       <Text textStyle="fieldLabel" color="fg.subtle" minW={FIELD_LABEL_MINIMUM_W} flexShrink={0}>
