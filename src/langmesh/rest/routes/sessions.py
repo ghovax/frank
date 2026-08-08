@@ -6,6 +6,7 @@ from langmesh.commons.database import SessionRecord, WorkspaceRecord
 from langmesh.base.paths import uploads_directory
 import asyncio
 import re
+from typing import Literal
 from langmesh.protocol.dtos import (
     SessionDraftRequest,
 )
@@ -38,7 +39,11 @@ async def update_session_draft(session_id: str, request: SessionDraftRequest):
 
 
 @router.get("/sessions/{session_id}/record")
-async def session_record(session_id: str, ledger: str = "observations", live_only: bool = True):
+async def session_record(
+    session_id: str,
+    ledger: Literal["observations", "directives"] = "observations",
+    live_only: bool = True,
+):
     """A session's memory: what the work established, or what the person asked for, as the record holds it."""
     assert state.turn_store is not None
     entries = await state.turn_store.ledger_entries(session_id, ledger, live_only=live_only)

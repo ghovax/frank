@@ -235,16 +235,15 @@ async def _session_title(params: dict) -> dict:
     return {"saved": changed}
 
 
-async def _session_append_ledger(params: dict) -> dict:
-    """Append entries to a session's ledger. Append-only, so this neither revises nor removes."""
+async def _session_append_memory(params: dict) -> dict:
+    """Commit one observer's entries atomically across both append-only ledgers."""
     if state.turn_store is None:
         return {"appended": 0}
     session_id = str(params.get("session_id") or "")
-    entries = params.get("entries") or []
-    appended = await state.turn_store.append_ledger(
+    appended = await state.turn_store.append_memory(
         session_id,
-        str(params.get("ledger") or "observations"),
-        list(entries),
+        list(params.get("observations") or []),
+        list(params.get("directives") or []),
     )
     # The one place the record ever grows, so whoever is reading it is told here rather than left to poll.
     if appended:
@@ -252,15 +251,11 @@ async def _session_append_ledger(params: dict) -> dict:
     return {"appended": appended}
 
 
-async def _session_ledger(params: dict) -> list:
-    """Read a session's ledger, live entries only unless the whole chain is asked for."""
+async def _session_memory(params: dict) -> dict[str, list]:
+    """Read both live memory ledgers from one database snapshot."""
     if state.turn_store is None:
-        return []
-    return await state.turn_store.ledger_entries(
-        str(params.get("session_id") or ""),
-        str(params.get("ledger") or "observations"),
-        live_only=bool(params.get("live_only", True)),
-    )
+        return {"observations": [], "directives": []}
+    return await state.turn_store.memory_entries(str(params.get("session_id") or ""))
 
 
 _METHODS = {
@@ -276,8 +271,8 @@ _METHODS = {
     "session.event": _session_event,
     "session.title": _session_title,
     "session.usage": _session_usage,
-    "session.append_ledger": _session_append_ledger,
-    "session.ledger": _session_ledger,
+    "session.append_memory": _session_append_memory,
+    "session.memory": _session_memory,
 }
 
 

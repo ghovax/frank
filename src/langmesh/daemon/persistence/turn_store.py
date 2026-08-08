@@ -950,8 +950,13 @@ class AppendOnlyTaskStore(TaskStore):
         next_before_row_id = min(int(row.row_id) for row in page_rows)
         return {"turns": tasks, "next_before_row_id": next_before_row_id, "has_more": has_more}
 
-    async def append_ledger(self, session_id: str, ledger: str, entries: list[dict]) -> int:
-        """Add entries to a session's ledger. Nothing is updated: an id already present is the same finding."""
+    async def append_memory(
+        self, session_id: str, observations: list[dict], directives: list[dict]
+    ) -> int:
+        """Commit one observer's output across both append-only ledgers in one transaction."""
+        entries = [("observations", entry) for entry in observations] + [
+            ("directives", entry) for entry in directives
+        ]
         if not entries:
             return 0
         await self._ensure_initialized()
@@ -965,7 +970,7 @@ class AppendOnlyTaskStore(TaskStore):
                 "supersedes": json.dumps(list(entry.get("supersedes") or []), ensure_ascii=False),
                 "written_at": written,
             }
-            for entry in entries
+            for ledger, entry in entries
             if entry.get("id")
         ]
         if not rows:
@@ -984,42 +989,56 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
         return len(rows)
 
-    async def ledger_entries(
-        self, session_id: str, ledger: str, *, live_only: bool = True
-    ) -> list[dict]:
-        """A session's ledger in the order it was written; live entries are those nothing later replaces."""
+    async def memory_entries(
+        self, session_id: str, *, live_only: bool = True
+    ) -> dict[str, list[dict]]:
+        """Read both memory ledgers with one statement, so they always describe one committed revision."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
                 await connection.execute(
                     select(
+                        self._ledger.c.ledger,
                         self._ledger.c.entry_id,
                         self._ledger.c.entry,
                         self._ledger.c.supersedes,
                         self._ledger.c.written_at,
                     )
-                    .where(self._ledger.c.session_id == session_id, self._ledger.c.ledger == ledger)
+                    .where(
+                        self._ledger.c.session_id == session_id,
+                        self._ledger.c.ledger.in_(("observations", "directives")),
+                    )
                     .order_by(self._ledger.c.row_id)
                 )
             ).all()
-        entries: list[dict] = []
-        replaced: set[str] = set()
-        for entry_id, payload, supersedes, written_at in rows:
+        entries: dict[str, list[dict]] = {"observations": [], "directives": []}
+        replaced: dict[str, set[str]] = {"observations": set(), "directives": set()}
+        for ledger, entry_id, payload, supersedes, written_at in rows:
             try:
                 entry = json.loads(payload)
             except ValueError:
                 continue
             entry["id"] = str(entry_id)
-            # When it was learned, which a record spanning months is unreadable without.
             entry["written_at"] = str(written_at or "")
-            entries.append(entry)
+            entries[str(ledger)].append(entry)
             try:
-                replaced.update(json.loads(supersedes or "[]"))
+                replaced[str(ledger)].update(json.loads(supersedes or "[]"))
             except ValueError:
                 pass
         if not live_only:
             return entries
-        return [entry for entry in entries if entry["id"] not in replaced]
+        return {
+            ledger: [entry for entry in values if entry["id"] not in replaced[ledger]]
+            for ledger, values in entries.items()
+        }
+
+    async def ledger_entries(
+        self, session_id: str, ledger: str, *, live_only: bool = True
+    ) -> list[dict]:
+        """A session's ledger in the order it was written; live entries are those nothing later replaces."""
+        if ledger not in {"observations", "directives"}:
+            return []
+        return (await self.memory_entries(session_id, live_only=live_only))[ledger]
 
     async def delete(self, turn_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()

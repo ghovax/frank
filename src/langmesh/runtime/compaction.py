@@ -214,23 +214,36 @@ class _CompactsContext:
             or message is self._conversation[opening]
         ]
 
-    def _exchanges_present(self) -> set[str]:
-        """Every exchange still visible in the conversation, whose entries therefore need not be repeated."""
-        return {
-            self._exchange_of(message)
-            for message in self._conversation
-            if _opens_an_exchange(message)
-        }
-
     def observe_exchange_soon(self) -> None:
         """Take the exchange now, before compaction can rewrite it, and fold it after the person has their answer."""
         exchange = self._current_exchange()
         if len(exchange) < 2 or self._turn_store is None:
             return
-        task = asyncio.create_task(self._observe_exchange_with_status(exchange))
-        # Held, or the loop may collect a fold mid-flight and drop the record it was writing.
-        self._folds_in_flight.add(task)
-        task.add_done_callback(self._folds_in_flight.discard)
+        task = asyncio.create_task(self._observe_exchange_after(self._observation_tail, exchange))
+        self._observation_tail = task
+        task.add_done_callback(self._finish_observation)
+
+    async def _observe_exchange_after(self, earlier: asyncio.Task | None, exchange: list) -> None:
+        """Record one exchange after earlier observers, so every fold reads their completed entries."""
+        identifier = new_id("recording")
+        await self._publish_memory_recording(identifier, True)
+        try:
+            if earlier is not None:
+                await asyncio.gather(earlier, return_exceptions=True)
+            await self.observe_exchange(exchange)
+        finally:
+            await self._publish_memory_recording(identifier, False)
+
+    def _finish_observation(self, task: asyncio.Task) -> None:
+        """Retire the pipeline only when its tail finishes and surface an observer failure."""
+        if self._observation_tail is task:
+            self._observation_tail = None
+        error = None if task.cancelled() else task.exception()
+        if error is not None:
+            logger.error(
+                "could not record observational memory",
+                exc_info=(type(error), error, error.__traceback__),
+            )
 
     async def _publish_memory_recording(self, identifier: str, active: bool) -> None:
         """Publish whether one post-turn memory pass is active."""
@@ -247,49 +260,41 @@ class _CompactsContext:
         except Exception:  # noqa: BLE001 — feedback must not decide whether the record is written
             logger.warning("could not publish memory recording state", exc_info=True)
 
-    async def _observe_exchange_with_status(self, exchange: list) -> None:
-        """Record one exchange while exposing its lifecycle to attached clients."""
-        identifier = new_id("recording")
-        await self._publish_memory_recording(identifier, True)
-        try:
-            await self.observe_exchange(exchange)
-        finally:
-            await self._publish_memory_recording(identifier, False)
-
     async def observe_exchange(self, exchange: list | None = None) -> None:
-        """Record what the exchange established, stored now and shown only once its turns are gone."""
+        """Record what the exchange established for the next complete memory snapshot."""
         exchange = self._current_exchange() if exchange is None else exchange
         if len(exchange) < 2 or self._turn_store is None:
             return
         tag = self._exchange_of(exchange[0])
-        recorded = await self._ledger("observations")
+        ledgers = await self._memory_snapshot()
+        recorded = ledgers["observations"]
         if any(entry.get("exchange") == tag for entry in recorded):
             return  # already observed: a turn can end more than once
-        asked = await self._ledger("directives")
+        asked = ledgers["directives"]
         observations, directives = await asyncio.gather(
             self._fold_into_observations(exchange, recorded, asked),
             self._fold_into_directives(exchange, asked),
         )
-        await self._append_to_ledgers(
+        await self._commit_memory(
             [{**entry, "exchange": tag} for entry in observations],
             [{**entry, "exchange": tag} for entry in directives],
         )
 
-    async def _ledger(self, ledger: str) -> list[dict]:
-        """A session's ledger as it stands, or nothing where there is no store to ask."""
+    async def _memory_snapshot(self) -> dict[str, list[dict]]:
+        """Read both memory ledgers from one database snapshot."""
         if self._turn_store is None:
-            return []
+            return {"observations": [], "directives": []}
         try:
-            return await self._turn_store.ledger_entries(self._session_id, ledger)
+            return await self._turn_store.memory_entries(self._session_id)
         except Exception:  # noqa: BLE001 — a record that cannot be read is not a turn that cannot run
-            logger.warning("could not read the %s ledger", ledger, exc_info=True)
-            return []
+            logger.warning("could not read the memory ledgers", exc_info=True)
+            return {"observations": [], "directives": []}
 
     async def _settle_observations(self) -> None:
         """Wait for completed exchanges to reach the ledger before dropping their turns."""
-        pending = tuple(self._folds_in_flight)
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+        tail = self._observation_tail
+        if tail is not None:
+            await asyncio.gather(tail, return_exceptions=True)
 
     async def _consolidate_observations_if_needed(self, observations: list[dict]) -> list[dict]:
         """Consolidate an oversized live record only when the replacement is genuinely smaller."""
@@ -322,41 +327,34 @@ class _CompactsContext:
                 extra=log_fields(before_tokens=before_tokens, after_tokens=after_tokens),
             )
             return live
-        await self._append_to_ledgers(replacements, [])
-        return await self._ledger("observations")
+        await self._commit_memory(replacements, [])
+        return (await self._memory_snapshot())["observations"]
 
-    async def carried_record(self):
-        """The record to carry into this turn, which the two ledgers earn a place in on different terms."""
+    async def memory_prompt(self):
+        """Build the complete live record to carry into a model request."""
         if self._turn_store is None:
             return None
-        present = self._exchanges_present()
-        # A finding waits: while its turns are visible they are the better copy of it.
-        observations = [
-            entry
-            for entry in await self._ledger("observations")
-            if entry.get("exchange") not in present
-        ]
-        # An instruction does not: visible is not followed, and one stated long ago is buried before it is gone.
+        ledgers = await self._memory_snapshot()
+        observations = ledgers["observations"]
         directives = [
-            entry for entry in await self._ledger("directives") if entry.get("still_binding", True)
+            entry
+            for entry in ledgers["directives"]
+            if entry.get("still_binding", True)
         ]
         if not observations and not directives:
             return None
         return self._build_observation_message(observations, directives)
 
-    async def _append_to_ledgers(self, observations: list[dict], directives: list[dict]) -> None:
+    async def _commit_memory(self, observations: list[dict], directives: list[dict]) -> None:
         """Write what a pass produced. The store is append-only, so this never revises and never deletes."""
         store = getattr(self, "_turn_store", None)
         session = getattr(self, "_session_id", "")
         if store is None or not session:
             return
-        for ledger, entries in (("observations", observations), ("directives", directives)):
-            if not entries:
-                continue
-            try:
-                await store.append_ledger(session, ledger, entries)
-            except Exception:  # noqa: BLE001 — the fold has already happened; losing the durable copy must not undo it
-                logger.warning("could not append to the %s ledger", ledger, exc_info=True)
+        try:
+            await store.append_memory(session, observations, directives)
+        except Exception:  # noqa: BLE001 — the fold has already happened; losing the durable copy must not undo it
+            logger.warning("could not append observational memory", exc_info=True)
 
     async def _fold_into_observations(
         self, older: list, existing: list[dict], asked: list[dict]
@@ -417,7 +415,6 @@ class _CompactsContext:
             self._conversation[:] = _without_provider_reasoning(
                 await self._compaction.compact(state)
             )
-            self._carried_record = await self.carried_record()
             yield CompactionDone(
                 reason=reason,
                 ok=True,
@@ -450,9 +447,8 @@ class _CompactsContext:
         self._conversation[:] = _without_provider_reasoning(kept)
         self._latest_context_tokens = conversation_tokens(self._conversation)
         recorded = await self._consolidate_observations_if_needed(
-            await self._ledger("observations")
+            (await self._memory_snapshot())["observations"]
         )
-        self._carried_record = await self.carried_record()
         yield CompactionDone(
             reason=reason,
             ok=True,
