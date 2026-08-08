@@ -1041,14 +1041,14 @@
     "notConnectedDescription": "ターミナルが再接続するまで入力を送信できません。"
   },
   "ToolCall": {
-    "background": "バックグラウンド",
-    "write": "書き込み"
+    "background": "バックグラウンド"
   },
   "ToolCard": {
     "inputRequired": "入力が必要",
     "failed": "失敗",
     "running": "実行中",
-    "write": "書き込み",
+    "modifying": "変更中",
+    "mutationUndeclared": "変更の宣言なし",
     "accessRequested": "アクセス"
   },
   "ToolDisplay": {
@@ -1057,8 +1057,6 @@
   },
   "ToolGroup": {
     "thinking": "思考中",
-    "working": "作業中",
-    "actionsTaken": "実行した操作",
     "inputRequired": "入力が必要",
     "failedCount": "{count, plural, other {# 件失敗}}",
     "backgroundCount": "{count, plural, other {バックグラウンド #}}"
@@ -1132,6 +1130,7 @@
     "matches": "一致",
     "mcpToolError": "MCP ツールがエラーを返しました。",
     "message": "メッセージ",
+    "mutationUndeclared": "宣言なし",
     "multiSelect": "複数選択",
     "newLines": "新しい行",
     "no": "いいえ",

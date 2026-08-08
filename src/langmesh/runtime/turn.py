@@ -692,7 +692,12 @@ class _RunsTurns:
                                     (time.monotonic() - thinking_started_at) * 1000
                                 )
                             )
-                        yield ToolCall(name=name, arguments=None, id=identifier)
+                        yield ToolCall(
+                            name=name,
+                            arguments=None,
+                            id=identifier,
+                            arguments_complete=False,
+                        )
                     fragment = (named or {}).get("args") or ""
                     if not fragment or identifier not in announced_tool_calls:
                         continue
@@ -718,6 +723,7 @@ class _RunsTurns:
                             name=streaming_call_names.get(identifier, ""),
                             arguments=settled,
                             id=identifier,
+                            arguments_complete=False,
                         )
                 for content_delta in message_content_deltas(chunk):
                     if content_delta.kind == "text":

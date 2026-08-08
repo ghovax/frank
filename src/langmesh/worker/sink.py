@@ -225,6 +225,7 @@ class _TurnEventSink:
                         ToolCallEvent(
                             tool_name=event.name,
                             arguments=event.arguments if event.arguments is not None else {},
+                            arguments_complete=event.arguments_complete,
                             tool_call_id=event.id,
                         )
                     )

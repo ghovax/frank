@@ -46,6 +46,7 @@ export interface ToolQuestion {
 export interface ToolEvent {
   name: string;
   arguments?: Record<string, unknown>;
+  argumentsComplete?: boolean;
   toolCallId?: string;
   result?: unknown;
   status?: ToolEventStatus;
@@ -53,9 +54,12 @@ export interface ToolEvent {
   question?: ToolQuestion;
 }
 
-/** Whether a call is finished, and so whether its arguments are whole rather than mid-stream. */
-export function isSettled(event: { result?: unknown; status?: ToolEventStatus }): boolean {
-  return event.result !== undefined || event.status !== "running";
+/** Whether a call has a complete explanation and may enter the transcript. */
+export function toolCallReady(event: ToolEvent): boolean {
+  const explanation = event.arguments?.explanation;
+  const argumentsComplete =
+    event.argumentsComplete ?? (event.status !== undefined && event.status !== "running");
+  return argumentsComplete && typeof explanation === "string" && explanation.trim().length > 0;
 }
 
 export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: string): boolean {

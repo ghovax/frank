@@ -1179,6 +1179,7 @@ export function ChatPanel({
                             item.kind === "tool_group" ? (
                               <ChatToolGroup
                                 messages={item.messages}
+                                thinkingTurns={item.thinkingTurns}
                                 keepOpen={isStreaming && isLastItem}
                               />
                             ) : (

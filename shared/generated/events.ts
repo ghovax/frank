@@ -247,6 +247,7 @@ export interface TokenUsageEvent {
  */
 export interface ToolCallEvent {
   arguments?: Record<string, unknown>;
+  arguments_complete?: boolean;
   kind: "tool_call";
   timestamp?: string;
   tool_call_id: string;

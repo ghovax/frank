@@ -594,6 +594,10 @@
         "arguments": {
           "tsType": "Record<string, unknown>"
         },
+        "arguments_complete": {
+          "default": true,
+          "type": "boolean"
+        },
         "kind": {
           "const": "tool_call",
           "default": "tool_call",

@@ -71,6 +71,7 @@ class ToolCallEvent(_EventBase):
     tool_call_id: str
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    arguments_complete: bool = True
 
 
 class ToolResultEvent(_EventBase):

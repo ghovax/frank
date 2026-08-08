@@ -21,7 +21,7 @@ import {
   ProseList,
 } from "../ui/display";
 import { asArray, asRecord, asString } from "@/lib/coerce";
-import { declaredNonMutating, requestedAccess } from "@shared/tools";
+import { mutationClaim, requestedAccess } from "@shared/tools";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
 import { hasBackgroundJobId, type ToolEventStatus } from "@/lib/tool-event";
@@ -41,16 +41,20 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   // The command as written, with nothing edited out of it on the way to the screen.
   const command = asString(args.command);
-  const readOnly = declaredNonMutating(args);
+  const mutation = mutationClaim("bash", args);
+  const readOnly =
+    mutation === "reads"
+      ? translation("yes")
+      : mutation === "writes"
+        ? translation("no")
+        : translation("mutationUndeclared");
   const access = requestedAccess(args);
   return (
     <FieldList>
       <Field label={translation("command")}>
         <MonoBlock>{command}</MonoBlock>
       </Field>
-      <InlineField label={translation("readOnly")}>
-        {readOnly ? translation("yes") : translation("no")}
-      </InlineField>
+      <InlineField label={translation("readOnly")}>{readOnly}</InlineField>
       {access.writes.length > 0 && (
         <Field label={translation("accessWrite")}>
           <MonoList items={access.writes} />

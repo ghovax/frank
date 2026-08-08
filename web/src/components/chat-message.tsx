@@ -18,7 +18,7 @@ import { swallowed } from "@/lib/swallowed";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
-import { toolStatus } from "@/lib/tool-event";
+import { toolCallReady, toolStatus } from "@/lib/tool-event";
 import { AttachmentChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
@@ -430,22 +430,28 @@ export const ChatMessageItem = memo(function ChatMessageItem({
 
 interface ChatToolGroupProps {
   messages: ChatMessage[];
+  thinkingTurns: number;
   keepOpen?: boolean;
 }
 
 export const ChatToolGroup = memo(function ChatToolGroup({
   messages,
+  thinkingTurns,
   keepOpen,
 }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the shape the shared group renders.
   const tools: ToolEvent[] = messages.map((message) => ({
     name: message.content,
     arguments: message.meta?.arguments as Record<string, unknown> | undefined,
+    argumentsComplete: message.meta?.argumentsComplete,
     toolCallId: String(message.meta?.toolCallId ?? ""),
     result: message.meta?.result,
     status: toolStatus(message.meta?.status),
     permission: message.meta?.permission as ToolPermission | undefined,
     question: message.meta?.question as ToolQuestion | undefined,
   }));
-  return <ToolGroup tools={tools} keepOpen={keepOpen} />;
+  const readyTools = tools.filter(toolCallReady);
+  if (readyTools.length === 0 && thinkingTurns === 0) return null;
+  if (readyTools.length === 0 && messages.length > 0 && !keepOpen) return null;
+  return <ToolGroup tools={readyTools} keepOpen={keepOpen} />;
 });

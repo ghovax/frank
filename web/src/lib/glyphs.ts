@@ -111,8 +111,8 @@ interface ToolDisplayInfo {
 export function getToolCallDisplay(
   name: string,
   args: Record<string, unknown> | undefined,
-  settled = false,
+  ready = false,
 ): ToolDisplayInfo {
-  const display = toolCallDisplay(name, args, settled);
+  const display = toolCallDisplay(name, args, ready);
   return { icon: glyph(display.glyph), iconColor: display.tint, label: display.label };
 }

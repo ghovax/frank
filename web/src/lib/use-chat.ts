@@ -74,6 +74,7 @@ export interface MessageAttachment {
 // The per-message side data reducers attach and views read. Every field optional and role-specific.
 export interface MessageMeta {
   arguments?: Record<string, unknown>;
+  argumentsComplete?: boolean;
   toolCallId?: string;
   // Spans tool lifecycle and the compaction/thinking indicators, so it is the wider string set.
   status?: string;
@@ -466,6 +467,7 @@ function toolEventFromMessage(message: ChatMessage): ToolEvent | null {
   return {
     name: message.content,
     arguments: message.meta?.arguments as Record<string, unknown> | undefined,
+    argumentsComplete: message.meta?.argumentsComplete,
     toolCallId: String(message.meta?.toolCallId ?? ""),
     result: message.meta?.result,
     status:
@@ -771,6 +773,7 @@ function reduceDataPart(
                 meta: {
                   ...message.meta,
                   arguments: event.arguments ?? message.meta?.arguments,
+                  argumentsComplete: event.arguments_complete === true,
                   status: "running",
                 },
               }
@@ -785,7 +788,12 @@ function reduceDataPart(
           role: "tool_call",
           content: event.tool_name || "unknown",
           timestamp: new Date().toISOString(),
-          meta: { arguments: event.arguments, toolCallId, status: "running" },
+          meta: {
+            arguments: event.arguments,
+            argumentsComplete: event.arguments_complete === true,
+            toolCallId,
+            status: "running",
+          },
         },
       ];
       break;
@@ -809,7 +817,15 @@ function reduceDataPart(
       state.messages = state.messages.map((message) =>
         messageMatchesToolEvent(message, toolName, toolCallId)
           ? ((matched = true),
-            { ...message, meta: { ...message.meta, status: resultStatus, result: mergedResult } })
+            {
+              ...message,
+              meta: {
+                ...message.meta,
+                argumentsComplete: true,
+                status: resultStatus,
+                result: mergedResult,
+              },
+            })
           : message,
       );
       if (!matched) {
@@ -820,7 +836,12 @@ function reduceDataPart(
             role: "tool_call",
             content: toolName || "unknown",
             timestamp: new Date().toISOString(),
-            meta: { toolCallId, status: resultStatus, result: mergedResult },
+            meta: {
+              argumentsComplete: true,
+              toolCallId,
+              status: resultStatus,
+              result: mergedResult,
+            },
           },
         ];
       }
@@ -857,7 +878,15 @@ function reduceDataPart(
       if (attachedPermission) {
         state.messages = state.messages.map((message) =>
           message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
-            ? { ...message, meta: { ...message.meta, status: "input_required", permission } }
+            ? {
+                ...message,
+                meta: {
+                  ...message.meta,
+                  argumentsComplete: true,
+                  status: "input_required",
+                  permission,
+                },
+              }
             : message,
         );
       } else {
@@ -869,6 +898,7 @@ function reduceDataPart(
           timestamp: new Date().toISOString(),
           meta: {
             toolCallId: toolCallId ?? "",
+            argumentsComplete: true,
             status: "input_required",
             permission,
             arguments: event.arguments ?? {},

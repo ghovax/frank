@@ -12,7 +12,7 @@ import { ToolCallLabel } from "./tool-label";
 import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
 import type { ToolEvent } from "@/lib/tool-event";
-import { hasBackgroundJobId, isSettled, toolStatus } from "@/lib/tool-event";
+import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
 import {
   ToolCall,
   ToolCallDetail,
@@ -87,16 +87,7 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
 
   // The left icon owns the latest call, so the tally counts only the earlier ones.
   const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
-  // The status line shows the latest tool's own label, which says more than a static "working".
   const latestTool = tools[tools.length - 1];
-  // The newest call has nothing to say yet, so the line follows the newest one that does and never empties.
-  const labelledTool = useMemo(
-    () =>
-      [...tools]
-        .reverse()
-        .find((tool) => getToolCallDisplay(tool.name, tool.arguments, isSettled(tool)).label),
-    [tools],
-  );
   const headingDisplay = latestTool
     ? getToolCallDisplay(latestTool.name, latestTool.arguments)
     : null;
@@ -107,18 +98,6 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
     () => collapsedHeadingLocation(tools.map((tool) => tool.arguments)),
     [tools],
   );
-  const latestLabel = labelledTool
-    ? getToolCallDisplay(labelledTool.name, labelledTool.arguments, isSettled(labelledTool)).label
-    : "";
-  // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
-  const thinkingOnly = tools.length === 0;
-  const headingText =
-    latestLabel ||
-    (thinkingOnly
-      ? translation("thinking")
-      : active
-        ? translation("working")
-        : translation("actionsTaken"));
   // A group of one skips the per-call line and opens straight onto that call's detail.
   const soleTool = tools.length === 1 ? tools[0] : null;
   const soleDetail = soleTool
@@ -146,36 +125,21 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
     },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
-  // The animated label slot, with both labels in one grid cell so nothing reflows as they crossfade.
   const titleSlot = (
-    // The shimmer belongs to this box rather than the label, whose key changes as each new tool crossfades in.
-    <Box
-      minW={0}
-      display="grid"
-      gridTemplateColumns="minmax(0, 1fr)"
-      position="relative"
-      className={active ? "running-title-shimmer" : undefined}
-    >
-      {/* No cross-fade: a label that is simply replaced is easier to read while the explanation changes every second. */}
-      <Box gridArea="1 / 1" minW={0} display="flex" alignItems="center">
-        <Text
-          textStyle="sm"
-          fontWeight="normal"
-          whiteSpace="nowrap"
-          overflow="hidden"
-          textOverflow="ellipsis"
-        >
-          {labelledTool ? (
-            <ToolCallLabel
-              name={labelledTool.name}
-              args={labelledTool.arguments}
-              settled={isSettled(labelledTool)}
-            />
-          ) : (
-            headingText
-          )}
-        </Text>
-      </Box>
+    <Box minW={0} className={active ? "running-title-shimmer" : undefined}>
+      <Text
+        textStyle="sm"
+        fontWeight="normal"
+        whiteSpace="nowrap"
+        overflow="hidden"
+        textOverflow="ellipsis"
+      >
+        {latestTool ? (
+          <ToolCallLabel name={latestTool.name} args={latestTool.arguments} ready />
+        ) : (
+          translation("thinking")
+        )}
+      </Text>
     </Box>
   );
 
@@ -274,6 +238,7 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
                 key={tool.toolCallId || `tool-${index}`}
                 name={tool.name}
                 arguments={tool.arguments}
+                argumentsComplete={tool.argumentsComplete}
                 result={tool.result}
                 toolCallId={tool.toolCallId}
                 status={tool.status}

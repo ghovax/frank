@@ -54,7 +54,7 @@ Where a step truly needs a person — a credential, a decision only they can mak
 
 ## Saying what a command reaches
 
-Use `access_request` to state whether the command changes anything, and to ask for a path or for the network beyond what your confinement already allows. Your context lists that confinement, so read it first: a write outside it fails with a permission error that names no path.
+Always use `access_request` to state whether the command changes anything, and add a path or the network only when the command needs reach beyond what your confinement already allows. Your context lists that confinement, so read it first: a write outside it fails with a permission error that names no path.
 
 Inside that confinement you are not interrupted, so there is no reason to narrow what you run in the hope of being asked less. Ask for the narrowest reach that does the work, and only when the work is genuinely outside the box, since a request wider than its explanation justifies is refused on its own.
 
@@ -63,7 +63,7 @@ Inside that confinement you are not interrupted, so there is no reason to narrow
 Arguments:
   - command: The shell command to run.
   - location: Which workspace location runs the command — its URI or its name, from the locations listed in your context. Defaults to the local filesystem. Pass it only to reach a different, remote location.
-  - access_request: What this call needs beyond what the session already holds. Omit it where the command works inside the confinement listed in your context, which is the usual case. When present it must set `mutates`. Use `writes` and `reads` for paths outside the confinement, and `network` only where the confinement denies the network.
+  - access_request: What this command says about changing anything, and what it needs beyond the session's confinement. Always set `mutates`; add `writes`, `reads`, or `network` only for reach the confinement does not already provide.
   - explanation: Why the task needs this command.
   - background: Run the command in the background instead of waiting for it. Use this for long work whose result you do not need now.
   - timeout: How many seconds to wait for the command before it moves to the background, where its result reaches you when it finishes. Raise it for a command you want to wait longer for. It does not kill the command.

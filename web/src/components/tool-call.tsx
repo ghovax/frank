@@ -4,11 +4,10 @@ import { Box, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/glyphs";
-import { requestedAccess } from "@shared/tools";
-import { callMayMutate } from "@shared/tools";
+import { mutationClaim, requestedAccess } from "@shared/tools";
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { hasBackgroundJobId } from "@/lib/tool-event";
+import { hasBackgroundJobId, toolCallReady } from "@/lib/tool-event";
 import { ToolCallView, ToolResultView } from "./tool-views";
 import { FieldScope } from "./ui/display";
 import { Pill } from "./ui/pill";
@@ -38,7 +37,7 @@ export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
   return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{translation(labelKey)}</Pill>;
 }
 
-// Always-visible markers: a write badge when the call can change something, and an access badge when it reaches out.
+// Always-visible markers: the declared mutation state when it is not read-only, and whether the call reaches out.
 export function ToolAccessBadges({
   name,
   arguments: toolArguments,
@@ -48,15 +47,17 @@ export function ToolAccessBadges({
 }) {
   const translation = useTranslations("ToolCard");
   if (!toolArguments) return null;
-  const readOnly = !callMayMutate(name ?? "", toolArguments);
+  const mutation = mutationClaim(name ?? "", toolArguments);
   const access = requestedAccess(toolArguments);
   const badges: ReactNode[] = [];
-  if (!readOnly)
+  if (mutation === "writes")
     badges.push(
-      <Pill key="write" colorPalette="orange">
-        {translation("write")}
+      <Pill key="modifying" colorPalette="orange">
+        {translation("modifying")}
       </Pill>,
     );
+  if (mutation === "undeclared")
+    badges.push(<Pill key="mutation-undeclared">{translation("mutationUndeclared")}</Pill>);
   if (access.any)
     badges.push(
       <Pill key="access" colorPalette="purple">
@@ -175,11 +176,20 @@ export function ToolCallDetail({ name, arguments: toolArguments, result, status 
 export function ToolCall({
   name,
   arguments: toolArguments,
+  argumentsComplete,
   result,
   status,
   actions,
 }: ToolCallProps) {
   const translation = useTranslations("ToolCall");
+  const ready = toolCallReady({
+    name,
+    arguments: toolArguments,
+    argumentsComplete,
+    result,
+    status,
+  });
+  if (!ready) return null;
   // One decision shared with every other tool-line surface: what, if anything, this line expands into.
   const { collapsible } = toolCallDetail(name, toolArguments, result, status);
   // A running call whose interim result says the work moved to the background.
@@ -198,11 +208,7 @@ export function ToolCall({
       }
       title={
         <DisclosureLabel shimmer={status === "running"}>
-          <ToolCallLabel
-            name={name}
-            args={toolArguments}
-            settled={result !== undefined || status !== "running"}
-          />
+          <ToolCallLabel name={name} args={toolArguments} ready />
         </DisclosureLabel>
       }
       badges={

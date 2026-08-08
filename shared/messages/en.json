@@ -1041,14 +1041,14 @@
     "notConnectedDescription": "Input cannot be sent until the terminal reconnects."
   },
   "ToolCall": {
-    "background": "Background",
-    "write": "write"
+    "background": "Background"
   },
   "ToolCard": {
     "inputRequired": "Input required",
     "failed": "Failed",
     "running": "Running",
-    "write": "Write",
+    "modifying": "Modifying",
+    "mutationUndeclared": "Mutation undeclared",
     "accessRequested": "Access"
   },
   "ToolDisplay": {
@@ -1057,8 +1057,6 @@
   },
   "ToolGroup": {
     "thinking": "Thinking",
-    "working": "Working",
-    "actionsTaken": "Actions taken",
     "inputRequired": "Input required",
     "failedCount": "{count, plural, other {# failed}}",
     "backgroundCount": "{count, plural, other {# in background}}"
@@ -1132,6 +1130,7 @@
     "matches": "Matches",
     "mcpToolError": "The MCP tool returned an error.",
     "message": "Message",
+    "mutationUndeclared": "Not declared",
     "multiSelect": "multi-select",
     "newLines": "New lines",
     "no": "No",

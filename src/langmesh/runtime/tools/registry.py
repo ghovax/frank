@@ -41,8 +41,8 @@ async def bash(
     *,
     explanation: str = Field(..., description=EXPLANATION),
     command: str,
+    access_request: dict[str, Any] = Field(..., description=ACCESS_REQUEST),
     location: str = "",
-    access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
     background: bool = False,
     timeout: float = Tunable.bash_sync_window.default,
 ) -> str:
@@ -326,8 +326,8 @@ async def call_mcp_tool(
     explanation: str = Field(..., description=EXPLANATION),
     server: str,
     tool_name: str,
+    access_request: dict[str, Any] = Field(..., description=ACCESS_REQUEST),
     arguments: dict[str, Any] | None = None,
-    access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/call_mcp_tool.md."""
     try:

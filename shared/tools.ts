@@ -45,7 +45,10 @@ export type GlyphName =
   | "circle-x"
   | "moon";
 
-/** Whether a call can change anything, for the write marker a person reads before approving. */
+/** What a call claims about changing things, which is three answers and not two. */
+export type MutationClaim = "reads" | "writes" | "undeclared";
+
+/** Calls that cannot change anything, whatever they say, because of what they are. */
 const NEVER_MUTATES: ReadonlySet<string> = new Set([
   "search_web",
   "fetch_url",
@@ -72,26 +75,19 @@ const NEVER_MUTATES: ReadonlySet<string> = new Set([
 
 const ALWAYS_MUTATES: ReadonlySet<string> = new Set(["download_file"]);
 
-export function callMayMutate(
+/** Missing mutation declarations are unknown rather than writes. */
+export function mutationClaim(
   name: string,
   args: Record<string, unknown> | undefined,
-): boolean {
-  if (NEVER_MUTATES.has(name)) return false;
-  if (ALWAYS_MUTATES.has(name)) return true;
+): MutationClaim {
+  if (NEVER_MUTATES.has(name)) return "reads";
+  if (ALWAYS_MUTATES.has(name)) return "writes";
   const request = args?.access_request;
-  if (request && typeof request === "object") {
-    return (request as Record<string, unknown>).mutates !== false;
-  }
-  return true;
-}
-
-/** Whether a call declared it changes nothing, which is a claim rather than a request. */
-export function declaredNonMutating(
-  args: Record<string, unknown> | undefined,
-): boolean {
-  const request = args?.access_request;
-  if (!request || typeof request !== "object") return false;
-  return (request as Record<string, unknown>).mutates === false;
+  if (!request || typeof request !== "object") return "undeclared";
+  const mutates = (request as Record<string, unknown>).mutates;
+  if (mutates === false) return "reads";
+  if (mutates === true) return "writes";
+  return "undeclared";
 }
 
 export interface RequestedAccess {
@@ -189,12 +185,11 @@ assertDistinctGlyphs();
 export function toolCallDisplay(
   name: string,
   args: Record<string, unknown> | undefined,
-  settled = false,
+  ready = false,
 ): ToolDisplay {
-  // Only once the call has settled, and never from a guess about argument order: the schema declares
-  // `explanation` first but a provider may stream it last, so a partial object proves nothing about it.
+  // The backend marks all streamed arguments complete before the explanation becomes visible.
   return {
     ...(TOOL_GLYPHS[name] ?? { glyph: "wrench", tint: "fg.muted" }),
-    label: settled && args?.explanation ? String(args.explanation) : "",
+    label: ready && args?.explanation ? String(args.explanation) : "",
   };
 }

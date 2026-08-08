@@ -8,14 +8,13 @@ import { InlineMarkdown } from "./markdown-content";
 export function ToolCallLabel({
   name,
   args,
-  settled = false,
+  ready = false,
 }: {
   name: string;
   args?: Record<string, unknown>;
-  settled?: boolean;
+  ready?: boolean;
 }) {
-  const { label } = getToolCallDisplay(name, args, settled);
-  // Nothing to say yet, so nothing is said: the icon and the row already show that something is running.
+  const { label } = getToolCallDisplay(name, args, ready);
   if (!label) return null;
   return <InlineMarkdown content={label} />;
 }

@@ -75,6 +75,7 @@ class ToolCall(TurnEvent):
     id: str = ""
     name: str = ""
     arguments: Any = None
+    arguments_complete: bool = True
 
 
 @dataclass(frozen=True)
