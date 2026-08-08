@@ -130,8 +130,8 @@ class Directive(BaseModel):
         return _only_with_a_parent(self)
 
     def identity(self) -> str:
-        """Addressed by the instruction itself; whether it still binds is state, and state is not identity."""
-        return content_address(self.model_dump(exclude={"supersedes", "still_binding", "revision"}))
+        """Addressed by the instruction and whether it binds, since a lifting restates it and is not the same fact."""
+        return content_address(self.model_dump(exclude={"supersedes", "revision"}))
 
 
 class DirectiveBatch(BaseModel):

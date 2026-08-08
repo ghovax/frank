@@ -200,8 +200,7 @@ class SessionExecutor(AgentExecutor):
         handler = self._agent_handler()
         if handler is None:
             return
-        # A wake carries nothing and is composed at the far end; prose written for the session rides with it, and
-        # rides as a message addressed to the session, which is the only shape a transcript can show.
+        # A wake carries nothing, but prose written for the session rides as a message a transcript can draw.
         message = Message(
             role=Role.user if text else Role.agent,
             parts=([Part(root=TextPart(text=text))] if text else [])
@@ -225,11 +224,7 @@ class SessionExecutor(AgentExecutor):
         )
 
     async def continue_goal(self, session_id: str) -> None:
-        """Read the goal against the session, then open a turn on what the review wrote, if it wrote one.
-
-        The turn that led here deliberately did not report the session idle, because it is not: this reads the
-        work and usually opens another turn. Whichever way it goes, this is the place that says so.
-        """
+        """Read the goal against the session, then open a turn on what the review wrote, if it wrote one."""
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         if runtime is None:
@@ -254,11 +249,7 @@ class SessionExecutor(AgentExecutor):
             self._notify_turn_state(session_id, False)
 
     def clear_goal(self, session_id: str) -> bool:
-        """The person's own hand on the goal, and the only thing that ever calls one off rather than resolving it.
-
-        Twice over, because one control does both: a goal still being worked is stopped and kept on the record,
-        and one already resolved is dropped, since the second press is asking to stop seeing it.
-        """
+        """The person calling the goal off: a live one is stopped and kept, a resolved one is dropped from view."""
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         goal = runtime.goal if runtime is not None else None
@@ -283,11 +274,7 @@ class SessionExecutor(AgentExecutor):
         runtime.clear_session_dirty()
 
     def _notify_goal_state(self, session_id: str, goal, reviewing: bool = False) -> None:
-        """Tell the daemon what the goal is now, so the interface can show it and offer to call it off.
-
-        `reviewing` rides along rather than being stored: it says the work is being read right now, which is
-        true of a moment and not of a goal, and a person watching a session go quiet deserves to know which.
-        """
+        """Tell the daemon what the goal is now; `reviewing` rides along unstored, being true of a moment not a goal."""
         asyncio.create_task(
             self._turn_store.publish_event(
                 {

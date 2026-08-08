@@ -1021,11 +1021,7 @@ class AgentRuntime(
         )
 
     def restore_goal_allowance(self) -> None:
-        """A person spoke, so the allowance restarts and a goal that only ran out of it resumes.
-
-        Parking is the one status this undoes. A goal the review settled, or the person called off, is a goal
-        with an answer; speaking again is not asking for that answer to be thrown away and the loop restarted.
-        """
+        """A person spoke, so the allowance restarts and a parked goal resumes. A settled one keeps its answer."""
         goal = self._goal
         if goal is None or goal.status not in (Goal.ACTIVE, Goal.PARKED):
             return

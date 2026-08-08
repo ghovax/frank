@@ -493,8 +493,7 @@ class _TurnRunner:
         runtime = prepared.runtime
         self._as_system_note = self._autonomous or self._report_reminder or self._goal_continuation
         if self._goal_continuation:
-            # The review wrote this and it rode in on the message; delivered as a reminder, so that neither the
-            # record nor the model takes the harness for the person whose instructions it keeps.
+            # The review wrote this and it rode in on the message; a reminder, so nothing reads it as the person.
             self._turn_input = self._user_text
         elif self._report_reminder:
             # A reminder, never user prose: this is the harness speaking, not the person the session works for.
@@ -622,12 +621,8 @@ class _TurnRunner:
             state.running = False
         if state is not None and state.runtime is not None:
             state.runtime.discard_pending_steering()
-        # A goal about to be reviewed keeps the session occupied: the turn is over but the work is not, and
-        # reporting idle here is what puts a Send button in front of somebody whose session is still going.
-        # A hold of its own rather than a skipped release, because turns in flight are counted: a release
-        # skipped is one the count never gets back. `continue_goal` releases it.
-        # Decided once and remembered, never asked twice: `_maybe_continue_goal` is awaited below, and a goal
-        # called off in that window would answer differently, taking a hold that nothing would ever release.
+        # A hold for the review, since turns are counted and the session is not idle until it has decided.
+        # Asked once and remembered: it is awaited below, and a goal called off meanwhile would never release it.
         carries_on = self._goal_carries_on()
         if self._on_turn_state is not None and carries_on:
             self._on_turn_state(task.context_id, True)
@@ -666,9 +661,7 @@ class _TurnRunner:
         # A compaction turn runs no model and decides nothing about the goal, so it neither continues nor parks.
         if self._compaction:
             return
-        # A turn the person stopped hands the work back to them, so the goal waits rather than pretending to
-        # run: left active it shows a session working toward something while nothing at all is happening.
-        # Read off the abort itself, not off "did not complete", which is also true of turns nobody stopped.
+        # A stopped turn hands the work back, so the goal waits; read off the abort, which "not completed" is not.
         stopped = state is not None and state.aborted
         spent = goal.continuations >= active_tuning().amount(Tunable.goal_continuation_turns)
         if not stopped and (state is None or runtime.has_pending_jobs() or not spent):
