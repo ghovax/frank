@@ -625,8 +625,11 @@ class _TurnRunner:
         # A goal about to be reviewed keeps the session occupied: the turn is over but the work is not, and
         # reporting idle here is what puts a Send button in front of somebody whose session is still going.
         # A hold of its own rather than a skipped release, because turns in flight are counted: a release
-        # skipped is one the count never gets back. `continue_goal` releases it, and one predicate decides both.
-        if self._on_turn_state is not None and self._goal_carries_on():
+        # skipped is one the count never gets back. `continue_goal` releases it.
+        # Decided once and remembered, never asked twice: `_maybe_continue_goal` is awaited below, and a goal
+        # called off in that window would answer differently, taking a hold that nothing would ever release.
+        carries_on = self._goal_carries_on()
+        if self._on_turn_state is not None and carries_on:
             self._on_turn_state(task.context_id, True)
         if self._track_context_activity and self._on_turn_state is not None:
             self._on_turn_state(task.context_id, False)
@@ -634,7 +637,7 @@ class _TurnRunner:
             self._context_serialization_lock.release()
         # Arm a pump for work still in flight, passing the runtime this turn used rather than a cache lookup.
         self._executor._arm_resume_pump(task.context_id, self._runtime)
-        await self._maybe_continue_goal()
+        await self._maybe_continue_goal(carries_on)
         self._maybe_nudge_to_report()
 
     def _goal_carries_on(self) -> bool:
@@ -650,9 +653,9 @@ class _TurnRunner:
             return False
         return goal.continuations < active_tuning().amount(Tunable.goal_continuation_turns)
 
-    async def _maybe_continue_goal(self) -> None:
+    async def _maybe_continue_goal(self, carries_on: bool) -> None:
         """Open another turn when this one ended with the goal unfinished, which is what makes a goal outlive a turn."""
-        if self._goal_carries_on():
+        if carries_on:
             asyncio.create_task(self._executor.continue_goal(self._task.context_id))
             return
         runtime = self._runtime

@@ -87,4 +87,4 @@ A goal that has been pushed fewer than {{ blocked_turns }} times has not been pu
 
 The session does not see this reasoning. It sees only your `direction`, delivered as the message that opens its next turn — so anything it needs must be in there, in the second person, as an instruction. Write it as though you were the person the session works for: specific, informed by what already happened, and about the work rather than about the session.
 
-Write the direction in the language the goal is written in, since the same person reads both.
+Write the direction in the language the person is speaking in the session below — not the language the goal happens to be written in. A goal drafted in the wrong language is a mistake to stop, not one to carry forward.
