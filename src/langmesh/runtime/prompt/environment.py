@@ -573,9 +573,7 @@ def _app_usage(days: int = 7, limit: int = 18) -> dict:
         connection = sqlite3.connect(f"file:{database}?mode=ro&immutable=1", uri=True)
         try:
             rows = connection.execute(
-                "SELECT ZVALUESTRING, SUM(ZENDDATE - ZSTARTDATE) FROM ZOBJECT "
-                "WHERE ZSTREAMNAME = '/app/inFocus' AND ZVALUESTRING IS NOT NULL "
-                "AND ZSTARTDATE > ? GROUP BY ZVALUESTRING",
+                "SELECT ZVALUESTRING, SUM(ZENDDATE - ZSTARTDATE) FROM ZOBJECT WHERE ZSTREAMNAME = '/app/inFocus' AND ZVALUESTRING IS NOT NULL AND ZSTARTDATE > ? GROUP BY ZVALUESTRING",
                 (cutoff,),
             )
             for bundle_id, seconds in rows:

@@ -59,8 +59,7 @@ class PermissionMode(StrEnum):
         )
         if parent_mode is not None and parent_mode.never_asks and not chosen.never_asks:
             raise ValueError(
-                f"a session running unattended can only create sessions that also run "
-                f"unattended, and {chosen} stops to ask"
+                f"a session running unattended can only create sessions that also run unattended, and {chosen} stops to ask"
             )
         return chosen
 

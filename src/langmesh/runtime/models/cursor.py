@@ -376,8 +376,7 @@ class ChatCursorModel(BaseChatModel):
         if status in (401, 403):
             # Definitive: the token is the problem and every host will say the same.
             return CursorAuthError(
-                "Cursor rejected the subscription token (expired, revoked, or the plan "
-                f"lacks access). Sign in again. Detail: {upstream_detail(detail)}"
+                f"Cursor rejected the subscription token (expired, revoked, or the plan lacks access). Sign in again. Detail: {upstream_detail(detail)}"
             )
         return _HostUnavailable(
             f"Cursor agent service returned {status}: {upstream_detail(detail)}"
@@ -661,8 +660,7 @@ class ChatCursorModel(BaseChatModel):
                 self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
             )
         raise RuntimeError(
-            "ChatCursorModel has no synchronous path inside a running event loop — "
-            "await ainvoke/astream instead."
+            "ChatCursorModel has no synchronous path inside a running event loop — await ainvoke/astream instead."
         )
 
 

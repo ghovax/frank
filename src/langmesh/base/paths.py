@@ -114,9 +114,7 @@ def _within_socket_limit(path: Path) -> Path:
     encoded = len(str(path).encode())
     if encoded > SOCKET_PATH_MAXIMUM_BYTES:
         raise SocketPathTooLong(
-            f"{path} is {encoded} bytes, and a unix socket path may be at most "
-            f"{SOCKET_PATH_MAXIMUM_BYTES}. The runtime directory is too deep — set "
-            f"XDG_RUNTIME_DIR to something shorter."
+            f"{path} is {encoded} bytes, and a unix socket path may be at most {SOCKET_PATH_MAXIMUM_BYTES}. The runtime directory is too deep — set XDG_RUNTIME_DIR to something shorter."
         )
     return path
 

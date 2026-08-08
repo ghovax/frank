@@ -186,8 +186,7 @@ def _native_targets() -> list[Target]:
                 visible_ids,
                 frontmost,
                 note=(
-                    "This application does not publish its windows to accessibility, so they cannot "
-                    "be addressed individually."
+                    "This application does not publish its windows to accessibility, so they cannot be addressed individually."
                 ),
             )
         )

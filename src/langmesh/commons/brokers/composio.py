@@ -23,8 +23,7 @@ def composio_mcp_servers(
     api_key = configuration.effective_api_key
     if not api_key:
         logger.warning(
-            "Composio is enabled but no API key is set "
-            "(composio.api_key or COMPOSIO_API_KEY); skipping Composio tools."
+            "Composio is enabled but no API key is set (composio.api_key or COMPOSIO_API_KEY); skipping Composio tools."
         )
         return {}
 

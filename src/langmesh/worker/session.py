@@ -601,8 +601,7 @@ class SessionExecutor(AgentExecutor):
                         "code": f"{job['kind']}_interrupted",
                         "job_id": job["job_id"],
                         "message": (
-                            "This task was interrupted by a server restart before it finished. "
-                            "Re-run it if the result is still needed."
+                            "This task was interrupted by a server restart before it finished. Re-run it if the result is still needed."
                         ),
                         "arguments": job["arguments"],
                     }
@@ -817,8 +816,7 @@ class SessionExecutor(AgentExecutor):
                     continue
                 if not response.tool_calls:
                     logger.warning(
-                        "the model answered without calling the title tool for session %s "
-                        "(attempt %d of %d)",
+                        "the model answered without calling the title tool for session %s (attempt %d of %d)",
                         self._session_id,
                         attempt,
                         attempts,

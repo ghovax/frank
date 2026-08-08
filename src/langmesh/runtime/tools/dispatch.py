@@ -991,8 +991,7 @@ class _DispatchesTools:
                 {
                     "code": "user_declined",
                     "message": (
-                        "The user dismissed the question without answering and chose to stop here. "
-                        "Do not re-ask or proceed on a guess; wait for further direction."
+                        "The user dismissed the question without answering and chose to stop here. Do not re-ask or proceed on a guess; wait for further direction."
                     ),
                 }
             )
@@ -1170,8 +1169,7 @@ class _DispatchesTools:
                 result = refuse("Say what the goal is: the end state, in one sentence.")
             elif not requirements:
                 result = refuse(
-                    "A goal needs requirements: the conditions that must hold for it to be met, "
-                    "each one something you can check."
+                    "A goal needs requirements: the conditions that must hold for it to be met, each one something you can check."
                 )
             else:
                 # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
@@ -1352,10 +1350,7 @@ class _DispatchesTools:
                 described = target_registry.describe_all(
                     sorted(same_app, key=target_registry._worth_naming)
                 )
-                error = (
-                    f"{target_id!r} is an application, not a window — an application has no single "
-                    f"place to act in. Its windows are listed under 'candidates', likeliest first."
-                )
+                error = f"{target_id!r} is an application, not a window — an application has no single place to act in. Its windows are listed under 'candidates', likeliest first."
                 payload = {"ok": False, "error": error, "targets": {"candidates": described}}
             else:
                 error = f"Target {target_id!r} is not among the windows and tabs I can see."

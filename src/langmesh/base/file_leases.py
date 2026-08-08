@@ -141,8 +141,7 @@ class FileLeaseManager:
                     if conflict is not None:
                         raise FileLeaseConflict(
                             (
-                                f"Filesystem is busy: session {conflict.owner_session_id} holds a "
-                                f"{conflict.scope} lease on {conflict.path}. Try again after that turn finishes."
+                                f"Filesystem is busy: session {conflict.owner_session_id} holds a {conflict.scope} lease on {conflict.path}. Try again after that turn finishes."
                             ),
                             owner_session_id=conflict.owner_session_id,
                             path=conflict.path,

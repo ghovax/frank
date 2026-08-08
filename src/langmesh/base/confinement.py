@@ -124,8 +124,7 @@ def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
         for entry in cleaned:
             if entry in ("/", "~", "/*", "~/", "~/*"):
                 return None, (
-                    f"access_request.{name} may not name the whole filesystem ({entry}). "
-                    "Ask for the narrowest path that does the work."
+                    f"access_request.{name} may not name the whole filesystem ({entry}). Ask for the narrowest path that does the work."
                 )
         paths[name] = cleaned
 
@@ -913,8 +912,7 @@ def spawn_recipe(
     if not backend:
         if profile.enforce == ENFORCE_REQUIRED:
             raise ConfinementUnavailable(
-                f"Confinement is required but no backend is available: {describe_backend()}. "
-                "Set sandbox.enforce to 'preferred' to run with resource limits only, or 'off' to disable it."
+                f"Confinement is required but no backend is available: {describe_backend()}. Set sandbox.enforce to 'preferred' to run with resource limits only, or 'off' to disable it."
             )
         backend = ""
 

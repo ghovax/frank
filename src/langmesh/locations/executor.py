@@ -566,17 +566,10 @@ class SshExecutor(LocationExecutor):
         if self._has_ripgrep():
             include_flag = f"--glob {shlex.quote(include)} " if include else ""
             no_ignore = "--no-ignore --hidden " if include_ignored else ""
-            command = (
-                f"rg --line-number --no-heading --color=never "
-                f"--max-count {per_file_limit} {no_ignore}{include_flag}"
-                f"-e {quoted_pattern} -- {quoted_target}"
-            )
+            command = f"rg --line-number --no-heading --color=never --max-count {per_file_limit} {no_ignore}{include_flag}-e {quoted_pattern} -- {quoted_target}"
         else:
             include_flag = f"--include={shlex.quote(include)} " if include else ""
-            command = (
-                f"grep -rEn -m {per_file_limit} --exclude-dir=.git {include_flag}"
-                f"-e {quoted_pattern} -- {quoted_target}"
-            )
+            command = f"grep -rEn -m {per_file_limit} --exclude-dir=.git {include_flag}-e {quoted_pattern} -- {quoted_target}"
         completed = self._ssh(f"bash -lc {shlex.quote(command)}", timeout=DEFAULT_TIMEOUT)
         stdout = completed.stdout.decode("utf-8", errors="replace")
         # Both rg and grep exit 1 for "no matches" and >1 for a real error.

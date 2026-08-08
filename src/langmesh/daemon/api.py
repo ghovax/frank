@@ -130,8 +130,7 @@ def _resolve_sandbox(agent: str, working_directory: str, parent, read_only: bool
         )
     if profile.enforce == confinement.ENFORCE_REQUIRED and not confinement.backend_name():
         raise RpcError(
-            f"Confinement is required and this machine has no backend for it ({confinement.describe_backend()}). "
-            "Set sandbox.enforce to 'preferred' to run with resource limits only, or 'off' to disable it.",
+            f"Confinement is required and this machine has no backend for it ({confinement.describe_backend()}). Set sandbox.enforce to 'preferred' to run with resource limits only, or 'off' to disable it.",
             status_code=503,
             code="confinement_unavailable",
         )

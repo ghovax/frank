@@ -289,24 +289,19 @@ class AppendOnlyTaskStore(TaskStore):
             async with self._engine.begin() as connection:
                 await connection.run_sync(self._metadata.create_all)
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_turn_head_session_id_id "
-                    "ON turn_head(session_id, id)"
+                    "CREATE INDEX IF NOT EXISTS idx_turn_head_session_id_id ON turn_head(session_id, id)"
                 )
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_turn_history_turn_id_row_id "
-                    "ON turn_history(turn_id, row_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_turn_history_turn_id_row_id ON turn_history(turn_id, row_id)"
                 )
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_turn_artifacts_turn_id_row_id "
-                    "ON turn_artifacts(turn_id, row_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_turn_artifacts_turn_id_row_id ON turn_artifacts(turn_id, row_id)"
                 )
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_conversation_inheritance_snapshot_id "
-                    "ON conversation_inheritance(snapshot_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_conversation_inheritance_snapshot_id ON conversation_inheritance(snapshot_id)"
                 )
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_user_message_history_working_directory_created_at "
-                    "ON user_message_history(working_directory, created_at DESC)"
+                    "CREATE INDEX IF NOT EXISTS idx_user_message_history_working_directory_created_at ON user_message_history(working_directory, created_at DESC)"
                 )
         finally:
             release_sqlite_write_lock(write_lock)

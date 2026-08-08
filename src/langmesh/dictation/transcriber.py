@@ -224,13 +224,11 @@ class SpeechTranscriber:
                     self._stop_process()
                     # The exit status, because it separates a worker that could not load the model from one that never ran.
                     logger.error(
-                        "the dictation worker exited before reporting (status %s); it may not "
-                        "have started at all",
+                        "the dictation worker exited before reporting (status %s); it may not have started at all",
                         status,
                     )
                     raise DictationUnavailable(
-                        f"The dictation model could not be started (worker exited: {status}). "
-                        "If the daemon log has no traceback from the worker, it never ran."
+                        f"The dictation model could not be started (worker exited: {status}). If the daemon log has no traceback from the worker, it never ran."
                     )
                 continue
             if kind == "ready":
@@ -241,12 +239,10 @@ class SpeechTranscriber:
             logger.error("dictation worker failed to start: %s (%s)", reason, summary)
             if reason == STARTUP_MISSING_PACKAGE:
                 raise DictationUnavailable(
-                    "Dictation needs the `parakeet-mlx` package, which is not installed in this "
-                    "environment. Run `uv sync` in the LangMesh repository and restart the daemon."
+                    "Dictation needs the `parakeet-mlx` package, which is not installed in this environment. Run `uv sync` in the LangMesh repository and restart the daemon."
                 )
             raise DictationUnavailable(
-                "The dictation model could not be loaded — the download may have failed. "
-                "Check the connection and try again."
+                "The dictation model could not be loaded — the download may have failed. Check the connection and try again."
             )
 
     def _stop_process(self) -> None:

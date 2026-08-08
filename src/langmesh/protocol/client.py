@@ -125,8 +125,7 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
     }
     if host not in allowed:
         raise RemoteAgentTrustError(
-            f"Remote agent {configuration.name!r}: card URL host {host!r} is not the registered "
-            f"origin {_host_of(configuration.card_url)!r} (and not in allowed_hosts)."
+            f"Remote agent {configuration.name!r}: card URL host {host!r} is not the registered origin {_host_of(configuration.card_url)!r} (and not in allowed_hosts)."
         )
     try:
         assert_public_host(host, allow_private=configuration.allow_private)

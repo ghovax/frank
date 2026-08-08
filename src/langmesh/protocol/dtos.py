@@ -12,8 +12,7 @@ class SessionTitle(BaseModel):
 
     title: str = Field(
         description=(
-            "A concise imperative phrase starting with a verb, then the action it describes; "
-            "normal sentence case (not Title Case), no surrounding quotes, no trailing punctuation."
+            "A concise imperative phrase starting with a verb, then the action it describes; normal sentence case (not Title Case), no surrounding quotes, no trailing punctuation."
         ),
     )
 

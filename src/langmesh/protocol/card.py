@@ -75,10 +75,7 @@ def build_agent_card(
                 AgentExtension(
                     uri=METADATA_KEY,
                     description=(
-                        "LangMesh turn state and envelopes. Under this key: a message's per-turn inputs "
-                        "(working directory, permission mode, peer sender), a task's durable "
-                        "control-state (turn kind, peer sender, pending interaction, referenced "
-                        "turns), and the payload of every DataPart the harness emits or reads."
+                        "LangMesh turn state and envelopes. Under this key: a message's per-turn inputs (working directory, permission mode, peer sender), a task's durable control-state (turn kind, peer sender, pending interaction, referenced turns), and the payload of every DataPart the harness emits or reads."
                     ),
                     required=False,
                 )

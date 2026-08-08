@@ -120,12 +120,10 @@ class BackgroundJobStore:
                     )
                 # Indices matched to the hot queries, so the startup and per-turn scans stay cheap.
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status "
-                    "ON background_jobs(session_id, agent_name, status)"
+                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status ON background_jobs(session_id, agent_name, status)"
                 )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_agent_status "
-                    "ON background_jobs(agent_name, status)"
+                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_agent_status ON background_jobs(agent_name, status)"
                 )
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_status ON background_jobs(status)"

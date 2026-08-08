@@ -244,8 +244,7 @@ class ChatCodexModel(BaseChatModel):
     def _http_error(status: int, body: str) -> Exception:
         if status in (401, 403):
             return ChatGPTAuthError(
-                "ChatGPT rejected the subscription token (expired, revoked, or plan "
-                f"lacks access). Sign in again. Detail: {upstream_detail(body)}"
+                f"ChatGPT rejected the subscription token (expired, revoked, or plan lacks access). Sign in again. Detail: {upstream_detail(body)}"
             )
         # An overlong request is refused before the stream opens as often as during it, so both paths report it the same way.
         if status == 400 and _error_code(body) in CONTEXT_OVERFLOW_CODES:

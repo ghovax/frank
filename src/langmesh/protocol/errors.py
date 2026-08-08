@@ -69,10 +69,7 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
             "code": "context_window_exceeded",
             "title": "Conversation is too long for this model",
             "message": (
-                f"The request was larger than this model's context window{measured}. "
-                "Compact the conversation, start a new one, or switch to a model with a larger "
-                "window. A single tool result — a long file or a screen listing — is the usual "
-                "cause."
+                f"The request was larger than this model's context window{measured}. Compact the conversation, start a new one, or switch to a model with a larger window. A single tool result — a long file or a screen listing — is the usual cause."
             ),
         }
     # The provider's code classifies the failure but never reaches the wire event.

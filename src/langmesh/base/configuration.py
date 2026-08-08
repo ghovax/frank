@@ -319,8 +319,7 @@ class CompactionConfiguration(Section):
         for gone in _COMPACTION_REMOVED:
             if carried.pop(gone, None) is not None:
                 logger.warning(
-                    "ignoring compaction.%s: the setting no longer exists. Remove it from your "
-                    "configuration file.",
+                    "ignoring compaction.%s: the setting no longer exists. Remove it from your configuration file.",
                     gone,
                 )
         return carried
@@ -365,9 +364,7 @@ class TuningConfiguration(Section):
         unknown = unknown_tunable_names(value)
         if unknown:
             raise ValueError(
-                f"unknown tuning default(s): {', '.join(unknown)}. "
-                "The names that exist are the members of `langmesh.base.tuning.Tunable`; "
-                "`langmesh configure --all` lists them with their defaults."
+                f"unknown tuning default(s): {', '.join(unknown)}. The names that exist are the members of `langmesh.base.tuning.Tunable`; `langmesh configure --all` lists them with their defaults."
             )
         return value
 

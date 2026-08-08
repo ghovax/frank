@@ -89,10 +89,7 @@ class SessionLifecycle:
         if parent is None or not parent.is_live:
             return
         outcome = record.exit_reason or ("finished" if record.outcome == EXITED else record.outcome)
-        text = (
-            f"Session {record.id} ({record.agent}), which you created, has ended without "
-            f"reporting back: {outcome}."
-        )
+        text = f"Session {record.id} ({record.agent}), which you created, has ended without reporting back: {outcome}."
         try:
             await relay_to_session(
                 parent,

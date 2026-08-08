@@ -334,14 +334,7 @@ def _open_folder_picker() -> dict[str, object]:
             )
             return _folder_picker_result(result)
         if system == "Windows":
-            command = (
-                "Add-Type -AssemblyName System.Windows.Forms; "
-                "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                "$dialog.Description = 'Choose a working directory'; "
-                "$dialog.ShowNewFolderButton = $true; "
-                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
-                "{ $dialog.SelectedPath }"
-            )
+            command = "Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = 'Choose a working directory'; $dialog.ShowNewFolderButton = $true; if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.SelectedPath }"
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-STA", "-Command", command],
                 check=False,
@@ -398,15 +391,16 @@ def _run_unix_folder_picker() -> subprocess.CompletedProcess[str] | None:
 
 
 def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
-    script = (
-        "import tkinter as tk\n"
-        "from tkinter import filedialog\n"
-        "root = tk.Tk()\n"
-        "root.withdraw()\n"
-        "path = filedialog.askdirectory(title='Choose a working directory')\n"
-        "print(path or '')\n"
-        "root.destroy()\n"
-    )
+    # The picker is a program, so it is written as one: the value is what `python3 -c` receives.
+    script = """import tkinter as tk
+from tkinter import filedialog
+
+root = tk.Tk()
+root.withdraw()
+path = filedialog.askdirectory(title='Choose a working directory')
+print(path or '')
+root.destroy()
+"""
     try:
         return subprocess.run(
             ["python3", "-c", script],

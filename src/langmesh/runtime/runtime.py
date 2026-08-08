@@ -279,8 +279,7 @@ def _as_profile(sandbox: Any):
     if callable(to_profile):
         return to_profile()
     raise TypeError(
-        f"sandbox must be a confinement Profile, a SandboxConfiguration, or the dict form of "
-        f"either — got {type(sandbox).__name__}."
+        f"sandbox must be a confinement Profile, a SandboxConfiguration, or the dict form of either — got {type(sandbox).__name__}."
     )
 
 
@@ -528,9 +527,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # Only a runtime that must build a client needs to be told which one.
         if not effective_model and model is None:
             raise ValueError(
-                f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and "
-                '`model` in its profile, pass `model_identifier="provider/model"` to '
-                "`langmesh.Session`, or hand the runtime a `model=` of your own."
+                f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and `model` in its profile, pass `model_identifier=\"provider/model\"` to `langmesh.Session`, or hand the runtime a `model=` of your own."
             )
         # A profile pinned to an unkeyed provider fails on its first call, which is the honest outcome.
         self._effective_model_identifier = effective_model

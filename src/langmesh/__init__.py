@@ -213,9 +213,7 @@ class Session:
 
         if isinstance(agent, str):
             raise TypeError(
-                "agent must be an AgentConfiguration, not a name. A name would mean this "
-                "library goes looking for a profile on your machine. Build one in code, or "
-                "load it yourself: `langmesh.daemon.machine.load_catalogue(...).agent(name)`."
+                "agent must be an AgentConfiguration, not a name. A name would mean this library goes looking for a profile on your machine. Build one in code, or load it yourself: `langmesh.daemon.machine.load_catalogue(...).agent(name)`."
             )
         self._agent = agent
         # Absolute, and not resolved against the process's directory: where tools run is a property of the run.
@@ -382,8 +380,7 @@ class Session:
         if images_not_inlined:
             # A library caller may have no client to raise a warning event to, so this goes to the log it does have.
             logger.warning(
-                "%d attached image(s) were not inlined: %s does not advertise vision support. "
-                "The model has the file paths and can open them with its tools.",
+                "%d attached image(s) were not inlined: %s does not advertise vision support. The model has the file paths and can open them with its tools.",
                 images_not_inlined,
                 runtime.effective_model_identifier or "the session model",
             )
@@ -448,10 +445,7 @@ class Session:
         async for event in self.stream(message, attachments=attachments):
             if isinstance(event, Suspended):
                 raise PermissionError(
-                    "This turn needs a human decision, and nothing is answering gates. Pass "
-                    "`approvals=` to decide them in code, drive `stream()` and answer them "
-                    "yourself, or create the session in a permission mode that does not gate "
-                    "this work."
+                    "This turn needs a human decision, and nothing is answering gates. Pass `approvals=` to decide them in code, drive `stream()` and answer them yourself, or create the session in a permission mode that does not gate this work."
                 )
             if isinstance(event, Done):
                 answer = event.text or answer

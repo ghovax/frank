@@ -66,9 +66,7 @@ def _refuse_on_event_loop() -> None:
     except RuntimeError:
         return
     raise RuntimeError(
-        "sqlite_write_lock() was entered on the event-loop thread, which would deadlock "
-        "the daemon. Await acquire_sqlite_write_lock()/release_sqlite_write_lock() here, "
-        "or move this write off the loop with asyncio.to_thread()."
+        "sqlite_write_lock() was entered on the event-loop thread, which would deadlock the daemon. Await acquire_sqlite_write_lock()/release_sqlite_write_lock() here, or move this write off the loop with asyncio.to_thread()."
     )
 
 

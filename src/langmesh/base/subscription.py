@@ -21,10 +21,7 @@ CLIENT_VERSION = "0.144.4"
 ORIGINATOR = "codex_cli_rs"
 
 # The documented user-agent shape, with the varying transport token omitted rather than guessed.
-USER_AGENT = (
-    f"codex_cli_rs/{CLIENT_VERSION} "
-    f"({platform.system()} {platform.release()}; {platform.machine()})"
-)
+USER_AGENT = f"codex_cli_rs/{CLIENT_VERSION} ({platform.system()} {platform.release()}; {platform.machine()})"
 
 
 def request_headers(tokens: ChatGPTTokens, session_id: str = "") -> dict[str, str]:

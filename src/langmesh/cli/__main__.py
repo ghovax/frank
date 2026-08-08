@@ -365,8 +365,7 @@ def _command_run(arguments: argparse.Namespace) -> int:
                     sys.stdout.flush()
                 elif isinstance(event, Suspended):
                     _note(
-                        "\nlangmesh: this turn needs a decision and nothing is watching. "
-                        "Re-run with --allow, or with a permission mode that does not gate it."
+                        "\nlangmesh: this turn needs a decision and nothing is watching. Re-run with --allow, or with a permission mode that does not gate it."
                     )
                     return 2
                 elif isinstance(event, Done):
@@ -415,8 +414,7 @@ def _command_auth(arguments: argparse.Namespace) -> int:
         except OSError as error:
             # Port 1455 is the redirect target the consent screen sends the browser to, so it cannot be chosen.
             _note(
-                f"langmesh: could not listen for the sign-in callback ({error}). "
-                "Another LangMesh or Codex sign-in may be in progress."
+                f"langmesh: could not listen for the sign-in callback ({error}). Another LangMesh or Codex sign-in may be in progress."
             )
             return 1
         _note("langmesh: open this in a browser to sign in:")
@@ -456,9 +454,7 @@ def _command_open(arguments: argparse.Namespace) -> int:
     if result.returncode != 0:
         # `open -b` resolves through LaunchServices, so this failure usually means the app was built but never installed.
         _note(
-            f"langmesh: nothing on this system claims {APPLICATION_BUNDLE_ID}. If you have built "
-            "LangMesh.app but not installed it, macOS will not find it by identifier — move it to "
-            "/Applications first. See documentation/installation.md."
+            f"langmesh: nothing on this system claims {APPLICATION_BUNDLE_ID}. If you have built LangMesh.app but not installed it, macOS will not find it by identifier — move it to /Applications first. See documentation/installation.md."
         )
         return 1
     _emit({"opened": APPLICATION_BUNDLE_ID, "daemon": True})
@@ -594,8 +590,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         required=True,
         choices=["ask", "automatic"],
-        help="permission mode; required, because nobody is watching when "
-        "this runs and an unstated mode is one nobody chose",
+        help="permission mode; required, because nobody is watching when this runs and an unstated mode is one nobody chose",
     )
     schedule_create.add_argument(
         "--timezone",
@@ -717,8 +712,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--open",
         dest="open_browser",
         action="store_true",
-        help="also open a browser at the served address (off by default: serving is not a "
-        "reason to take over the screen, and this may not be the machine you are looking at)",
+        help="also open a browser at the served address (off by default: serving is not a reason to take over the screen, and this may not be the machine you are looking at)",
     )
     serve.set_defaults(handler=_command_serve)
 
@@ -735,16 +729,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--port",
         type=int,
         default=8825,
-        help="the loopback port Tailscale proxies to (default 8825). Nothing listens on a "
-        "network interface; only change this if something else already has the port",
+        help="the loopback port Tailscale proxies to (default 8825). Nothing listens on a network interface; only change this if something else already has the port",
     )
     reach.add_argument(
         "--interface",
         nargs="?",
         const="http://127.0.0.1:3000",
         default="",
-        help="serve the interface from a running dev server instead of the built export, so a "
-        "change reaches the phone without `bun run build`. Defaults to Next's own port",
+        help="serve the interface from a running dev server instead of the built export, so a change reaches the phone without `bun run build`. Defaults to Next's own port",
     )
     reach.set_defaults(handler=_command_reach)
 

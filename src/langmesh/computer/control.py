@@ -198,22 +198,11 @@ def _quietly_close(stream: Any) -> None:
 def _explain_silent_exit(complaint: str) -> str:
     lowered = complaint.lower()
     if "operation not permitted" in lowered or "sandbox" in lowered:
-        return (
-            "The screen-control helper could not start because the sandbox refused to run it. "
-            "Screen control needs the helper to be executable inside the session's sandbox; "
-            "check the sandbox settings for this project, or turn enforcement off to confirm "
-            "that is the cause."
-        )
+        return "The screen-control helper could not start because the sandbox refused to run it. Screen control needs the helper to be executable inside the session's sandbox; check the sandbox settings for this project, or turn enforcement off to confirm that is the cause."
     if "accessibility" in lowered or "axapi" in lowered or "not trusted" in lowered:
-        return (
-            "The screen-control helper could not read the screen because macOS Accessibility "
-            "is not granted. Grant it in Settings, then try again."
-        )
+        return "The screen-control helper could not read the screen because macOS Accessibility is not granted. Grant it in Settings, then try again."
     if not complaint:
-        return (
-            "The screen-control helper stopped before it could report anything, and said "
-            "nothing about why — it was most likely killed as it started."
-        )
+        return "The screen-control helper stopped before it could report anything, and said nothing about why — it was most likely killed as it started."
     # The child's own words rather than a summary of them, since that is what lets a script be fixed.
     return (
         f"The screen-control helper stopped before it could report a result. It said:\n{complaint}"

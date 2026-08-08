@@ -92,9 +92,7 @@ def _tailscale_command() -> str:
         if Path(candidate).is_file():
             return candidate
     raise TailscaleUnavailable(
-        "Tailscale is not installed. LangMesh reaches your phone over your tailnet, which is what "
-        "makes the connection both stable and encrypted; install Tailscale and sign in, then run "
-        "this again."
+        "Tailscale is not installed. LangMesh reaches your phone over your tailnet, which is what makes the connection both stable and encrypted; install Tailscale and sign in, then run this again."
     )
 
 
@@ -118,13 +116,11 @@ def _tailscale(*arguments: str, timeout: float = 15.0) -> subprocess.CompletedPr
         said = _said(error.stdout) + _said(error.stderr)
         if (link := _CONSOLE_LINK.search(said)) is not None:
             raise TailscaleUnavailable(
-                "Tailscale is waiting for something to be switched on for your tailnet. Open this, "
-                "turn it on, then run this again.",
+                "Tailscale is waiting for something to be switched on for your tailnet. Open this, turn it on, then run this again.",
                 link.group(0),
             ) from error
         raise TailscaleUnavailable(
-            f"Tailscale did not answer `{' '.join(arguments)}` within {timeout:.0f}s. Open the "
-            "Tailscale app and check it is connected.",
+            f"Tailscale did not answer `{' '.join(arguments)}` within {timeout:.0f}s. Open the Tailscale app and check it is connected.",
             " ".join(said.split()),
         ) from error
     except OSError as error:
@@ -143,8 +139,7 @@ def tailnet_name() -> str:
     completed = _tailscale("status", "--json", timeout=10.0)
     if completed.returncode != 0:
         raise TailscaleUnavailable(
-            "Tailscale is installed but not connected. Open the Tailscale app and sign in, then "
-            "run this again."
+            "Tailscale is installed but not connected. Open the Tailscale app and sign in, then run this again."
         )
     try:
         status = json.loads(completed.stdout)
@@ -153,23 +148,18 @@ def tailnet_name() -> str:
 
     if str(status.get("BackendState") or "") != "Running":
         raise TailscaleUnavailable(
-            "Tailscale is installed but not connected. Open the Tailscale app and sign in, then "
-            "run this again."
+            "Tailscale is installed but not connected. Open the Tailscale app and sign in, then run this again."
         )
     # Fully qualified with a trailing dot, which is correct for DNS and wrong in a URL.
     name = str((status.get("Self") or {}).get("DNSName") or "").rstrip(".")
     if not name:
         raise TailscaleUnavailable(
-            "This machine has no MagicDNS name, so there is no address a certificate can be "
-            "issued for. Turn MagicDNS on in the Tailscale admin console under DNS."
+            "This machine has no MagicDNS name, so there is no address a certificate can be issued for. Turn MagicDNS on in the Tailscale admin console under DNS."
         )
     # Checked separately from the name, because with MagicDNS off the name resolves nowhere and no certificate is issued.
     if not (status.get("CurrentTailnet") or {}).get("MagicDNSEnabled"):
         raise TailscaleUnavailable(
-            "MagicDNS is off for your tailnet, so this machine's name resolves nowhere and "
-            "Tailscale will not issue a certificate for it. Turn on MagicDNS in the admin "
-            "console under DNS, and then HTTPS Certificates below it — in that order, because "
-            "the second is only available once the first is on.",
+            "MagicDNS is off for your tailnet, so this machine's name resolves nowhere and Tailscale will not issue a certificate for it. Turn on MagicDNS in the admin console under DNS, and then HTTPS Certificates below it — in that order, because the second is only available once the first is on.",
             "https://login.tailscale.com/admin/dns",
         )
     return name
@@ -185,16 +175,13 @@ def ensure_served(port: int) -> None:
     # The one failure worth naming, because certificates are off for the whole tailnet until somebody turns them on.
     if (link := _CONSOLE_LINK.search(message)) is not None:
         raise TailscaleUnavailable(
-            "Tailscale is waiting for something to be switched on for your tailnet. Open this, "
-            "turn it on, then run this again.",
+            "Tailscale is waiting for something to be switched on for your tailnet. Open this, turn it on, then run this again.",
             link.group(0),
         )
     lowered = message.lower()
     if "https" in lowered and ("enable" in lowered or "certificate" in lowered):
         raise TailscaleUnavailable(
-            "Your tailnet does not have HTTPS certificates enabled, so Tailscale cannot get a "
-            "certificate for this machine. Turn it on in the admin console under DNS, then HTTPS, "
-            "Certificates, then run this again.",
+            "Your tailnet does not have HTTPS certificates enabled, so Tailscale cannot get a certificate for this machine. Turn it on in the admin console under DNS, then HTTPS, Certificates, then run this again.",
             message,
         )
     raise TailscaleUnavailable("Tailscale would not serve this listener.", message)
@@ -345,8 +332,7 @@ def _describe(payload: dict) -> None:
     """Say how to pair a device: the link is data and goes to stdout, and the prose about it goes to stderr."""
     logger.info(f"Pair a device with LangMesh on {payload['name']}, at {payload['endpoint']}.")
     logger.info(
-        "This link carries a token with full control of this daemon. Send it to a phone, not to "
-        "a room."
+        "This link carries a token with full control of this daemon. Send it to a phone, not to a room."
     )
     print(pairing_uri(payload), flush=True)
 
@@ -388,8 +374,7 @@ def _serve(arguments, payload: dict) -> int:
     host = "127.0.0.1"
     if _port_is_taken(host, arguments.port):
         logger.info(
-            f"langmesh: {host}:{arguments.port} is already in use — most likely another "
-            f"`langmesh reach`. Stop it, or pass `--port` to use a different one."
+            f"langmesh: {host}:{arguments.port} is already in use — most likely another `langmesh reach`. Stop it, or pass `--port` to use a different one."
         )
         return 1
 
@@ -411,8 +396,7 @@ def _serve(arguments, payload: dict) -> int:
         )
     elif interface is None:
         logger.info(
-            "langmesh: the interface has not been built, so this will serve the control plane but no "
-            "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
+            "langmesh: the interface has not been built, so this will serve the control plane but no screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
 
     def where_is_the_daemon() -> tuple[str, str]:

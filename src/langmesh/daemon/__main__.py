@@ -41,10 +41,7 @@ logger = logging.getLogger("langmesh.daemon")
 LOOPBACK_HOST = "127.0.0.1"
 
 # The only browsers with any business here: the desktop app's own webview and a local development server.
-_APP_ORIGIN_PATTERN = (
-    r"^(tauri://localhost|https?://tauri\.localhost"
-    r"|https?://localhost(:\d+)?|https?://127\.0\.0\.1(:\d+)?)$"
-)
+_APP_ORIGIN_PATTERN = "^(tauri://localhost|https?://tauri\\.localhost|https?://localhost(:\\d+)?|https?://127\\.0\\.0\\.1(:\\d+)?)$"
 
 
 def _free_port() -> int:
@@ -289,8 +286,7 @@ async def _serve() -> int:
         logger.info("confinement backend: %s", confinement_state["detail"])
     else:
         logger.warning(
-            "no confinement backend (%s). Sessions will refuse to start unless sandbox.enforce "
-            "is set to 'preferred' or 'off'.",
+            "no confinement backend (%s). Sessions will refuse to start unless sandbox.enforce is set to 'preferred' or 'off'.",
             confinement_state["detail"],
         )
     state.daemon_token = secrets.token_urlsafe(32)
