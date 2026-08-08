@@ -10,6 +10,8 @@ Each field's own description says what belongs in it. This says what the job is.
 
 {{ goal }}
 
+What that is for:
+
 {{ purpose }}
 
 Done when:

@@ -65,8 +65,7 @@ class _ReviewsGoal:
             "goal_review",
             {
                 "goal": goal.text,
-                # Prefixed here rather than in the template, so an unstated purpose leaves no orphaned label.
-                "purpose": f"What that is for: {goal.purpose}" if goal.purpose else "",
+                "purpose": goal.purpose,
                 "requirements": lines(goal.requirements),
                 # What it last told the session, so it can see whether the session did it before saying it again.
                 "previous_direction": goal.direction,
