@@ -5,7 +5,10 @@
 import { Badge, Box, Button, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuBookMarked, LuDot, LuHistory, LuRefreshCw } from "react-icons/lu";
+import {
+  LuArchive, LuBookMarked, LuCircleDashed, LuCrosshair, LuDot, LuFile, LuGitBranch, LuGitMerge,
+  LuCompass, LuFlag, LuHistory, LuInfo, LuLock, LuPencil, LuRefreshCw, LuTriangleAlert,
+} from "react-icons/lu";
 import { PanelBody, PanelCard, PanelEmptyState, PanelHeader } from "@/components/ui/panel";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { fetchSessionRecord, type RecordEntry } from "@/lib/api";
@@ -59,6 +62,31 @@ function sameEntries(held: Revised[], found: Revised[]): boolean {
   );
 }
 
+// What a revision did to what it replaced, in its own colour and mark, since an entry whose ancestor was wrong reads differently from one merely sharpened.
+const REVISION_MARK: Record<string, { icon: typeof LuPencil; tone: string }> = {
+  correction: { icon: LuPencil, tone: "orange" },
+  refinement: { icon: LuCrosshair, tone: "blue" },
+  merge: { icon: LuGitMerge, tone: "purple" },
+  retraction: { icon: LuArchive, tone: "gray" },
+};
+
+// What kind of thing an entry is, marked so a list is read by shape before it is read word by word.
+const ENTRY_MARK: Record<string, { icon: typeof LuInfo; tone: string }> = {
+  fact: { icon: LuInfo, tone: "blue" },
+  decision: { icon: LuGitBranch, tone: "purple" },
+  constraint: { icon: LuLock, tone: "orange" },
+  failure: { icon: LuTriangleAlert, tone: "red" },
+  artifact: { icon: LuFile, tone: "gray" },
+  open: { icon: LuCircleDashed, tone: "yellow" },
+  requirement: { icon: LuFlag, tone: "blue" },
+  preference: { icon: LuCompass, tone: "cyan" },
+};
+
+// An entry that no longer governs the work, which is the one thing that moves it down the list.
+function retired(entry: RecordEntry): boolean {
+  return entry.revision === "retraction" || entry.still_binding === false;
+}
+
 // How sure the record is of an entry, which the reader needs before acting on it.
 const STANDING_TONE: Record<string, string> = {
   verified: "green",
@@ -81,30 +109,47 @@ function Dot() {
 }
 
 // A qualifier reads as a word on the line, not as a chip: the colour carries the meaning, so a background only adds noise.
-function Qualifier({ children, tone }: { children: string; tone?: string }) {
+function Qualifier({ children, tone, mark: Mark }: { children: string; tone?: string; mark?: typeof LuInfo }) {
   return (
-    <Badge size="sm" variant="plain" px={0} colorPalette={tone}>
+    <Badge
+      size="sm"
+      variant="plain"
+      px={0}
+      minH={0}
+      gap={1}
+      colorPalette={tone}
+      css={{ "& svg": { width: "13px", height: "13px" } }}
+    >
+      {Mark ? <Mark /> : null}
       {children}
     </Badge>
   );
 }
 
-// Every field the model writes is prose it may have marked up, so all three are rendered as markdown.
+// Every field is markdown the model may have marked up, truncated to one line because a list is scanned rather than read, with the whole text on the title.
 function Body({ entry, muted }: { entry: RecordEntry; muted?: boolean }) {
+  const claim = entry.claim ?? entry.summary ?? "";
+  const cited = entry.evidence || entry.occasion || "";
   return (
     <>
-      <Text textStyle="xs" fontWeight="medium" color={muted ? "fg.muted" : undefined}>
-        <InlineMarkdown content={entry.claim ?? entry.summary ?? ""} />
+      <Text
+        textStyle="xs"
+        fontWeight="medium"
+        color={muted ? "fg.muted" : undefined}
+        truncate
+        title={claim}
+      >
+        <InlineMarkdown content={claim} />
       </Text>
       {entry.detail ? (
-        <Text textStyle="2xs" color="fg.muted" mt={1}>
+        <Text textStyle="2xs" color="fg.muted" mt={1} truncate title={entry.detail}>
           <InlineMarkdown content={entry.detail} />
         </Text>
       ) : null}
-      {entry.evidence || entry.occasion ? (
+      {cited ? (
         // Prose as often as a path, so it is set as prose and the model's own backticks mark what is literal.
-        <Text textStyle="2xs" color="fg.subtle" mt={1}>
-          <InlineMarkdown content={entry.evidence || entry.occasion || ""} />
+        <Text textStyle="2xs" color="fg.subtle" mt={1} truncate title={cited}>
+          <InlineMarkdown content={cited} />
         </Text>
       ) : null}
     </>
@@ -121,7 +166,15 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
       : "";
   const standing = entry.standing ? labels.standing[entry.standing] : "";
   const qualifiers = [
-    label ? <Qualifier key="label">{label}</Qualifier> : null,
+    label ? (
+      <Qualifier
+        key="label"
+        mark={ENTRY_MARK[entry.category ?? entry.kind ?? ""]?.icon}
+        tone={ENTRY_MARK[entry.category ?? entry.kind ?? ""]?.tone}
+      >
+        {label}
+      </Qualifier>
+    ) : null,
     standing ? (
       <Qualifier key="standing" tone={STANDING_TONE[entry.standing ?? ""] ?? "gray"}>
         {standing}
@@ -142,19 +195,23 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
         gap={1}
         textStyle="xs"
         fontWeight="medium"
-        colorPalette="blue"
+        css={{ "& svg": { width: "13px", height: "13px" } }}
+        colorPalette={REVISION_MARK[entry.revision ?? ""]?.tone ?? "blue"}
         aria-expanded={showHistory}
         onClick={() => setShowHistory((shown) => !shown)}
       >
-        <LuHistory size={12} />
+        {(() => {
+          const Mark = REVISION_MARK[entry.revision ?? ""]?.icon ?? LuHistory;
+          return <Mark />;
+        })()}
         {entry.revision ? labels.revision[entry.revision] : labels.revisions(earlier.length)}
       </Button>
     ) : null,
   ].filter(Boolean);
   return (
-    <Box borderWidth="1px" borderColor="border" borderRadius="md" px={2} py={1.5} bg="bg.subtle">
+    <Box borderWidth="1px" borderColor="border" borderRadius="md" px={2} py={1} bg="bg.subtle" opacity={retired(entry) ? 0.55 : 1}>
       <Body entry={entry} />
-      <Flex align="center" gap={0.5} mt={1.5} wrap="wrap" color="fg.muted">
+      <Flex align="center" gap={0.5} mt={0.5} wrap="wrap" color="fg.muted">
         {qualifiers.map((qualifier, index) => (
           <Fragment key={index}>
             {index > 0 ? <Dot /> : null}
@@ -167,6 +224,7 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
           align="stretch"
           gap={1.5}
           mt={2}
+          mb={2}
           ps={2}
           borderLeftWidth="2px"
           borderColor="border.emphasized"
@@ -175,7 +233,7 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
             <Box key={older.id} opacity={0.65}>
               <Body entry={older} muted />
               {older.written_at ? (
-                <RelativeTime date={older.written_at} textStyle="2xs" color="fg.subtle" />
+                <RelativeTime date={older.written_at} display="block" mt={1} textStyle="2xs" color="fg.subtle" />
               ) : null}
             </Box>
           ))}
@@ -301,7 +359,7 @@ export function MemoryPanel({
           <VStack align="stretch" gap={2.5}>
             {sections.map(([heading, entries]) =>
               entries.length === 0 ? null : (
-                <VStack key={heading} align="stretch" gap={1}>
+                <VStack key={heading} align="stretch" gap={2}>
                   <Text textStyle="sectionLabel">{heading}</Text>
                   {entries.map((revised) => (
                     <Entry key={revised.entry.id} revised={revised} labels={labels} />

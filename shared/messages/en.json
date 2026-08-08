@@ -241,12 +241,15 @@
     "behindUpstream": "{count} behind upstream"
   },
   "GoalBar": {
-    "working": "Working toward",
     "blocked": "Blocked",
-    "waiting": "Waiting for you",
-    "requirements": "Done when",
     "blocker": "In the way",
-    "stop": "Stop"
+    "requirements": "Done when",
+    "stop": "Stop",
+    "stopBody": "The goal is cleared and the session carries on without one. What has already been done is untouched.",
+    "stopConfirm": "Stop the goal",
+    "stopTitle": "Stop working toward this goal?",
+    "waiting": "Waiting for you",
+    "working": "Working toward"
   },
   "LocationForm": {
     "local": "Local",
@@ -462,32 +465,9 @@
       "_": "Agent defaults",
       "permission_mode": "Permission mode"
     },
-    "workspace": {
-      "_": "Workspaces",
-      "strategy": "Strategy"
-    },
-    "sandbox": {
-      "_": "Confinement",
-      "enforce": "When it cannot be enforced",
-      "filesystem": {
-        "_": "Paths",
-        "readable": "Readable paths",
-        "writable": "Writable paths",
-        "grantable": "Grantable without asking",
-        "deny": "Refused paths"
-      },
-      "network": "Network access",
-      "limits": "Resource limits",
-      "umask": "File-creation mask",
-      "nice": "Process priority"
-    },
-    "toolbox": {
-      "_": "Session toolbox",
-      "enabled": "Let a session install its own tools"
-    },
-    "permission_reviewer": {
-      "_": "Permission reviewer",
-      "reasoning_effort": "Reasoning effort"
+    "attachments": {
+      "_": "Attachments",
+      "inline_image_megabytes": "Inline an image up to (MB)"
     },
     "compaction": {
       "_": "Conversation compaction",
@@ -497,10 +477,13 @@
       "recent_working_set_fraction": "Kept verbatim (share)",
       "verbatim_user_fraction": "Your own messages kept (share)"
     },
-    "user_context": {
-      "_": "User snapshot",
-      "enabled": "Include the user snapshot",
-      "refresh_hours": "Rebuild the snapshot every (hours)"
+    "composio": {
+      "_": "Composio",
+      "enabled": "Expose Composio",
+      "url": "Composio URL",
+      "api_key": "Composio API key",
+      "server_name": "Server name",
+      "timeout_seconds": "Call timeout (seconds)"
     },
     "computer_control": {
       "_": "Screen control",
@@ -530,41 +513,48 @@
         "worker_shutdown_seconds": "Worker shutdown grace (seconds)"
       }
     },
-    "providers": {
-      "_": "Model providers"
-    },
     "exa": {
       "_": "Web search",
       "api_key": "Exa API key"
-    },
-    "jina": {
-      "_": "Page fetching (Jina)",
-      "api_key": "Jina API key"
     },
     "firecrawl": {
       "_": "Page fetching (Firecrawl)",
       "api_key": "Firecrawl API key",
       "api_url": "Firecrawl URL"
     },
-    "web_fetch": {
-      "_": "Web fetch",
-      "proxy_url": "Proxy"
-    },
-    "composio": {
-      "_": "Composio",
-      "enabled": "Expose Composio",
-      "url": "Composio URL",
-      "api_key": "Composio API key",
-      "server_name": "Server name",
-      "timeout_seconds": "Call timeout (seconds)"
+    "jina": {
+      "_": "Page fetching (Jina)",
+      "api_key": "Jina API key"
     },
     "mcp": {
       "_": "MCP servers",
       "servers": "Servers"
     },
+    "permission_reviewer": {
+      "_": "Permission reviewer",
+      "reasoning_effort": "Reasoning effort"
+    },
+    "providers": {
+      "_": "Model providers"
+    },
     "remote_agents": {
       "_": "Remote peers",
       "agents": "Peers"
+    },
+    "sandbox": {
+      "_": "Confinement",
+      "enforce": "When it cannot be enforced",
+      "filesystem": {
+        "_": "Paths",
+        "readable": "Readable paths",
+        "writable": "Writable paths",
+        "grantable": "Grantable without asking",
+        "deny": "Refused paths"
+      },
+      "network": "Network access",
+      "limits": "Resource limits",
+      "umask": "File-creation mask",
+      "nice": "Process priority"
     },
     "telemetry": {
       "_": "Telemetry",
@@ -576,6 +566,10 @@
         "headers": "OTLP headers"
       },
       "sample_ratio": "Share of traces exported"
+    },
+    "toolbox": {
+      "_": "Session toolbox",
+      "enabled": "Let a session install its own tools"
     },
     "tuning": {
       "_": "Tuning",
@@ -664,6 +658,22 @@
         "web_websocket_frames": "Frames kept per WebSocket",
         "web_websockets": "Tracked WebSockets"
       }
+    },
+    "user_context": {
+      "_": "User snapshot",
+      "enabled": "Include the user snapshot",
+      "refresh_hours": "Rebuild the snapshot every (hours)"
+    },
+    "web_fetch": {
+      "_": "Web fetch",
+      "download_timeout_seconds": "Download timeout (seconds)",
+      "minimum_useful_characters": "Minimum useful characters",
+      "proxy_url": "Proxy",
+      "timeout_seconds": "Engine timeout (seconds)"
+    },
+    "workspace": {
+      "_": "Workspaces",
+      "strategy": "Strategy"
     }
   },
   "SettingsAbout": {
@@ -671,32 +681,9 @@
       "_": "What a session runs under when its creator does not say.",
       "permission_mode": "Who answers when a session asks to reach past its confinement, unless its agent profile caps it lower."
     },
-    "workspace": {
-      "_": "Where a session's tools run.",
-      "strategy": "Where a session's work happens: the project directory itself, a branch of its own, or a git worktree of its own."
-    },
-    "sandbox": {
-      "_": "What a session's tool children may do, enforced by the operating system.",
-      "enforce": "What to do on a machine that cannot enforce confinement: refuse to start the session, run with resource limits only, or do not confine.",
-      "filesystem": {
-        "_": "Which paths a tool child may read and write.",
-        "readable": "Paths under your home a tool child may read. The system is readable and is not listed.",
-        "writable": "Paths a tool child may write. Deliberately narrower than readable, because a wrong write is the failure people actually meet.",
-        "grantable": "Paths an agent may be granted at runtime without asking. Empty means every request is put to you.",
-        "deny": "Paths refused outright. Wins over readable and writable, and no request opens them."
-      },
-      "network": "Whether a tool child may reach the network at all.",
-      "limits": "Per-child resource limits, by their setrlimit names.",
-      "umask": "The file-creation mask a tool child runs under. Empty leaves the machine's own.",
-      "nice": "How far to lower a tool child's scheduling priority, so a runaway command does not take the machine with it."
-    },
-    "toolbox": {
-      "_": "Whether a session may install the tools it needs into a profile of its own.",
-      "enabled": "Let each session install the tools it needs into a package profile of its own, deleted with the session."
-    },
-    "permission_reviewer": {
-      "_": "The model call that decides a tool call nobody is there to be asked about.",
-      "reasoning_effort": "How hard the judge thinks about one tool call. It weighs a command against a page of rules, which is not what an agent's own effort is for."
+    "attachments": {
+      "_": "What a file you attach may cost the conversation it rides in.",
+      "inline_image_megabytes": "The ceiling on an image inlined for a vision model. Above it the path and metadata still reach the model, but the pixels do not."
     },
     "compaction": {
       "_": "How conversation history is folded as it grows.",
@@ -706,10 +693,13 @@
       "recent_working_set_fraction": "Share of the usable window kept verbatim rather than folded into the log. Sized in tokens rather than turns because an unattended run is one turn and hundreds of tool results.",
       "verbatim_user_fraction": "Share of the usable window that carries the user's own messages through a fold, word for word. Their instructions are the specification, and a paraphrase of a specification is a different specification."
     },
-    "user_context": {
-      "_": "Whether the system prompt describes how you work on this machine.",
-      "enabled": "Include a snapshot of how you work — your editor, your habits, your machine — in the system prompt.",
-      "refresh_hours": "How old the snapshot may get before it is rebuilt. The rebuild runs in the background, so no message ever waits for it."
+    "composio": {
+      "_": "Composio's hosted MCP gateway.",
+      "enabled": "Expose Composio's hosted gateway as one MCP server.",
+      "url": "The hosted MCP URL from the Composio dashboard's \"connect\" page.",
+      "api_key": "The API key shown beside that URL. COMPOSIO_API_KEY wins over this.",
+      "server_name": "The MCP server name its tools appear under.",
+      "timeout_seconds": "How long one call to that gateway waits."
     },
     "computer_control": {
       "_": "Driving the screen.",
@@ -739,39 +729,46 @@
         "worker_shutdown_seconds": "How long a worker is given to exit on its own before it is killed."
       }
     },
-    "providers": "Credentials for each model provider. The provider's own environment variable wins over anything stored here.",
     "exa": {
       "_": "The web-search backend.",
       "api_key": "Exa API key. The EXA_API_KEY environment variable wins over this."
-    },
-    "jina": {
-      "_": "The default page-fetching engine.",
-      "api_key": "Jina API key, which raises the rate limit. JINA_API_KEY wins over this."
     },
     "firecrawl": {
       "_": "The fallback page-fetching engine.",
       "api_key": "Firecrawl API key. FIRECRAWL_API_KEY wins over this.",
       "api_url": "A self-hosted Firecrawl instance to use instead of the hosted API."
     },
-    "web_fetch": {
-      "_": "Fetching a page directly.",
-      "proxy_url": "Route direct fetches and file downloads through an HTTP or SOCKS proxy, for sites that block by address. Empty fetches directly. Credentials may be embedded as http://user:pass@host:port."
-    },
-    "composio": {
-      "_": "Composio's hosted MCP gateway.",
-      "enabled": "Expose Composio's hosted gateway as one MCP server.",
-      "url": "The hosted MCP URL from the Composio dashboard's \"connect\" page.",
-      "api_key": "The API key shown beside that URL. COMPOSIO_API_KEY wins over this.",
-      "server_name": "The MCP server name its tools appear under.",
-      "timeout_seconds": "How long one call to that gateway waits."
+    "jina": {
+      "_": "The default page-fetching engine.",
+      "api_key": "Jina API key, which raises the rate limit. JINA_API_KEY wins over this."
     },
     "mcp": {
       "_": "MCP servers, read from mcp.json.",
       "servers": "MCP servers, by name. Edited on the MCP panel, which is where a server's command and credentials belong."
     },
+    "permission_reviewer": {
+      "_": "The model call that decides a tool call nobody is there to be asked about.",
+      "reasoning_effort": "How hard the judge thinks about one tool call. It weighs a command against a page of rules, which is not what an agent's own effort is for."
+    },
+    "providers": "Credentials for each model provider. The provider's own environment variable wins over anything stored here.",
     "remote_agents": {
       "_": "Agents on other hosts, read from remote-agents.json.",
       "agents": "Remote peers, by name. Edited on the peers panel."
+    },
+    "sandbox": {
+      "_": "What a session's tool children may do, enforced by the operating system.",
+      "enforce": "What to do on a machine that cannot enforce confinement: refuse to start the session, run with resource limits only, or do not confine.",
+      "filesystem": {
+        "_": "Which paths a tool child may read and write.",
+        "readable": "Paths under your home a tool child may read. The system is readable and is not listed.",
+        "writable": "Paths a tool child may write. Deliberately narrower than readable, because a wrong write is the failure people actually meet.",
+        "grantable": "Paths an agent may be granted at runtime without asking. Empty means every request is put to you.",
+        "deny": "Paths refused outright. Wins over readable and writable, and no request opens them."
+      },
+      "network": "Whether a tool child may reach the network at all.",
+      "limits": "Per-child resource limits, by their setrlimit names.",
+      "umask": "The file-creation mask a tool child runs under. Empty leaves the machine's own.",
+      "nice": "How far to lower a tool child's scheduling priority, so a runaway command does not take the machine with it."
     },
     "telemetry": {
       "_": "OpenTelemetry export.",
@@ -783,6 +780,10 @@
         "headers": "Headers sent with every export, for a collector that authenticates."
       },
       "sample_ratio": "Share of traces exported. 1.0 exports every one."
+    },
+    "toolbox": {
+      "_": "Whether a session may install the tools it needs into a profile of its own.",
+      "enabled": "Let each session install the tools it needs into a package profile of its own, deleted with the session."
     },
     "tuning": {
       "_": "How large, how many, and how patient the tools are.",
@@ -871,6 +872,22 @@
         "web_websocket_frames": "Frames retained per tracked websocket.",
         "web_websockets": "Live websockets a browser session tracks at once."
       }
+    },
+    "user_context": {
+      "_": "Whether the system prompt describes how you work on this machine.",
+      "enabled": "Include a snapshot of how you work — your editor, your habits, your machine — in the system prompt.",
+      "refresh_hours": "How old the snapshot may get before it is rebuilt. The rebuild runs in the background, so no message ever waits for it."
+    },
+    "web_fetch": {
+      "_": "Fetching a page directly.",
+      "download_timeout_seconds": "How long a download is given, which is longer than a fetch because it carries the whole file.",
+      "minimum_useful_characters": "Below this a page is a wall or a stub rather than the content, so the next engine is tried.",
+      "proxy_url": "Route direct fetches and file downloads through an HTTP or SOCKS proxy, for sites that block by address. Empty fetches directly. Credentials may be embedded as http://user:pass@host:port.",
+      "timeout_seconds": "How long one reader engine is given before the cascade moves on to the next."
+    },
+    "workspace": {
+      "_": "Where a session's tools run.",
+      "strategy": "Where a session's work happens: the project directory itself, a branch of its own, or a git worktree of its own."
     }
   },
   "SettingsChoices": {
