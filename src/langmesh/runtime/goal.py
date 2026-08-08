@@ -17,6 +17,8 @@ class Goal(BaseModel):
     status: str = "active"
     #: What is in the way, set when the agent reports the goal blocked.
     blocker: str = ""
+    #: What proved each requirement, set when the agent reports the goal satisfied.
+    evidence: str = ""
     #: How many turns have been opened since a person last spoke, and deliberately not shown to the model.
     continuations: int = 0
 
@@ -26,6 +28,10 @@ class Goal(BaseModel):
     BLOCKED: ClassVar[str] = "blocked"
     #: Set when the goal used its whole allowance, which is distinct from anyone claiming it is stuck.
     PARKED: ClassVar[str] = "parked"
+    #: Reached, and kept rather than dropped so the person can see what was reached and take it up again.
+    SATISFIED: ClassVar[str] = "satisfied"
+    #: No longer what the person wants, kept for the same reason.
+    CLEARED: ClassVar[str] = "cleared"
 
     @property
     def is_open(self) -> bool:
@@ -50,4 +56,5 @@ class Goal(BaseModel):
             "requirements": list(self.requirements),
             "status": self.status,
             "blocker": self.blocker,
+            "evidence": self.evidence,
         }

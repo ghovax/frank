@@ -3,7 +3,7 @@
 import { Box, Flex, IconButton, Spinner, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuCircleSlash, LuDot, LuSquare, LuTarget } from "react-icons/lu";
+import { LuCircleCheck, LuCircleSlash, LuDot, LuSquare, LuTarget, LuX } from "react-icons/lu";
 import { Tooltip } from "./ui/tooltip";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { ProseList } from "./ui/display";
@@ -17,14 +17,29 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
   if (!text) return null;
 
   const status = goal.status || "active";
+  // A resolved goal stops driving the session but stays on the record, so the bar keeps showing it.
+  const resolved = status === "satisfied" || status === "cleared";
   // The status is the one thing here that changes, so it is the one thing that carries a colour.
-  const tone = status === "blocked" ? "red.fg" : status === "parked" ? "orange.fg" : "blue.fg";
+  const tone =
+    status === "blocked"
+      ? "red.fg"
+      : status === "parked"
+        ? "orange.fg"
+        : status === "satisfied"
+          ? "green.fg"
+          : status === "cleared"
+            ? "fg.muted"
+            : "blue.fg";
   const statusLabel =
     status === "blocked"
       ? translation("blocked")
       : status === "parked"
         ? translation("waiting")
-        : translation("working");
+        : status === "satisfied"
+          ? translation("satisfied")
+          : status === "cleared"
+            ? translation("cleared")
+            : translation("working");
 
   // The requirements are the goal's substance, but taller than the bar, so they live in the hover card.
   const detail = (
@@ -67,12 +82,26 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
         boxShadow="panel"
         bg="bg.panel"
       >
-        <Tooltip content={detail} rich openDelay={200} closeDelay={60} positioning={{ placement: "top" }}>
+        <Tooltip
+          content={detail}
+          rich
+          openDelay={200}
+          closeDelay={60}
+          positioning={{ placement: "top" }}
+        >
           <Flex align="center" gap={2} flex={1} minW={0} color={tone}>
             {/* Work in progress is shown as motion; a stopped goal is shown as the thing that stopped it. */}
-            <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0} boxSize="13px">
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              flexShrink={0}
+              boxSize="13px"
+            >
               {status === "active" ? (
                 <Spinner boxSize="13px" borderWidth="1.5px" color={tone} />
+              ) : status === "satisfied" ? (
+                <LuCircleCheck size={13} />
               ) : (
                 <LuCircleSlash size={13} />
               )}
@@ -80,7 +109,12 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
             {/* One size, so the two read as one line, but told apart three ways: the label carries the
                 status colour and the heavier weight, the goal carries the plain foreground, and a dot
                 sits between them — the same separator the record's qualifiers use. */}
-            <Text textStyle="xs" fontWeight="medium" flexShrink={0} display={{ base: "none", sm: "block" }}>
+            <Text
+              textStyle="xs"
+              fontWeight="medium"
+              flexShrink={0}
+              display={{ base: "none", sm: "block" }}
+            >
               {statusLabel}
             </Text>
             <Box
@@ -98,16 +132,16 @@ export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => v
           </Flex>
         </Tooltip>
         <IconButton
-          aria-label={translation("stop")}
-          title={translation("stop")}
+          aria-label={translation(resolved ? "dismiss" : "stop")}
+          title={translation(resolved ? "dismiss" : "stop")}
           size="2xs"
           variant="plain"
-          colorPalette="red"
-          color="red.fg"
+          colorPalette={resolved ? "gray" : "red"}
+          color={resolved ? "fg.subtle" : "red.fg"}
           flexShrink={0}
-          onClick={() => setConfirming(true)}
+          onClick={() => (resolved ? onClear() : setConfirming(true))}
         >
-          <LuSquare size={13} />
+          {resolved ? <LuX size={13} /> : <LuSquare size={13} />}
         </IconButton>
       </Flex>
       <ConfirmDialog

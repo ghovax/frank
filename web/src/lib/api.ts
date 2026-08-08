@@ -1354,9 +1354,11 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
 export interface SessionGoal {
   text: string;
   requirements: string[];
-  // `active` while worked, `blocked` on an obstacle it cannot pass, `parked` after a long unattended stretch.
-  status: "active" | "blocked" | "parked";
+  // `active` while worked, `blocked` on an obstacle it cannot pass, `parked` after a long unattended stretch,
+  // `satisfied` or `cleared` once it is resolved and kept on the record rather than dropped.
+  status: "active" | "blocked" | "parked" | "satisfied" | "cleared";
   blocker: string;
+  evidence?: string;
 }
 
 export interface SessionSummary {

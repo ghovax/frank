@@ -1191,7 +1191,9 @@ class _DispatchesTools:
                     "Say what proves it: for each requirement, what you looked at and what it showed."
                 )
             else:
-                self.write_goal(None)
+                self.write_goal(
+                    current.model_copy(update={"status": Goal.SATISFIED, "evidence": evidence})
+                )
                 result = {
                     "code": "goal_satisfied",
                     "previous_goal": current.text,
@@ -1213,7 +1215,7 @@ class _DispatchesTools:
             if current is None:
                 result = refuse("There is no goal to clear.")
             else:
-                self.write_goal(None)
+                self.write_goal(current.model_copy(update={"status": Goal.CLEARED}))
                 result = {"code": "goal_cleared", "previous_goal": current.text}
                 self._record_event("goal_updated", result)
         else:

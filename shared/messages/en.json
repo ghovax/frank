@@ -241,7 +241,10 @@
   "GoalBar": {
     "blocked": "Blocked",
     "blocker": "In the way",
+    "cleared": "Called off",
+    "dismiss": "Dismiss",
     "requirements": "Done when",
+    "satisfied": "Reached",
     "stop": "Stop",
     "stopBody": "The goal is cleared and the session carries on without one. What has already been done is untouched.",
     "stopConfirm": "Stop the goal",

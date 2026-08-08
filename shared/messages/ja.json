@@ -241,7 +241,10 @@
   "GoalBar": {
     "blocked": "行き詰まり",
     "blocker": "障害",
+    "cleared": "取り消し済み",
+    "dismiss": "閉じる",
     "requirements": "完了条件",
+    "satisfied": "達成",
     "stop": "中止",
     "stopBody": "目標は解除され、セッションは目標なしで続きます。すでに行われた作業はそのままです。",
     "stopConfirm": "目標を中止",
