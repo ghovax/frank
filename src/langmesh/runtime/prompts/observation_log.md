@@ -1,6 +1,6 @@
 # Conversation memory
 
-These records were written as the conversation went, one exchange at a time, and they are all that remains of the turns you can no longer see. Nothing here duplicates what is still in front of you.
+These records were written as the conversation went, one exchange at a time. The two halves are here on different terms: what the work established is all that remains of turns you can no longer see, and never repeats what is still in front of you, while what the person asked for is restated in full every turn whether or not you can still see them asking.
 
 **Build on these records. Do not build around them.**
 
@@ -17,7 +17,7 @@ The turns below the records are the most recent ones that fit the space kept for
 
 ## What the person asked for
 
-These instructions still bind. They were given earlier in this conversation and did not expire when the turns holding them were folded away. Where an instruction and anything else here seem to differ, the instruction is what the person wants.
+These instructions still bind. Every one the person has given in this conversation is here, whether it was said a moment ago or a hundred turns back, because an instruction governs the work rather than describing it and does not lapse by being scrolled past. Where an instruction and anything else here seem to differ, the instruction is what the person wants.
 
 ```jsonl
 {{ directives }}

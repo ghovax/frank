@@ -173,8 +173,7 @@ class _CompactsContext:
             (
                 index
                 for index in range(len(self._conversation) - 1, -1, -1)
-                if isinstance(self._conversation[index], HumanMessage)
-                and not self._conversation[index].additional_kwargs.get("reminder")
+                if _opens_an_exchange(self._conversation[index])
             ),
             None,
         )
