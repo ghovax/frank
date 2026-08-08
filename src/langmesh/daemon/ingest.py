@@ -146,6 +146,30 @@ async def _session_event(params: dict) -> dict:
     """A live turn event, or a change in whether the session is waiting on a human."""
     event = params.get("event") or {}
     session_id = str(event.get("session_id") or params.get("session_id") or "")
+    if "recording_memory" in event:
+        recording = event.get("recording_memory") or {}
+        identifier = str(recording.get("id") or "")
+        active = bool(recording.get("active"))
+        recordings = state._recording_memory_contexts.setdefault(session_id, set())
+        was_active = bool(recordings)
+        if active and identifier:
+            recordings.add(identifier)
+        else:
+            recordings.discard(identifier)
+        if not recordings:
+            state._recording_memory_contexts.pop(session_id, None)
+        is_active = bool(recordings)
+        state.broadcaster.publish(
+            {
+                "type": "recording_memory_changed",
+                "session": session_id,
+                "active": is_active,
+                "count": len(recordings),
+            }
+        )
+        if was_active != is_active:
+            state.broadcaster.publish({"type": "sessions_changed"})
+        return {"noted": True}
     if "running" in event:
         # Whether a turn is in flight, which the registry cannot infer from a process that is alive either way.
         _set_turn_state(session_id, bool(event.get("running")), bool(event.get("retains")))

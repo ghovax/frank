@@ -20,10 +20,12 @@ Write one entry per finding. What decides the number is how many distinct things
 
 Keep:
 
-- Concrete identifiers exactly as they appear: paths, ids, names, commands, numbers, versions, error codes.
+- Only the identifiers future work must use, kept exactly as they appear: paths, ids, names, commands, numbers, versions and error codes.
 - What was ruled out and how it failed, because a failure costs as much to establish as a success and without it the next reader tries it again.
 - The reasoning that led to a decision, not only the decision itself.
 - What is still open, and the next concrete step it implies.
+
+**Synthesize; never transcribe.** Explain the durable meaning and implications in your own compact words. Summarize a long collection by its structure, categories, count and a few representative examples; never paste raw tool output, reproduce the answer, or enumerate every item merely because it appeared.
 
 Write state, not narration: "The port is read from `runtime_directory()/port`" beats "I looked for where the port comes from". Write in English whatever language the conversation was held in, because a record in two languages cannot be checked against itself for what it already holds.
 
@@ -32,15 +34,15 @@ Write state, not narration: "The port is read from `runtime_directory()/port`" b
 An entry written needlessly is carried for the rest of the conversation. Before writing one, ask whether somebody resuming this work would be worse off without it. These never pass that test:
 
 - **Anything about yourself** — that you answered, complied, followed an instruction, chose a tool or read a reminder — because your own conduct is not a finding about the work.
-- **Furniture you happened to see** — a file you did not act on, a directory listing, a size or timestamp nothing turned on — because noticing something is not establishing it.
+- **Furniture you happened to see** — a file you did not act on, or a listing used only to orient yourself, because noticing something is not establishing it. A file inventory or project structure the user requested, or that the work relied on, belongs as a compact interpretation of its structure and significance, never as the list itself.
 - **The obvious restated**, such as that a file exists because you just read it, since the finding is what it *said* rather than that it happened.
 - **What the person asked for**, since a rule they stated — a language to write in, a library not to use, a file not to touch — belongs in their own record below, however much it reads like a constraint, while what belongs here is a limit the environment imposes rather than one they imposed.
-- **The content of an answer** — what a search returned, what a page said, the figures in a report you summarised — because that is the work's output, which they have already read, rather than knowledge about the work.
+- **The answer or raw result reproduced as memory** — extract and explain only the durable facts. Requested inventories, interfaces, decisions and verified behavior can remain findings, but their presentation to the user is never the record.
 - **The record itself** — that a request was fulfilled, that an earlier entry no longer applies, that something is resolved — so supersede the entry instead, because an entry about the ledger tells the next reader nothing about the work.
 
 Record instead what the *doing* established: that a source is reachable, that a tool behaves a certain way, that a number had to be derived rather than looked up. A headline is not a finding, though the fact that it could be fetched at all may be.
 
-An exchange that established nothing durable deserves no entries, and returning none is the right answer. Where a real detail is borderline, keep it: a redundant finding costs one entry, and a lost one costs the work that produced it.
+An exchange that established nothing durable deserves no entries, and returning none is the right answer. An exchange that inspected project state with tools normally established at least one durable finding; return an empty list only when a future worker truly gains nothing from the result. Where a real detail is borderline, keep it: a redundant finding costs one entry, and a lost one costs the work that produced it.
 
 ## The record so far
 

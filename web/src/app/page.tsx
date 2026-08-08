@@ -254,6 +254,7 @@ function Workspace() {
         ended: session.lifecycle === "ended",
         failed: session.outcome === "failed",
         awaitingInput: session.awaiting_input ?? false,
+        recordingMemory: session.recording_memory ?? false,
         exitReason: session.exit_reason,
         permissionMode: session.permission_mode,
         goal: session.goal ?? null,
@@ -867,6 +868,7 @@ function Workspace() {
           onSidePanelWidthChange={setSidePanelWidth}
           onPermissionModeChange={setSelectedPermissionMode}
           sessionRunning={activeSessionRunning}
+          initialRecordingMemory={activeSession?.recordingMemory ?? false}
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}
           workingDirectory={workingDirectory}

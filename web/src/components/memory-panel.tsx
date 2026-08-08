@@ -2,7 +2,7 @@
 
 // What a session remembers: the findings its work established, and the instructions it was given.
 
-import { Badge, Box, Button, Flex, Text, VStack } from "@chakra-ui/react";
+import { Badge, Box, Button, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -102,7 +102,6 @@ function retired(entry: RecordEntry): boolean {
 
 // How sure the record is of an entry, which the reader needs before acting on it.
 const STANDING_TONE: Record<string, string> = {
-  verified: "green",
   reported: "gray",
   inferred: "orange",
 };
@@ -185,7 +184,8 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
     : entry.kind
       ? labels.kind[entry.kind]
       : "";
-  const standing = entry.standing ? labels.standing[entry.standing] : "";
+  const standing =
+    entry.standing && entry.standing !== "verified" ? labels.standing[entry.standing] : "";
   const qualifiers = [
     label ? (
       <Qualifier
@@ -281,9 +281,11 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
 
 export function MemoryPanel({
   sessionId,
+  recording = false,
   onClose,
 }: {
   sessionId: string | null;
+  recording?: boolean;
   onClose?: () => void;
 }) {
   const translation = useTranslations("MemoryPanel");
@@ -356,7 +358,6 @@ export function MemoryPanel({
         preference: translation("kind.preference"),
       },
       standing: {
-        verified: translation("standing.verified"),
         reported: translation("standing.reported"),
         inferred: translation("standing.inferred"),
       },
@@ -380,7 +381,7 @@ export function MemoryPanel({
   return (
     <PanelCard>
       <PanelHeader
-        icon={<LuBookMarked size={14} />}
+        icon={recording ? <Spinner size="xs" colorPalette="orange" /> : <LuBookMarked size={14} />}
         title={translation("title")}
         onClose={onClose}
         closeLabel={translation("collapsePanel")}

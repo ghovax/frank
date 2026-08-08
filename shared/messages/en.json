@@ -160,6 +160,7 @@
     "loadConversationErrorDescription": "The transcript failed to load. Check the connection and try again.",
     "loadConversationErrorTitle": "Couldn’t load this conversation",
     "memory": "Memory",
+    "recordingMemory": "Recording memory",
     "newConversation": "New conversation",
     "openThisFolder": "Open this folder",
     "path": "Path",
@@ -304,8 +305,7 @@
     "revisions": "{count, plural, one {# earlier version} other {# earlier versions}}",
     "standing": {
       "inferred": "Inferred",
-      "reported": "Reported",
-      "verified": "Verified"
+      "reported": "Reported"
     },
     "title": "Memory"
   },
@@ -1049,7 +1049,7 @@
     "running": "Running",
     "modifying": "Modifying",
     "mutationUndeclared": "Mutation undeclared",
-    "accessRequested": "Access"
+    "requestingAccess": "Requesting access"
   },
   "ToolDisplay": {
     "waited": "Waited {seconds}s",

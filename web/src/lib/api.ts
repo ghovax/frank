@@ -1378,6 +1378,7 @@ export interface SessionSummary {
   // How an ended session finished: `exited` or `failed`. Empty while it is live.
   outcome: string;
   awaiting_input: boolean;
+  recording_memory: boolean;
   title: string;
   working_directory: string;
   workspace_id: string;

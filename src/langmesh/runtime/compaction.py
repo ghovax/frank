@@ -6,6 +6,7 @@ import asyncio
 import logging
 from itertools import accumulate, takewhile
 
+from langmesh.base.identifiers import new_id
 from langmesh.base.message_content import forget_carried_reasoning, message_text
 from langmesh.base.tuning import Tunable, active_tuning, count_tokens
 from langmesh.runtime.internals import (
@@ -209,10 +210,34 @@ class _CompactsContext:
         exchange = self._current_exchange()
         if len(exchange) < 2 or self._turn_store is None:
             return
-        task = asyncio.create_task(self.observe_exchange(exchange))
+        task = asyncio.create_task(self._observe_exchange_with_status(exchange))
         # Held, or the loop may collect a fold mid-flight and drop the record it was writing.
         self._folds_in_flight.add(task)
         task.add_done_callback(self._folds_in_flight.discard)
+
+    async def _publish_memory_recording(self, identifier: str, active: bool) -> None:
+        """Publish whether one post-turn memory pass is active."""
+        publish = getattr(self._turn_store, "publish_event", None)
+        if publish is None:
+            return
+        try:
+            await publish(
+                {
+                    "session_id": self._session_id,
+                    "recording_memory": {"id": identifier, "active": active},
+                }
+            )
+        except Exception:  # noqa: BLE001 — feedback must not decide whether the record is written
+            logger.warning("could not publish memory recording state", exc_info=True)
+
+    async def _observe_exchange_with_status(self, exchange: list) -> None:
+        """Record one exchange while exposing its lifecycle to attached clients."""
+        identifier = new_id("recording")
+        await self._publish_memory_recording(identifier, True)
+        try:
+            await self.observe_exchange(exchange)
+        finally:
+            await self._publish_memory_recording(identifier, False)
 
     async def observe_exchange(self, exchange: list | None = None) -> None:
         """Record what the exchange established, stored now and shown only once its turns are gone."""

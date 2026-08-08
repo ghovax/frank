@@ -9,6 +9,7 @@ import {
   IconButton,
   Menu,
   Separator,
+  Spinner,
   Text,
   VStack,
 } from "@chakra-ui/react";
@@ -143,6 +144,7 @@ interface ChatPanelProps {
   initialPermissionMode?: PermissionMode;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
+  initialRecordingMemory?: boolean;
   onSessionCreated: (sessionId: string) => void;
   onSlashCommand?: (command: string) => void;
   workingDirectory?: string;
@@ -280,6 +282,7 @@ export function ChatPanel({
   initialPermissionMode = "ask",
   onPermissionModeChange,
   sessionRunning = false,
+  initialRecordingMemory = false,
   onSessionCreated,
   workingDirectory,
   workspaceId = "",
@@ -344,6 +347,27 @@ export function ChatPanel({
   const chatReady = isConnected;
   // The one condition under which the transcript is in the DOM, read by the render and by everything touching scroll.
   const transcriptVisible = chatReady && !isHistoryLoading;
+  const [recordingMemoryEvent, setRecordingMemoryEvent] = useState<{
+    session: string;
+    active: boolean;
+  } | null>(null);
+  const recordingMemory =
+    recordingMemoryEvent?.session === sessionId
+      ? recordingMemoryEvent.active
+      : initialRecordingMemory;
+
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribeEvents((event) => {
+      const recording = event as {
+        type: string;
+        session?: string;
+        active?: boolean;
+      };
+      if (recording.type === "recording_memory_changed" && recording.session === sessionId)
+        setRecordingMemoryEvent({ session: recording.session, active: recording.active === true });
+    });
+  }, [sessionId]);
 
   // The workspace's locations for the terminal picker, refreshed when the workspace configuration changes.
   const [workspaceLocations, setWorkspaceLocations] = useState<Location[]>([]);
@@ -886,6 +910,7 @@ export function ChatPanel({
         <MemoryPanel
           key={sessionId}
           sessionId={sessionId}
+          recording={recordingMemory}
           onClose={() => setSidePanelOpen("memory", false)}
         />
       ),
@@ -959,10 +984,17 @@ export function ChatPanel({
               />
               {/* What this conversation remembers of the turns that have left its window. */}
               <ToolbarAction
-                label={translation("memory")}
-                icon={<LuBookMarked size={CONTROL_ICON_SIZE} />}
+                label={translation(recordingMemory ? "recordingMemory" : "memory")}
+                icon={
+                  recordingMemory ? (
+                    <Spinner size="xs" colorPalette="orange" />
+                  ) : (
+                    <LuBookMarked size={CONTROL_ICON_SIZE} />
+                  )
+                }
                 active={memoryPanelOpen}
                 colorPalette="orange"
+                indicator={recordingMemory}
                 onClick={() => setSidePanelOpen("memory", !memoryPanelOpen)}
               />
               <ToolbarAction

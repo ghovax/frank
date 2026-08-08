@@ -37,6 +37,7 @@ export interface SessionEntry {
   // Set when an ended session ended badly.
   failed: boolean;
   awaitingInput: boolean;
+  recordingMemory: boolean;
   // Why an ended session ended, when the daemon knows — shown on the status dot.
   exitReason: string;
   permissionMode: PermissionMode;

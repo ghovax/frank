@@ -44,6 +44,7 @@ cursor_login_flow: Any = None
 # Per-session liveness the daemon learns from the event stream rather than from the registry.
 _running_contexts: dict[str, int] = {}
 _awaiting_input_contexts: set[str] = set()
+_recording_memory_contexts: dict[str, set[str]] = {}
 # The goal each live session is working toward, as its worker last reported it.
 _session_goals: dict[str, dict] = {}
 
@@ -64,6 +65,7 @@ refresh_live_session_locations: Optional[Callable[[str], Awaitable[Any]]] = None
 
 async def session_deleted(session_id: str) -> None:
     """Tell the control plane a session's record has been deleted, if there is one."""
+    _recording_memory_contexts.pop(session_id, None)
     if on_session_deleted is None:
         return
     await on_session_deleted(session_id)
@@ -86,6 +88,7 @@ async def workspace_locations_changed(workspace_id: str) -> None:
 __all__ = [
     "Broadcaster",
     "_awaiting_input_contexts",
+    "_recording_memory_contexts",
     "_running_contexts",
     "_session_goals",
     "agent_cards",

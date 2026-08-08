@@ -60,8 +60,8 @@ export function ToolAccessBadges({
     badges.push(<Pill key="mutation-undeclared">{translation("mutationUndeclared")}</Pill>);
   if (access.any)
     badges.push(
-      <Pill key="access" colorPalette="purple">
-        {translation("accessRequested")}
+      <Pill key="requesting-access" colorPalette="purple">
+        {translation("requestingAccess")}
       </Pill>,
     );
   if (badges.length === 0) return null;

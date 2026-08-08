@@ -213,6 +213,7 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     ),
                     "running": row.id in state._running_contexts,
                     "awaiting_input": row.id in state._awaiting_input_contexts,
+                    "recording_memory": bool(state._recording_memory_contexts.get(row.id)),
                     # What this session is working toward, read from the live map because a goal belongs to its process.
                     "goal": state._session_goals.get(row.id),
                     # What the session is doing, which its lifecycle deliberately does not say.

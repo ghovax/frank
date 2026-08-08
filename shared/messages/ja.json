@@ -160,6 +160,7 @@
     "loadConversationErrorDescription": "トランスクリプトの読み込みに失敗しました。接続を確認して、もう一度お試しください。",
     "loadConversationErrorTitle": "この会話を読み込めませんでした",
     "memory": "メモリ",
+    "recordingMemory": "メモリを記録中",
     "newConversation": "新しい会話",
     "openThisFolder": "このフォルダを開く",
     "path": "パス",
@@ -304,8 +305,7 @@
     "revisions": "以前のバージョン {count} 件",
     "standing": {
       "inferred": "推論",
-      "reported": "報告",
-      "verified": "確認済み"
+      "reported": "報告"
     },
     "title": "メモリ"
   },
@@ -1049,7 +1049,7 @@
     "running": "実行中",
     "modifying": "変更中",
     "mutationUndeclared": "変更の宣言なし",
-    "accessRequested": "アクセス"
+    "requestingAccess": "アクセスをリクエスト中"
   },
   "ToolDisplay": {
     "waited": "{seconds}秒待機しました",

@@ -102,7 +102,11 @@ def _assert_agent_exists(agent: str, working_directory: str) -> None:
 def _public(record: SessionRecord) -> dict:
     """A session as a client sees it, with `busy` set from what is actually mid-turn before activity is derived."""
     record.busy = record.id in state._running_contexts
-    return {**record.public(), "goal": state._session_goals.get(record.id)}
+    return {
+        **record.public(),
+        "goal": state._session_goals.get(record.id),
+        "recording_memory": bool(state._recording_memory_contexts.get(record.id)),
+    }
 
 
 def _resolve_sandbox(agent: str, working_directory: str, parent, read_only: bool = False) -> dict:
