@@ -53,6 +53,11 @@ export interface ToolEvent {
   question?: ToolQuestion;
 }
 
+/** Whether a call is finished, and so whether its arguments are whole rather than mid-stream. */
+export function isSettled(event: { result?: unknown; status?: ToolEventStatus }): boolean {
+  return event.result !== undefined || event.status !== "running";
+}
+
 export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: string): boolean {
   const idMatches = !!toolCallId && event.toolCallId === toolCallId;
   const fallbackMatches = !toolCallId && event.result == null && event.name === name;

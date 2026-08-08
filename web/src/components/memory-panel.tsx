@@ -240,7 +240,8 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
       opacity={retired(entry) ? 0.55 : 1}
     >
       <Body entry={entry} />
-      <Flex align="center" gap={0.5} mt={0.5} wrap="wrap" color="fg.muted">
+      {/* Wider than the gaps inside the body: these are qualifiers about the entry, not another line of it. */}
+      <Flex align="center" gap={0.5} mt={2} wrap="wrap" color="fg.muted">
         {qualifiers.map((qualifier, index) => (
           <Fragment key={index}>
             {index > 0 ? <Dot /> : null}

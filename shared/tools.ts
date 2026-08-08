@@ -191,8 +191,8 @@ export function toolCallDisplay(
   args: Record<string, unknown> | undefined,
   settled = false,
 ): ToolDisplay {
-  // Only once the call has settled. Watching a label being typed, and be replaced when the argument that was
-  // being typed turns out to have been a prefix, costs the reader more attention than the wait does.
+  // Only once the call has settled, and never from a guess about argument order: the schema declares
+  // `explanation` first but a provider may stream it last, so a partial object proves nothing about it.
   return {
     ...(TOOL_GLYPHS[name] ?? { glyph: "wrench", tint: "fg.muted" }),
     label: settled && args?.explanation ? String(args.explanation) : "",

@@ -771,7 +771,8 @@ export function ChatPanel({
           kind: "permission",
           permission,
           // The title says what the agent is trying to do, and the detail says what made this stop for approval.
-          title: getToolCallDisplay(name, args).label,
+          // A call held for approval has finished being written, or there would be nothing to approve.
+          title: getToolCallDisplay(name, args, true).label,
           // The structured reason wins, because it is the only one this interface can say in the reader's language.
           detail:
             permissionReasonText(permission.reason, translation) ||

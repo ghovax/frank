@@ -12,7 +12,7 @@ import { ToolCallLabel } from "./tool-label";
 import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
 import type { ToolEvent } from "@/lib/tool-event";
-import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
+import { hasBackgroundJobId, isSettled, toolStatus } from "@/lib/tool-event";
 import {
   ToolCall,
   ToolCallDetail,
@@ -91,7 +91,10 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
   const latestTool = tools[tools.length - 1];
   // The newest call has nothing to say yet, so the line follows the newest one that does and never empties.
   const labelledTool = useMemo(
-    () => [...tools].reverse().find((tool) => getToolCallDisplay(tool.name, tool.arguments).label),
+    () =>
+      [...tools]
+        .reverse()
+        .find((tool) => getToolCallDisplay(tool.name, tool.arguments, isSettled(tool)).label),
     [tools],
   );
   const headingDisplay = latestTool
@@ -105,7 +108,7 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
     [tools],
   );
   const latestLabel = labelledTool
-    ? getToolCallDisplay(labelledTool.name, labelledTool.arguments).label
+    ? getToolCallDisplay(labelledTool.name, labelledTool.arguments, isSettled(labelledTool)).label
     : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
@@ -163,7 +166,11 @@ export const ToolGroup = memo(function ToolGroup({ tools, keepOpen = false }: To
           textOverflow="ellipsis"
         >
           {labelledTool ? (
-            <ToolCallLabel name={labelledTool.name} args={labelledTool.arguments} />
+            <ToolCallLabel
+              name={labelledTool.name}
+              args={labelledTool.arguments}
+              settled={isSettled(labelledTool)}
+            />
           ) : (
             headingText
           )}
