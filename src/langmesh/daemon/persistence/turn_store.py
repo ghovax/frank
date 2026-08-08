@@ -187,7 +187,7 @@ class AppendOnlyTaskStore(TaskStore):
     def __init__(self, engine: AsyncEngine):
         self._engine = engine
         self._metadata = MetaData()
-        # The task head: small, mutable, and under its own table name so it cannot collide with an older schema.
+        # The task head is small and mutable; history remains append-only below it.
         self._head = Table(
             "turn_head",
             self._metadata,

@@ -36,8 +36,7 @@ EOF
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout "$WORK/langmesh.key" -out "$WORK/langmesh.crt" -config "$WORK/cert.conf" 2>/dev/null
 
-# Bundle into a PKCS#12. macOS's `security import` cannot read OpenSSL 3.x's default MAC,
-# so use the system LibreSSL, which writes the compatible legacy format.
+# Bundle with the system LibreSSL because macOS `security import` rejects OpenSSL 3.x's default MAC.
 /usr/bin/openssl pkcs12 -export -inkey "$WORK/langmesh.key" -in "$WORK/langmesh.crt" \
   -out "$WORK/langmesh.p12" -name "$IDENTITY" -passout pass:langmesh 2>/dev/null
 

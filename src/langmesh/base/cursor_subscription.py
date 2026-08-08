@@ -207,7 +207,6 @@ async def _fetch_variants(tokens: CursorTokens) -> dict[str, _Variant]:
                 parameters=tuple(sorted(values.items())),
                 context=_token_limit(values.get("context")),
             )
-            remember(str(raw_variant.get("legacySlug") or ""), variant)
             remember(str(base_name), variant)
     return variants
 

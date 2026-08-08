@@ -127,6 +127,8 @@ compaction:
   # When to fold. Late on purpose: a fold rewrites the conversation, which throws away the prompt
   # cache the provider was holding, and held context is cheap by comparison while that cache lasts.
   reclaim_at_fraction: 0.85
+  # The maximum share live observational memories may occupy before related findings are consolidated.
+  observational_memory_limit_fraction: 0.1
   # Held back for the answer the model is about to write. Every other fraction here is a share of
   # what is left after it.
   output_reserve_fraction: 0.1

@@ -41,11 +41,14 @@ def read_pairing_link(link: str) -> dict[str, str]:
         raise PairingLinkError("That is not a LangMesh pairing link.") from error
     if not isinstance(payload, dict):
         raise PairingLinkError("That is not a LangMesh pairing link.")
-    endpoint = str(payload.get("endpoint") or "").rstrip("/")
-    token = str(payload.get("token") or "")
-    if not endpoint or not token:
+    if payload.get("version") != 1:
+        raise PairingLinkError("That is not a current LangMesh pairing link.")
+    name = payload.get("name")
+    endpoint = payload.get("endpoint")
+    token = payload.get("token")
+    if not all(isinstance(value, str) and value.strip() for value in (name, endpoint, token)):
         raise PairingLinkError("That link is missing its address or its token.")
-    return {"name": str(payload.get("name") or endpoint), "endpoint": endpoint, "token": token}
+    return {"name": name.strip(), "endpoint": endpoint.rstrip("/"), "token": token}
 
 
 def _serialize(record: MachineRecord) -> dict[str, Any]:

@@ -56,6 +56,23 @@ class _CompactsContext:
         batch = await self._emit_batch(ObservationBatch, request, "observer")
         return list(batch.observations) if batch else []
 
+    async def _consolidate_observations(self, observations: list[dict]) -> list[dict]:
+        """Ask the model for a smaller replacement set for related live findings."""
+        entries = await self._emit_observations(
+            [
+                SystemMessage(
+                    content=self._prompt_loader.load(
+                        "consolidate_observational_memory",
+                        {"observations": lines(self._readable(self._live(observations)))},
+                    )
+                ),
+                HumanMessage(
+                    content=self._prompt_loader.load("consolidate_observational_memory_now", {})
+                ),
+            ]
+        )
+        return self._identified(entries)
+
     @staticmethod
     def _live(entries: list[dict]) -> list[dict]:
         """What nothing later replaced. The superseded stay stored; they simply stop being read."""
@@ -268,6 +285,46 @@ class _CompactsContext:
             logger.warning("could not read the %s ledger", ledger, exc_info=True)
             return []
 
+    async def _settle_observations(self) -> None:
+        """Wait for completed exchanges to reach the ledger before dropping their turns."""
+        pending = tuple(self._folds_in_flight)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    async def _consolidate_observations_if_needed(self, observations: list[dict]) -> list[dict]:
+        """Consolidate an oversized live record only when the replacement is genuinely smaller."""
+        live = self._live(observations)
+        usable = self._usable_context()
+        if usable <= 0:
+            return live
+        before_tokens = count_tokens(lines(self._readable(live)))
+        limit = int(
+            usable * self._global_configuration.compaction.observational_memory_limit_fraction
+        )
+        if before_tokens <= limit:
+            return live
+        replacements = await self._consolidate_observations(live)
+        known_identifiers = {str(entry.get("id") or "") for entry in live}
+        replacements = [
+            entry
+            for entry in replacements
+            if str(entry.get("id") or "") not in known_identifiers
+            and entry.get("supersedes")
+            and {str(identifier) for identifier in entry.get("supersedes", [])}.issubset(
+                known_identifiers
+            )
+        ]
+        consolidated = self._live([*live, *replacements])
+        after_tokens = count_tokens(lines(self._readable(consolidated)))
+        if not replacements or after_tokens >= before_tokens:
+            logger.warning(
+                "observational memory consolidation did not reduce the live record",
+                extra=log_fields(before_tokens=before_tokens, after_tokens=after_tokens),
+            )
+            return live
+        await self._append_to_ledgers(replacements, [])
+        return await self._ledger("observations")
+
     async def carried_record(self):
         """The record to carry into this turn, which the two ledgers earn a place in on different terms."""
         if self._turn_store is None:
@@ -356,9 +413,11 @@ class _CompactsContext:
                 messages_before=messages_before,
                 tokens_before=tokens_before,
             )
+            await self._settle_observations()
             self._conversation[:] = _without_provider_reasoning(
                 await self._compaction.compact(state)
             )
+            self._carried_record = await self.carried_record()
             yield CompactionDone(
                 reason=reason,
                 ok=True,
@@ -374,6 +433,7 @@ class _CompactsContext:
         yield CompactionStarted(
             reason=reason, messages_before=messages_before, tokens_before=tokens_before
         )
+        await self._settle_observations()
         kept = self._bounded_tail(self._conversation)
         if len(kept) >= messages_before:
             # Everything already fits, so a deliberate request is answered rather than met with silence.
@@ -389,7 +449,10 @@ class _CompactsContext:
             return
         self._conversation[:] = _without_provider_reasoning(kept)
         self._latest_context_tokens = conversation_tokens(self._conversation)
-        recorded = await self._ledger("observations")
+        recorded = await self._consolidate_observations_if_needed(
+            await self._ledger("observations")
+        )
+        self._carried_record = await self.carried_record()
         yield CompactionDone(
             reason=reason,
             ok=True,
@@ -397,7 +460,7 @@ class _CompactsContext:
             messages_after=len(self._conversation),
             tokens_before=tokens_before,
             tokens_after=self._latest_context_tokens,
-            log_tokens=count_tokens(lines(recorded)),
+            log_tokens=count_tokens(lines(self._readable(self._live(recorded)))),
         )
 
 

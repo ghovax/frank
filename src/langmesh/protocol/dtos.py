@@ -143,9 +143,9 @@ class CompactionUpdateRequest(BaseModel):
 
     automatic: bool | None = None
     reclaim_at_fraction: float | None = None
+    observational_memory_limit_fraction: float | None = Field(default=None, gt=0, lt=1)
     output_reserve_fraction: float | None = None
     recent_working_set_fraction: float | None = None
-    verbatim_user_fraction: float | None = None
 
 
 class MCPToolCallRequest(BaseModel):

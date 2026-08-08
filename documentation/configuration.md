@@ -223,7 +223,7 @@ Three tools take per-call rules on each agent, and they are the three whose call
 compaction:
   automatic: true
   reclaim_at_fraction: 0.85
-  condense_log_at_fraction: 0.3
+  observational_memory_limit_fraction: 0.1
   output_reserve_fraction: 0.1
   recent_working_set_fraction: 0.25
 ```
@@ -233,7 +233,7 @@ When a conversation outgrows the window, the older half is folded into a dense o
 - `output_reserve_fraction` is held back for the answer the model is about to write; everything else here is a share of what remains, so a fraction means what it says.
 - `reclaim_at_fraction` is when the fold runs. It is late on purpose. A fold is the one thing that rewrites the conversation, and a rewritten prefix is a prompt cache thrown away — so it is paid for twice, once in the model calls it takes and again in the full-price re-read on the next call. Held context is cheap by comparison while the cache holds. Folding earlier costs more, and folding later is worse again, because a larger backlog is a larger thing for the Observer to read.
 - `recent_working_set_fraction` is how much stays verbatim. Measured in tokens rather than turns, because an unattended run is one instruction and several hundred tool results, and a turn count reads that as nothing worth folding.
-- `condense_log_at_fraction` is when the log itself is condensed, once it has grown large enough to be worth rewriting.
+- `observational_memory_limit_fraction` is the maximum share live observational memories may occupy. When they cross it, related findings are consolidated into a smaller interpretation that supersedes their source records without erasing the append-only history.
 
 ## Tool tuning
 

@@ -2,7 +2,7 @@
 
 // What a session remembers: the findings its work established, and the instructions it was given.
 
-import { Badge, Box, Button, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Badge, Box, Button, Collapsible, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -146,8 +146,16 @@ function Qualifier({
   );
 }
 
-// Every field is markdown the model may have marked up, truncated to one line because a list is scanned rather than read, with the whole text on the title.
-function Body({ entry, muted }: { entry: RecordEntry; muted?: boolean }) {
+// Keep current entries scannable and reveal historical entries in full.
+function Body({
+  entry,
+  muted,
+  expanded = false,
+}: {
+  entry: RecordEntry;
+  muted?: boolean;
+  expanded?: boolean;
+}) {
   const claim = entry.claim ?? entry.summary ?? "";
   const cited = entry.evidence || entry.occasion || "";
   return (
@@ -156,19 +164,31 @@ function Body({ entry, muted }: { entry: RecordEntry; muted?: boolean }) {
         textStyle="xs"
         fontWeight="medium"
         color={muted ? "fg.muted" : undefined}
-        truncate
-        title={claim}
+        truncate={expanded ? undefined : true}
+        title={expanded ? undefined : claim}
       >
         <InlineMarkdown content={claim} />
       </Text>
       {entry.detail ? (
-        <Text textStyle="2xs" color="fg.muted" mt={1} truncate title={entry.detail}>
+        <Text
+          textStyle="2xs"
+          color="fg.muted"
+          mt={1}
+          truncate={expanded ? undefined : true}
+          title={expanded ? undefined : entry.detail}
+        >
           <InlineMarkdown content={entry.detail} />
         </Text>
       ) : null}
       {cited ? (
         // Prose as often as a path, so it is set as prose and the model's own backticks mark what is literal.
-        <Text textStyle="2xs" color="fg.subtle" mt={1} truncate title={cited}>
+        <Text
+          textStyle="2xs"
+          color="fg.subtle"
+          mt={1}
+          truncate={expanded ? undefined : true}
+          title={expanded ? undefined : cited}
+        >
           <InlineMarkdown content={cited} />
         </Text>
       ) : null}
@@ -178,7 +198,6 @@ function Body({ entry, muted }: { entry: RecordEntry; muted?: boolean }) {
 
 const Entry = memo(function Entry({ revised, labels }: { revised: Revised; labels: EntryLabels }) {
   const { entry, earlier } = revised;
-  const [showHistory, setShowHistory] = useState(false);
   const label = entry.category
     ? labels.category[entry.category]
     : entry.kind
@@ -205,77 +224,79 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
     entry.written_at ? (
       <RelativeTime key="learned" date={entry.written_at} textStyle="xs" color="fg.subtle" />
     ) : null,
-    // Only the current version is shown; how it got here is one click away rather than another entry in the list.
     earlier.length > 0 ? (
-      <Button
-        key="revisions"
-        variant="plain"
-        px={0}
-        h="auto"
-        minW={0}
-        gap={1}
-        textStyle="xs"
-        fontWeight="medium"
-        css={{ "& svg": { width: "13px", height: "13px" } }}
-        colorPalette={REVISION_MARK[entry.revision ?? ""]?.tone ?? "blue"}
-        aria-expanded={showHistory}
-        onClick={() => setShowHistory((shown) => !shown)}
-      >
-        {(() => {
-          const Mark = REVISION_MARK[entry.revision ?? ""]?.icon ?? LuHistory;
-          return <Mark />;
-        })()}
-        {entry.revision ? labels.revision[entry.revision] : labels.revisions(earlier.length)}
-      </Button>
+      <Collapsible.Trigger key="revisions" asChild>
+        <Button
+          variant="plain"
+          px={0}
+          h="auto"
+          minW={0}
+          gap={1}
+          textStyle="xs"
+          fontWeight="medium"
+          css={{ "& svg": { width: "13px", height: "13px" } }}
+          colorPalette={REVISION_MARK[entry.revision ?? ""]?.tone ?? "blue"}
+        >
+          {(() => {
+            const Mark = REVISION_MARK[entry.revision ?? ""]?.icon ?? LuHistory;
+            return <Mark />;
+          })()}
+          {entry.revision === "merge"
+            ? labels.revision.merge
+            : `${entry.revision ? `${labels.revision[entry.revision]} · ` : ""}${labels.revisions(earlier.length)}`}
+        </Button>
+      </Collapsible.Trigger>
     ) : null,
   ].filter(Boolean);
   return (
-    <Box
-      borderWidth="1px"
-      borderColor="border"
-      borderRadius="md"
-      px={2}
-      py={1.5}
-      bg="bg.subtle"
-      opacity={retired(entry) ? 0.55 : 1}
-    >
-      <Body entry={entry} />
-      {/* Wider than the gaps inside the body: these are qualifiers about the entry, not another line of it. */}
-      <Flex align="center" gap={0.5} mt={2} wrap="wrap" color="fg.muted">
-        {qualifiers.map((qualifier, index) => (
-          <Fragment key={index}>
-            {index > 0 ? <Dot /> : null}
-            {qualifier}
-          </Fragment>
-        ))}
-      </Flex>
-      {showHistory ? (
-        <VStack
-          align="stretch"
-          gap={1.5}
-          mt={2}
-          mb={2}
-          ps={2}
-          borderLeftWidth="2px"
-          borderColor="border.emphasized"
-        >
-          {earlier.map((older) => (
-            <Box key={older.id} opacity={0.65}>
-              <Body entry={older} muted />
-              {older.written_at ? (
-                <RelativeTime
-                  date={older.written_at}
-                  display="block"
-                  mt={1}
-                  textStyle="2xs"
-                  color="fg.subtle"
-                />
-              ) : null}
-            </Box>
+    <Collapsible.Root>
+      <Box
+        borderWidth="1px"
+        borderColor="border"
+        borderRadius="md"
+        px={2}
+        py={1.5}
+        bg="bg.subtle"
+        opacity={retired(entry) ? 0.55 : 1}
+      >
+        <Body entry={entry} />
+        {/* Wider than the gaps inside the body: these are qualifiers about the entry, not another line of it. */}
+        <Flex align="center" gap={0.5} mt={2} wrap="wrap" color="fg.muted">
+          {qualifiers.map((qualifier, index) => (
+            <Fragment key={index}>
+              {index > 0 ? <Dot /> : null}
+              {qualifier}
+            </Fragment>
           ))}
-        </VStack>
-      ) : null}
-    </Box>
+        </Flex>
+        <Collapsible.Content>
+          <VStack
+            align="stretch"
+            gap={2.5}
+            mt={1.5}
+            mb={0.5}
+            ps={2}
+            borderLeftWidth="2px"
+            borderColor="border.emphasized"
+          >
+            {earlier.map((older) => (
+              <Box key={older.id} opacity={0.8}>
+                <Body entry={older} muted expanded />
+                {older.written_at ? (
+                  <RelativeTime
+                    date={older.written_at}
+                    display="block"
+                    mt={1}
+                    textStyle="2xs"
+                    color="fg.subtle"
+                  />
+                ) : null}
+              </Box>
+            ))}
+          </VStack>
+        </Collapsible.Content>
+      </Box>
+    </Collapsible.Root>
   );
 });
 

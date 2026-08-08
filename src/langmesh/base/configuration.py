@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import ClassVar, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from langmesh.base.paths import configuration_file_path, database_file_path  # noqa: F401 — re-exported
 from langmesh.base.permission_mode import PermissionMode
@@ -284,51 +284,14 @@ class WorkspaceConfiguration(Section):
     strategy: Literal["none", "branch", "worktree"] = Field("none")
 
 
-#: Renamed compaction settings, since a section that refuses unknown keys would refuse the whole file.
-_COMPACTION_RENAMED = {
-    "auto": "automatic",
-    "observer_context_fraction": "reclaim_at_fraction",
-}
-
-#: Compaction settings that are gone with nothing standing in for them.
-_COMPACTION_REMOVED = (
-    "keep_recent_turns",
-    "preserve_recent_tokens",
-    "prune",
-    "prune_tool_results",
-    "pruned_result_tokens",
-    "condense_log_at_fraction",
-    "reflector_observation_fraction",
-)
-
-
 class CompactionConfiguration(Section):
     """Conversation memory: each exchange is recorded as it closes, and the turns behind the window are dropped."""
 
-    @model_validator(mode="before")
-    @classmethod
-    def _carry_old_names(cls, values):
-        if not isinstance(values, dict):
-            return values
-        carried = dict(values)
-        for old, new in _COMPACTION_RENAMED.items():
-            if old in carried:
-                # An explicit new name wins: somebody who wrote both meant the current one.
-                carried.setdefault(new, carried[old])
-                carried.pop(old)
-        for gone in _COMPACTION_REMOVED:
-            if carried.pop(gone, None) is not None:
-                logger.warning(
-                    "ignoring compaction.%s: the setting no longer exists. Remove it from your configuration file.",
-                    gone,
-                )
-        return carried
-
     automatic: bool = Field(True)
     reclaim_at_fraction: float = Field(0.85)
+    observational_memory_limit_fraction: float = Field(0.1, gt=0, lt=1)
     output_reserve_fraction: float = Field(0.1)
     recent_working_set_fraction: float = Field(0.25)
-    verbatim_user_fraction: float = Field(0.1)
 
 
 class AttachmentsConfiguration(Section):

@@ -485,7 +485,7 @@ def _resolve_workspace(reference: str) -> str:
     wanted = os.path.realpath(os.path.expanduser(reference))
     for workspace in call("workspace.list").get("workspaces", []):
         for location in workspace.get("locations", []):
-            base = location.get("base_directory") or location.get("path") or ""
+            base = location.get("base_directory") or ""
             if base and os.path.realpath(os.path.expanduser(base)) == wanted:
                 return str(workspace.get("id") or "")
     raise DaemonError(f"No workspace has a location at {reference}.")

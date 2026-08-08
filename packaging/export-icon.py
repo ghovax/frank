@@ -85,7 +85,7 @@ def _extended_srgb_fill(fill_description: str) -> tuple[int, int, int, int]:
     return red_channel, green_channel, blue_channel, alpha_channel
 
 
-def render_legacy_macos_icon() -> Image.Image:
+def render_tiled_icon() -> Image.Image:
     """Render unmasked full-canvas artwork for macOS to shape exactly once."""
     configuration = json.loads((COMPOSER_DOCUMENT / "icon.json").read_text())
     fill_description = configuration["fill"]["automatic-gradient"]
@@ -135,7 +135,7 @@ def render_legacy_macos_icon() -> Image.Image:
 
 def create_macos_icon() -> None:
     """Write the raw macOS artwork at every resolution in the ICNS container."""
-    source_image = render_legacy_macos_icon()
+    source_image = render_tiled_icon()
     resized_images = [
         source_image.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
         for icon_size in MACOS_ICON_SIZES[:-1]
@@ -183,7 +183,7 @@ def create_web_icons() -> None:
         mark.resize((size, size), Image.Resampling.LANCZOS).save(destination)
 
     destination, size = APPLE_TOUCH_ICON
-    tile = render_legacy_macos_icon().resize((size, size), Image.Resampling.LANCZOS)
+    tile = render_tiled_icon().resize((size, size), Image.Resampling.LANCZOS)
     tile.putalpha(_rounded_mask(size))
     tile.save(destination)
 

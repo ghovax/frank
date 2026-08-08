@@ -121,8 +121,9 @@ A daemon's address and its token belong together. Each `langmeshd` mints its own
 
 1. a connection you activated in **Settings**, under **Connections** (its URL and its token), then
 2. the endpoint the desktop shell reports for the local daemon, then
-3. the build-time default `NEXT_PUBLIC_API_BASE`, then
-4. the conventional local address.
+3. the runtime descriptor served with a browser development build, then
+4. the build-time default `NEXT_PUBLIC_API_BASE`, then
+5. the conventional local address.
 
 That yields three ways to run:
 
@@ -179,9 +180,9 @@ What opens those turns is the layer that owns the session. The agent is shown th
 
 Every provider here bills a cached prefix at a fraction of a fresh one, and a conversation is almost entirely prefix: the system prompt, the tool schemas, and every turn that came before. So a session's cost is decided less by what it does than by whether the request it sends still matches the one before it. Two rules follow, and the harness holds both.
 
-**The request is append-only, without exception.** Each call adds to the end and rewrites nothing. The instructions and the tool schemas are stable for the life of a session. The observation log a fold produces is a user-role message rather than a system one — a mid-conversation system message is hoisted to the front of the request by every provider, so rewriting it would discard the cache for the whole conversation each time compaction ran to save context. And everything the model is told about the current turn is a message *in* the conversation, kept, rather than something assembled for one request.
+**The persisted conversation is append-only until compaction.** Each ordinary call adds to its end and rewrites nothing, while the instructions and tool schemas stay stable for the session. The current observational-memory record is assembled from the two durable ledgers and placed after the conversation only for the request that reads it; keeping that changing record at the tail preserves the stable prefix before it.
 
-That last one was learned from the measurement below. Per-turn context — the time, the working directory, the goal, the task list, background work, the reachable locations — used to be appended to the request and dropped afterwards, on the reasoning that a stale timestamp should not accumulate. It was the only thing in the harness that was not append-only, and it showed up as a divergence on five of twelve calls in the first session that was measured, always at the final position. It is appended and kept now, and emitted only when it says something new: of those fields only the clock moves every turn, and a fresh clock reading does not earn a message of its own. A session doing steady work therefore appends nothing, and one whose situation changed appends the picture once.
+That placement was learned from the measurement below. Per-turn context — the time, working directory, goal, task list, background work and reachable locations — used to be appended to a request and dropped afterwards. It showed up as a divergence on five of twelve calls in the first measured session, always at the final position. Persistent context is now appended to the conversation only when it says something new; request-only records, including observational memory and the turn checklist, stay at the tail where their later absence cannot rewrite anything after them.
 
 The only thing that ever invalidates a prefix is compaction, which replaces the head of the conversation with a summary. That is the point of it, and it is why provider-native reasoning is dropped at the same boundary.
 

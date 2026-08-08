@@ -292,7 +292,7 @@ export function ChatPanel({
   onSandboxEnforceChange,
   worktreeStrategy = "none",
   onWorktreeStrategyChange,
-  isConnected = false,
+  isConnected = true,
   connectionLost = false,
   onReconnect,
   onStreamingChange,
@@ -336,13 +336,8 @@ export function ChatPanel({
     workspaceId,
   );
 
-  // One source of truth for the working directory's validity and Git status, read by the status bar and the composer's send gate.
+  // One source of truth for the working directory's validity, read by the status bar and send gate.
   const { status: directoryStatus, directoryValid } = useDirectoryStatus(workingDirectory);
-  // Whether the chat body has resolved enough to render without flashing, so opening a workspace does not flicker.
-  const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
-  const directoryPending =
-    !!trimmedWorkingDirectory &&
-    (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
   // Mounted whenever a daemon is there: a directory check runs on every switch, and unmounting on it jumped.
   const chatReady = isConnected;
   // The one condition under which the transcript is in the DOM, read by the render and by everything touching scroll.
@@ -1343,8 +1338,7 @@ export function ChatPanel({
                   onSend={handleSend}
                   onAbort={abort}
                   isStreaming={isStreaming}
-                  // Two reasons the composer is closed, kept apart because they read as different things to the person looking at it.
-                  disabled={!isConnected || directoryPending}
+                  disabled={!isConnected}
                   awaitingDecision={!!pendingPrompt}
                   sessionId={sessionId}
                   initialDraft={initialInputDraft}

@@ -56,11 +56,9 @@ Add provider keys with `langmesh configure`, in the configuration file, or throu
 | `cd web && bun install` | Once |
 | `./scripts/web-development.sh` | Http://localhost:3000, wired to the daemon already running |
 
-Start the daemon first; the script asks it for its endpoint and passes that to the development server. It has to, and this is worth knowing before the first time it appears to be broken: the daemon takes an **ephemeral** loopback port and requires a **capability token** on every call. The desktop shell reads both out of the runtime directory; a browser tab can read neither, so a bare `bun run dev` addresses a port nothing is listening on and presents no token. The page loads, every list is empty, and nothing says why.
+Start the daemon first; the script starts a local bridge on port 8824 when one is not already answering, and the development page reads that stable address from its runtime descriptor. The bridge owns the ephemeral daemon port and capability token, re-reading both after a restart, so no credential or short-lived endpoint is embedded in the Next.js bundle.
 
-The token reaches the page as `NEXT_PUBLIC_TOKEN`, which the client ignores unless `NODE_ENV` is not production — Next eliminates that branch from a production build, so a token cannot end up inside a shipped export even if the variable is set on the machine that builds it.
-
-Run the script from an **ordinary shell, not from inside `nix develop`**. The devshell rewrites `TMPDIR`, the runtime directory hangs off it, and a daemon started outside the devshell is therefore invisible to anything started inside it — `langmesh ps` and `langmesh daemon endpoint` included. The script enters the devshell itself for the bun half, after it has already resolved the endpoint.
+Run the script from an **ordinary shell, not from inside `nix develop`**. The devshell rewrites `TMPDIR`, the runtime directory hangs off it, and a daemon started outside the devshell is therefore invisible to anything started inside it. The script enters the devshell itself only for the Bun process.
 
 Useful scripts (in `web/`):
 
@@ -205,4 +203,3 @@ Beyond the battery: lint with `uv run ruff check`, and drive the affected path t
 | `packaging/` | PyInstaller freeze and signing, plus `entry.py` for the frozen build |
 | `scripts/` | Layering, import and translation checks; the verification battery |
 | `examples/` | Example MCP servers |
-

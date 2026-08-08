@@ -133,11 +133,7 @@ class SessionExecutor(AgentExecutor):
 
     def _publish_stream_event(self, session_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Fire-and-forget: the turn must not wait on a watcher."""
-        payload = (
-            part.model_dump(by_alias=True, exclude_none=True, mode="json")
-            if hasattr(part, "model_dump")
-            else part
-        )
+        payload = part.model_dump(by_alias=True, exclude_none=True, mode="json")
         asyncio.create_task(
             self._turn_store.publish_event({"session_id": session_id, "part": payload})
         )

@@ -155,7 +155,7 @@ function Workspace() {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
 
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -879,7 +879,7 @@ function Workspace() {
           onSandboxEnforceChange={handleSandboxEnforceChange}
           worktreeStrategy={worktreeStrategy}
           onWorktreeStrategyChange={handleWorktreeStrategyChange}
-          isConnected={isConnected && activeSessionKnown}
+          isConnected={isConnected}
           connectionLost={!isConnected}
           onReconnect={reconnect}
           onStreamingChange={handleStreamingChange}

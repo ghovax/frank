@@ -148,13 +148,9 @@ def _decode_jwt_claims(token: str) -> dict:
 
 
 def _extract_account_id(claims: dict) -> str:
-    """The account id lives under OpenAI's namespaced claim, with a couple of fallbacks seen in the wild."""
+    """Read the account id from OpenAI's namespaced authentication claim."""
     auth = claims.get("https://api.openai.com/auth") or {}
-    if isinstance(auth, dict):
-        account_id = auth.get("chatgpt_account_id") or auth.get("account_id")
-        if account_id:
-            return str(account_id)
-    return str(claims.get("chatgpt_account_id") or "")
+    return str(auth.get("chatgpt_account_id") or "") if isinstance(auth, dict) else ""
 
 
 def _tokens_from_payload(payload: dict, previous: Optional[ChatGPTTokens] = None) -> ChatGPTTokens:

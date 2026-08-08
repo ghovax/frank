@@ -429,7 +429,7 @@ async def _open_stores() -> None:
     from langmesh.base.paths import database_file_path
     from langmesh.base.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
     from langmesh.commons import state as commons_state
-    from langmesh.commons.database import _apply_history_schema
+    from langmesh.commons.database import create_history_schema
     from langmesh.daemon.persistence.turn_store import AppendOnlyTaskStore
 
     database_path = database_file_path()
@@ -446,7 +446,7 @@ async def _open_stores() -> None:
 
     def _initialize() -> None:
         with sqlite_write_lock():
-            _apply_history_schema(sync_engine)
+            create_history_schema(sync_engine)
 
     await asyncio.to_thread(_initialize)
     commons_state.session_factory = sessionmaker(bind=sync_engine)

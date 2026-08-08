@@ -83,12 +83,6 @@ class BackgroundJobStore:
     def _initialize(self) -> None:
         with background_sqlite_write_lock():
             with self._connect() as connection:
-                existing_table_columns = {
-                    row["name"]
-                    for row in connection.execute("PRAGMA table_info(background_jobs)").fetchall()
-                }
-                if existing_table_columns and "arguments_json" not in existing_table_columns:
-                    connection.execute("DROP TABLE background_jobs")
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS background_jobs (
@@ -110,14 +104,6 @@ class BackgroundJobStore:
                     )
                     """
                 )
-                existing_columns = {
-                    row["name"]
-                    for row in connection.execute("PRAGMA table_info(background_jobs)").fetchall()
-                }
-                if "process_group" not in existing_columns:
-                    connection.execute(
-                        "ALTER TABLE background_jobs ADD COLUMN process_group INTEGER"
-                    )
                 # Indices matched to the hot queries, so the startup and per-turn scans stay cheap.
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status ON background_jobs(session_id, agent_name, status)"

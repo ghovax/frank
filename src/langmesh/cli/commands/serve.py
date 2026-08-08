@@ -351,18 +351,30 @@ def run(arguments) -> int:
     # A browser with no daemon behind it is a blank screen, so one is started unconditionally.
     started_the_daemon = not daemon_is_up()
     ensure_daemon()
+    try:
+        started_daemon_process_id = (
+            int((runtime_directory() / "langmeshd.pid").read_text().strip())
+            if started_the_daemon
+            else None
+        )
+    except (OSError, ValueError):
+        started_daemon_process_id = None
 
     def stop_daemon_if_started() -> None:
         """Undo our own side effect. A daemon someone else was already running is left alone."""
-        if not started_the_daemon:
+        if started_daemon_process_id is None:
             return
         try:
-            pid = int((runtime_directory() / "langmeshd.pid").read_text().strip())
+            current_daemon_process_id = int(
+                (runtime_directory() / "langmeshd.pid").read_text().strip()
+            )
         except (OSError, ValueError):
+            return
+        if current_daemon_process_id != started_daemon_process_id:
             return
         # The group, so the sessions go with it, by the same reasoning and the same signal as `langmesh daemon stop`.
         with contextlib.suppress(OSError, ProcessLookupError):
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            os.killpg(os.getpgid(started_daemon_process_id), signal.SIGTERM)
         logger.info("langmesh: stopped the daemon this command had started.")
 
     try:
@@ -373,7 +385,19 @@ def run(arguments) -> int:
         stop_daemon_if_started()
         return 1
 
-    application = build_application(f"http://127.0.0.1:{port}", token, directory)
+    def where_is_the_daemon() -> tuple[str, str]:
+        """Read the daemon's current address and token after any restart."""
+        return (
+            f"http://127.0.0.1:{int(daemon_port_path().read_text().strip())}",
+            daemon_token_path().read_text().strip(),
+        )
+
+    application = build_application(
+        f"http://127.0.0.1:{port}",
+        token,
+        directory,
+        rediscover=where_is_the_daemon,
+    )
     address = f"http://{arguments.host}:{arguments.port}"
     logger.info(f"langmesh: serving the interface at {address} (daemon on :{port})")
     logger.info(

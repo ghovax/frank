@@ -1,10 +1,7 @@
 # The file LangMesh creates at ~/.config/langmesh/configuration.yaml on first run.
 #
-# Deliberately almost empty. Every setting has a default in the code, and a seed that restated
-# those defaults would freeze them: a later release could improve one and every existing
-# installation would keep overriding it with a copy of the old value, from a line nobody
-# remembers writing. So this holds only what a person genuinely has to supply — a key for the
-# provider they use — and everything else stays where it can still move.
+# Deliberately small. Credentials and the conversation-memory policy are explicit; other settings
+# stay at their schema defaults so they can still improve without being pinned here.
 #
 # To see what there is to change:   langmesh configure --all
 # To change one:                    langmesh configure workspace.strategy worktree
@@ -31,3 +28,10 @@ providers:
 # Exa backs the built-in web search. EXA_API_KEY can supply this instead.
 exa:
   api_key: ""
+
+compaction:
+  automatic: true
+  reclaim_at_fraction: 0.85
+  observational_memory_limit_fraction: 0.1
+  output_reserve_fraction: 0.1
+  recent_working_set_fraction: 0.25

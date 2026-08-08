@@ -73,7 +73,7 @@ class PeerSessions:
             # No mode is sent: the daemon gives a child its parent's, narrowed by the profile's ceiling.
             parent=self.session_id,
         )
-        return result.get("session") or result
+        return result
 
     async def send(self, session_id: str, text: str) -> dict:
         """Hand another session a message as a peer turn, or the model reads a report as the person speaking."""
@@ -92,7 +92,7 @@ class PeerSessions:
     async def get(self, session_id: str) -> dict:
         """A peer's record, plus what it is waiting on, since "blocked" alone cannot be acted on."""
         result = await self._call("session.get", id=session_id)
-        return result.get("session") or {}
+        return result["session"]
 
     async def children(self) -> list[dict]:
         """The sessions this one created, and their descendants: its own subtree, not the machine's."""

@@ -61,6 +61,15 @@ export class PairingError extends Error {
   }
 }
 
+function isPairing(value: unknown): value is Pairing {
+  if (typeof value !== "object" || value === null) return false;
+  const pairing = value as Partial<Pairing>;
+  return pairing.version === 1 &&
+    typeof pairing.name === "string" && pairing.name.trim().length > 0 &&
+    typeof pairing.token === "string" && pairing.token.length > 0 &&
+    typeof pairing.endpoint === "string" && pairing.endpoint.length > 0;
+}
+
 /** Read a pairing link or a bare payload, throwing rather than returning null so the person is told why. */
 export function parsePairing(input: string): Pairing {
   const trimmed = input.trim();
@@ -73,20 +82,20 @@ export function parsePairing(input: string): Pairing {
   } catch {
     throw new PairingError("notAPairingCode");
   }
-  let payload: Pairing;
+  let payload: unknown;
   try {
-    payload = JSON.parse(decoded) as Pairing;
+    payload = JSON.parse(decoded);
   } catch {
     throw new PairingError("notAPairingCode");
   }
-  if (!payload?.token || !payload?.endpoint) {
+  if (!isPairing(payload)) {
     throw new PairingError("missingTokenOrAddress");
   }
   return {
-    version: Number(payload.version ?? 1),
-    name: String(payload.name ?? "LangMesh"),
-    token: String(payload.token),
-    endpoint: String(payload.endpoint),
+    version: payload.version,
+    name: payload.name.trim(),
+    token: payload.token,
+    endpoint: payload.endpoint,
   };
 }
 
@@ -99,7 +108,7 @@ const store = {
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as Pairing[]).filter((entry) => entry?.endpoint && entry?.token) : [];
+      return Array.isArray(parsed) ? parsed.filter(isPairing) : [];
     } catch {
       // Unreadable is the same as absent, since the way out is pairing again either way.
       return [];

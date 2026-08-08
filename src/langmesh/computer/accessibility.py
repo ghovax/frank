@@ -137,12 +137,12 @@ DECORATIVE_ROLES = frozenset(
     }
 )
 
-# AXValue geometry types (symbol names have drifted across SDKs, so resolve once).
-POINT_TYPE = getattr(AS, "kAXValueCGPointType", getattr(AS, "kAXValueTypeCGPoint", 1))
-SIZE_TYPE = getattr(AS, "kAXValueCGSizeType", getattr(AS, "kAXValueTypeCGSize", 2))
-RECT_TYPE = getattr(AS, "kAXValueCGRectType", getattr(AS, "kAXValueTypeCGRect", 3))
-ERROR_VALUE_TYPE = getattr(AS, "kAXValueAXErrorType", getattr(AS, "kAXValueTypeAXError", 5))
-RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange", 4))
+# AXValue geometry types used by the declared macOS SDK.
+POINT_TYPE = AS.kAXValueCGPointType
+SIZE_TYPE = AS.kAXValueCGSizeType
+RECT_TYPE = AS.kAXValueCGRectType
+ERROR_VALUE_TYPE = AS.kAXValueAXErrorType
+RANGE_TYPE = AS.kAXValueCFRangeType
 
 # A ceiling on one message to a wedged app, generous enough that a healthy element is never dropped.
 

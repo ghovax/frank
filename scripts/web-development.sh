@@ -1,24 +1,10 @@
 #!/usr/bin/env bash
-# Start the web UI in development, pointed at the daemon already running on this machine.
+# Start the web UI in development through the stable local bridge.
 #
 #   ./scripts/web-development.sh          # then open http://localhost:3000
 #
-# The daemon takes an ephemeral loopback port and mints a capability token. The desktop shell
-# reads both out of the runtime directory and hands them to the page; a browser tab can read
-# neither, so `bun run dev` on its own guesses a port the daemon never binds and presents no
-# token — every list comes back empty and nothing says why. This asks the daemon for its own
-# endpoint and passes it in as `NEXT_PUBLIC_*`, which is the only way a value reaches a client
-# bundle.
-#
-# Development only, and enforced rather than trusted: the reader in `web/src/lib/api.ts` ignores
-# the token unless `NODE_ENV` is not production, and Next eliminates that branch from a
-# production build — so a token cannot end up in a shipped export even if this is exported into
-# the environment of one.
-#
-# Run this from an ordinary shell, NOT from inside `nix develop`. The devshell rewrites
-# `TMPDIR`, and the runtime directory hangs off it, so a daemon started outside the devshell is
-# invisible to anything started inside it — `langmesh ps` included. The handoff to bun below enters
-# the devshell itself, for exactly that reason.
+# The browser uses port 8824 while that bridge follows the daemon's ephemeral authenticated endpoint.
+# Run this outside `nix develop`; the handoff below enters the devshell only after finding the daemon.
 set -euo pipefail
 
 repository="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,24 +17,51 @@ else
   langmesh=(uv run --project "$repository" python -m langmesh)
 fi
 
-if ! endpoint="$("${langmesh[@]}" daemon endpoint 2>&1)"; then
-  echo "Could not reach a daemon: $endpoint" >&2
+if ! daemon_endpoint="$("${langmesh[@]}" daemon endpoint 2>&1)"; then
+  echo "Could not reach a daemon: $daemon_endpoint" >&2
   echo "Start one first, from an ordinary shell:  uv run python -m langmesh langmeshd" >&2
   exit 1
 fi
 
-read -r port token <<<"$(
-  printf '%s' "$endpoint" | python3 -c \
-    'import json, sys; endpoint = json.load(sys.stdin); print(endpoint["port"], endpoint["token"])'
-)"
+bridge_url="http://127.0.0.1:8824"
+bridge_process_id=""
 
-echo "Daemon on 127.0.0.1:$port — starting the UI at http://localhost:${DEV_PORT:-3000}" >&2
+stop_started_bridge() {
+  if [[ -z "$bridge_process_id" ]]; then
+    return
+  fi
+  kill "$bridge_process_id" 2>/dev/null || true
+  wait "$bridge_process_id" 2>/dev/null || true
+}
+trap stop_started_bridge EXIT INT TERM
+
+if ! curl --silent --fail "$bridge_url/health" >/dev/null 2>&1; then
+  "${langmesh[@]}" serve --host 127.0.0.1 --port 8824 &
+  bridge_process_id="$!"
+  for startup_attempt in {1..100}; do
+    if curl --silent --fail "$bridge_url/health" >/dev/null 2>&1; then
+      break
+    fi
+    if ! kill -0 "$bridge_process_id" 2>/dev/null; then
+      wait "$bridge_process_id"
+      exit 1
+    fi
+    sleep 0.1
+  done
+fi
+
+if ! curl --silent --fail "$bridge_url/health" >/dev/null 2>&1; then
+  echo "Could not start the LangMesh bridge at $bridge_url" >&2
+  exit 1
+fi
+
+echo "LangMesh bridge on $bridge_url — starting the UI at http://localhost:${DEV_PORT:-3000}" >&2
 
 cd "$repository/web"
-export NEXT_PUBLIC_API_BASE="http://127.0.0.1:$port"
-export NEXT_PUBLIC_TOKEN="$token"
+unset NEXT_PUBLIC_API_BASE NEXT_PUBLIC_TOKEN
 
 if command -v bun >/dev/null 2>&1; then
-  exec bun run dev "$@"
+  bun run dev "$@"
+  exit $?
 fi
-exec nix develop . -c bun run dev "$@"
+nix develop . -c bun run dev "$@"

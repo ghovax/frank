@@ -171,7 +171,6 @@
     "queuedUnreachable": "セッションに接続できませんでした",
     "readOnly": "読み取り専用",
     "reasonAccessRequest": "この呼び出しは、セッションが触れられる範囲の外にあるパスへのアクセスを求めています。",
-    "reasonReadsOutsideWorkspace": "このコマンドは作業ディレクトリの外にあるファイルを読み取ります。",
     "reconnect": "再接続",
     "reload": "再読み込み",
     "retry": "再試行",
@@ -477,9 +476,9 @@
       "_": "会話の圧縮",
       "automatic": "自動で圧縮",
       "reclaim_at_fraction": "圧縮を始める割合",
+      "observational_memory_limit_fraction": "観察メモリの上限割合",
       "output_reserve_fraction": "回答用に確保する割合",
-      "recent_working_set_fraction": "そのまま残す割合",
-      "verbatim_user_fraction": "ユーザー発言を残す割合"
+      "recent_working_set_fraction": "そのまま残す割合"
     },
     "composio": {
       "_": "Composio",
@@ -694,9 +693,9 @@
       "_": "会話が長くなったときの畳み方。",
       "automatic": "コンテキストが埋まってきたら自動で圧縮します。手動の圧縮はどちらの設定でも使えます。",
       "reclaim_at_fraction": "使用可能なウィンドウのこの割合を超えたら圧縮します。あえて遅めです。圧縮は情報を捨てる唯一の操作だからです。",
+      "observational_memory_limit_fraction": "使用可能なウィンドウ内で観察メモリが占められる最大割合です。超過した場合、圧縮時に関連する知見を統合し、改訂履歴は保持します。",
       "output_reserve_fraction": "回答のために残しておくウィンドウの割合。残りが使用可能なウィンドウです。",
-      "recent_working_set_fraction": "圧縮せずそのまま残す割合。ターン数ではなくトークン量で決めます。",
-      "verbatim_user_fraction": "圧縮後もユーザーの発言をそのまま残す割合。指示は要約すべきものではありません。"
+      "recent_working_set_fraction": "圧縮せずそのまま残す割合。ターン数ではなくトークン量で決めます。"
     },
     "composio": {
       "_": "Composio のホスト型 MCP ゲートウェイ。",

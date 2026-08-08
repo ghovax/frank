@@ -25,12 +25,14 @@ let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
   if (!runningInTauri()) {
-    // Served by `langmesh web`? That proxies the daemon at its own origin, so the base is the empty string.
+    // A served build uses its origin while Next development publishes the stable local bridge.
     try {
       const response = await fetch("/__langmesh/runtime.json", { cache: "no-store" });
       if (response.ok) {
-        const runtime = await response.json();
-        if (runtime?.proxied) API_BASE = "";
+        const runtime = (await response.json()) as { apiBase?: unknown; proxied?: unknown };
+        if (runtime.proxied) API_BASE = "";
+        else if (typeof runtime.apiBase === "string")
+          API_BASE = runtime.apiBase.replace(/\/+$/, "");
       }
     } catch {
       // Not served by it; nothing to learn.
@@ -742,9 +744,9 @@ export interface CompactionSettings {
   // Reclaiming context on its own as it fills (manual compaction always works).
   automatic: boolean;
   reclaim_at_fraction: number;
+  observational_memory_limit_fraction: number;
   output_reserve_fraction: number;
   recent_working_set_fraction: number;
-  verbatim_user_fraction: number;
 }
 
 export interface Settings {
@@ -789,12 +791,12 @@ const DEFAULT_ATTACHMENTS: AttachmentSettings = { inline_image_megabytes: 20 };
 const DEFAULT_COMPACTION: CompactionSettings = {
   automatic: false,
   reclaim_at_fraction: 0.85,
+  observational_memory_limit_fraction: 0.1,
   output_reserve_fraction: 0.1,
   recent_working_set_fraction: 0.25,
-  verbatim_user_fraction: 0.1,
 };
 
-// Persist the context-reclaiming settings (automatic on/off, pruning, and the thresholds).
+// Persist the context-reclaiming settings and observational-memory limit.
 export async function updateCompactionSettings(
   changes: Partial<CompactionSettings>,
 ): Promise<void> {

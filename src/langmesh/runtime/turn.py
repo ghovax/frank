@@ -516,7 +516,7 @@ class _RunsTurns:
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-            # Folding is the whole of keeping inside the window: an unbounded head becomes a fixed-size log.
+            # Drop old turns once the configured window threshold is reached.
             if self._should_compact():
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event

@@ -57,15 +57,15 @@ export interface ToolEvent {
 /** Whether a call has a complete explanation and may enter the transcript. */
 export function toolCallReady(event: ToolEvent): boolean {
   const explanation = event.arguments?.explanation;
-  const argumentsComplete =
-    event.argumentsComplete ?? (event.status !== undefined && event.status !== "running");
-  return argumentsComplete && typeof explanation === "string" && explanation.trim().length > 0;
+  return (
+    event.argumentsComplete === true &&
+    typeof explanation === "string" &&
+    explanation.trim().length > 0
+  );
 }
 
-export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: string): boolean {
-  const idMatches = !!toolCallId && event.toolCallId === toolCallId;
-  const fallbackMatches = !toolCallId && event.result == null && event.name === name;
-  return idMatches || fallbackMatches;
+export function isSameToolEvent(event: ToolEvent, _name: string, toolCallId: string): boolean {
+  return toolCallId.length > 0 && event.toolCallId === toolCallId;
 }
 
 // Narrow an arbitrary value to a known status, for the raw strings that arrive on wire events.
@@ -85,7 +85,7 @@ export function hasBackgroundJobId(result: unknown): boolean {
 
 // The structured reason as a sentence in the caller's language, or empty when there is none.
 export type PermissionReasonTranslator = (
-  key: "reasonReadsOutsideWorkspace" | "reasonAccessRequest",
+  key: "reasonAccessRequest",
   values: { count: number },
 ) => string;
 
@@ -96,12 +96,9 @@ export function permissionReasonText(
   if (!reason?.kind) return "";
   const count = (reason.paths ?? []).filter(Boolean).length;
   switch (reason.kind) {
-    case "reads_outside_workspace":
-      return translation("reasonReadsOutsideWorkspace", { count });
-    case "access_request":
+    case "reaches_outside_confinement":
       return translation("reasonAccessRequest", { count });
     default:
-      // An unknown kind is a newer harness talking to an older interface, so nothing is said.
       return "";
   }
 }

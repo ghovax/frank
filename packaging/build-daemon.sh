@@ -2,10 +2,7 @@
 # Freeze the harness (packaging/entry.py) into "LangMesh Computer Use.app" — the daemon, the CLI, and every
 # daemon that hosts them as one self-contained image, entered by its first argument.
 #
-# This used to be a *sidecar*: the desktop app bundled the result as a resource and spawned it,
-# which made the window the harness's parent process. It does not any more. The app is a client
-# that finds a daemon and talks to it, so this builds an artifact you install, not one that rides
-# inside something else. The output stays in packaging/dist/ and is installed from there.
+# The app is a daemon client, so this builds a separately installed artifact in packaging/dist/.
 #
 # The .app wrapper is not packaging decoration. macOS attributes a permission to the code identity
 # of the process that exercises it; the process calling the Accessibility API is the daemon,
@@ -14,8 +11,7 @@
 # one stable "LangMesh" row in Privacy > Accessibility that survives rebuilds. A bare binary would
 # show a raw filename, and a differently-signed one would prompt again.
 #
-# Run it directly. It is no longer wired into `tauri build`, because the app no longer contains
-# what it produces. Set FORCE=1 to rebuild unconditionally.
+# Run it directly; set FORCE=1 to rebuild unconditionally.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,11 +31,7 @@ esac
 # Freshness guard: skip the freeze when the binary already exists and nothing that goes into it
 # is newer. `find -newer` prints the first newer file, so empty means fresh.
 #
-# Two things this used to get wrong. It did not watch `.agents/`, which the spec bundles into the
-# freeze — so editing a shipped agent or skill left the guard convinced nothing had changed, and
-# the build shipped the old one. And it counted `__pycache__` as a source change, so merely
-# *running* the harness rewrote bytecode and forced a needless multi-minute re-freeze; the same
-# was true of a stray .DS_Store. Both are pruned here rather than left to the caller's habits.
+# Watch bundled agent sources while excluding generated caches and metadata from freshness checks.
 if [ -z "${FORCE:-}" ] && [ -x "$target" ]; then
   newer_source="$(find packaging/entry.py packaging/langmesh-daemon.spec pyproject.toml uv.lock \
     src/langmesh .agents/agents .agents/skills .agents/mcp.json web/out \
@@ -62,14 +54,7 @@ uv run pyinstaller \
 echo "smoke-testing the frozen daemon"
 # In a sandbox of its own, and this is the whole point rather than tidiness.
 #
-# A daemon started here with the caller's XDG directories finds the lock already held by
-# whatever daemon the developer is running, logs "Another langmeshd already holds the runtime
-# directory; standing down", and exits **0**. The old probe then found the *existing* daemon's
-# socket answering and printed "ok" — a green smoke test for a binary it had never exercised,
-# and green precisely in the case that is most common now that the app expects you to have a
-# daemon running. Isolating every XDG root means this binary is the only thing that could
-# possibly answer, so the probe tests what it claims to. It also stops a build from seeding the
-# developer's real configuration or writing to their transcript store.
+# Isolate every XDG root so only this binary can answer and the smoke test cannot touch developer state.
 smoke_root="$(mktemp -d "${TMPDIR:-/tmp}/langmesh-smoke.XXXXXX")"
 trap 'kill "${daemon_pid:-}" 2>/dev/null || true; rm -rf "$smoke_root"' EXIT
 smoke_log="$smoke_root/daemon.log"
@@ -96,8 +81,7 @@ socket="$smoke_root/run/langmesh/langmeshd.sock"
 ready=""
 for _ in $(seq 1 60); do
   sleep 1
-  # Liveness first. A dead child can never become ready, and checking the socket first is how
-  # the old version came to trust one it did not own.
+  # Check liveness before accepting the isolated socket as ready.
   if ! kill -0 "$daemon_pid" 2>/dev/null; then
     echo "failed: the frozen daemon exited before it was ready" >&2
     sed 's/^/  /' "$smoke_log" >&2 || true

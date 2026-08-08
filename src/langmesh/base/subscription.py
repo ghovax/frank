@@ -71,9 +71,7 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
                         continue
                     result[slug] = {
                         "name": entry.get("display_name") or slug,
-                        "context": int(
-                            entry.get("context_window") or entry.get("max_context_window") or 0
-                        ),
+                        "context": int(entry.get("context_window") or 0),
                     }
         except (ChatGPTAuthError, httpx.HTTPError, ValueError, KeyError):
             result = {}

@@ -1,8 +1,8 @@
-"""The daemon's SQLAlchemy layer: the declarative base, the history database's records, and its startup reconciliation."""
+"""The daemon's SQLAlchemy layer: the declarative base and history database records."""
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, String, Text, inspect, text
+from sqlalchemy import Boolean, Index, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -175,20 +175,6 @@ class TerminalStateRecord(Base):
     __table_args__ = (Index("idx_terminal_states_updated", "updated_at"),)
 
 
-def _apply_history_schema(sync_engine) -> None:
-    """Make the on-disk schema match the declarative models, which are the single source of truth."""
-    inspector = inspect(sync_engine)
-    existing_tables = set(inspector.get_table_names())
-    drifted_tables = []
-    for table_name, table in Base.metadata.tables.items():
-        if table_name not in existing_tables:
-            continue
-        model_columns = {column.name for column in table.columns}
-        live_columns = {column["name"] for column in inspector.get_columns(table_name)}
-        if model_columns != live_columns:
-            drifted_tables.append(table)
-    if drifted_tables:
-        with sync_engine.begin() as connection:
-            for table in drifted_tables:
-                connection.execute(text(f"DROP TABLE {table.name}"))
+def create_history_schema(sync_engine) -> None:
+    """Create the declarative history schema without rewriting existing data."""
     Base.metadata.create_all(sync_engine)

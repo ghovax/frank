@@ -76,10 +76,9 @@ How conversation history is folded as it grows.
 |---|---|---|---|
 | `compaction.automatic` | boolean | `true` | Reclaim context on its own as it fills. Manual compaction works either way. |
 | `compaction.reclaim_at_fraction` | number | `0.85` | Fold once the conversation passes this share of the usable window. Late on purpose: a fold is the one thing that rewrites the prefix a provider had cached, so the fewer of them the better. |
-| `compaction.condense_log_at_fraction` | number | `0.3` | Condense the observation log once the log itself passes this share. |
+| `compaction.observational_memory_limit_fraction` | number | `0.1` | Maximum share of the usable window that live observational memories may occupy. A compaction that exceeds it consolidates related findings while preserving their revision history. |
 | `compaction.output_reserve_fraction` | number | `0.1` | Share of the window held back for the answer, so folding still has room to run. The rest is the usable window every other fraction here is measured against. |
 | `compaction.recent_working_set_fraction` | number | `0.25` | Share of the usable window kept verbatim rather than folded into the log. Sized in tokens rather than turns because an unattended run is one turn and hundreds of tool results. |
-| `compaction.verbatim_user_fraction` | number | `0.1` | Share of the usable window that carries the user's own messages through a fold, word for word. Their instructions are the specification, and a paraphrase of a specification is a different specification. |
 
 
 ## User snapshot
@@ -352,4 +351,3 @@ How long resolving a frame reference waits. Deliberately well below the action t
 ### `tuning.defaults.session_idle_sleep`
 
 How long a session keeps its process after its last turn before it sleeps. Five hours by default: long enough that a working day of on-and-off use never pays a wake, short enough that a machine left overnight is not holding interpreters for conversations nobody returned to.
-
