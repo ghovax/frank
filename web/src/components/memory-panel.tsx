@@ -2,16 +2,29 @@
 
 // What a session remembers: the findings its work established, and the instructions it was given.
 
-import { Badge, Box, Button, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
+import { Badge, Box, Button, Flex, Text, VStack } from "@chakra-ui/react";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
-  LuArchive, LuBookMarked, LuCircleDashed, LuCrosshair, LuDot, LuFile, LuGitBranch, LuGitMerge,
-  LuCompass, LuFlag, LuHistory, LuInfo, LuLock, LuPencil, LuRefreshCw, LuTriangleAlert,
+  LuArchive,
+  LuBookMarked,
+  LuCircleDashed,
+  LuCrosshair,
+  LuDot,
+  LuFile,
+  LuGitBranch,
+  LuGitMerge,
+  LuCompass,
+  LuFlag,
+  LuHistory,
+  LuInfo,
+  LuLock,
+  LuPencil,
+  LuTriangleAlert,
 } from "react-icons/lu";
 import { PanelBody, PanelCard, PanelEmptyState, PanelHeader } from "@/components/ui/panel";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { fetchSessionRecord, type RecordEntry } from "@/lib/api";
+import { fetchSessionRecord, subscribeEvents, type RecordEntry } from "@/lib/api";
 import { swallowed } from "@/lib/swallowed";
 import { InlineMarkdown } from "./markdown-content";
 
@@ -109,7 +122,15 @@ function Dot() {
 }
 
 // A qualifier reads as a word on the line, not as a chip: the colour carries the meaning, so a background only adds noise.
-function Qualifier({ children, tone, mark: Mark }: { children: string; tone?: string; mark?: typeof LuInfo }) {
+function Qualifier({
+  children,
+  tone,
+  mark: Mark,
+}: {
+  children: string;
+  tone?: string;
+  mark?: typeof LuInfo;
+}) {
   return (
     <Badge
       size="sm"
@@ -209,7 +230,15 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
     ) : null,
   ].filter(Boolean);
   return (
-    <Box borderWidth="1px" borderColor="border" borderRadius="md" px={2} py={1} bg="bg.subtle" opacity={retired(entry) ? 0.55 : 1}>
+    <Box
+      borderWidth="1px"
+      borderColor="border"
+      borderRadius="md"
+      px={2}
+      py={1.5}
+      bg="bg.subtle"
+      opacity={retired(entry) ? 0.55 : 1}
+    >
       <Body entry={entry} />
       <Flex align="center" gap={0.5} mt={0.5} wrap="wrap" color="fg.muted">
         {qualifiers.map((qualifier, index) => (
@@ -233,7 +262,13 @@ const Entry = memo(function Entry({ revised, labels }: { revised: Revised; label
             <Box key={older.id} opacity={0.65}>
               <Body entry={older} muted />
               {older.written_at ? (
-                <RelativeTime date={older.written_at} display="block" mt={1} textStyle="2xs" color="fg.subtle" />
+                <RelativeTime
+                  date={older.written_at}
+                  display="block"
+                  mt={1}
+                  textStyle="2xs"
+                  color="fg.subtle"
+                />
               ) : null}
             </Box>
           ))}
@@ -255,8 +290,18 @@ export function MemoryPanel({
   const [instructions, setInstructions] = useState<Revised[]>([]);
   // Set only once a read has come back, so an empty panel says "nothing yet" rather than "nothing".
   const [read, setRead] = useState(false);
-  // Bumped by the refresh control, which is how the record is re-read now that nothing polls.
-  const [refreshCount, setRefreshCount] = useState(0);
+  // Bumped when the daemon says this session's record grew, which is the only thing that can change it.
+  const [recordRevision, setRecordRevision] = useState(0);
+
+  // The record is written in one place and announced from it, so the panel follows the work without polling it.
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribeEvents((event) => {
+      const grew = event as { type: string; session?: string };
+      if (grew.type === "record_changed" && grew.session === sessionId)
+        setRecordRevision((count) => count + 1);
+    });
+  }, [sessionId]);
 
   // Declared inside the effect, as the other panels do, so nothing is called synchronously from its body.
   useEffect(() => {
@@ -288,8 +333,8 @@ export function MemoryPanel({
     return () => {
       cancelled = true;
     };
-    // Read on open and on request, not on a timer: the record only grows when a turn settles.
-  }, [sessionId, refreshCount]);
+    // Read on open and whenever it grew, not on a timer: the record only changes when a turn folds.
+  }, [sessionId, recordRevision]);
 
   const countRevisions = useCallback(
     (count: number) => translation("revisions", { count }),
@@ -338,16 +383,7 @@ export function MemoryPanel({
         title={translation("title")}
         onClose={onClose}
         closeLabel={translation("collapsePanel")}
-      >
-        <IconButton
-          aria-label={translation("refresh")}
-          title={translation("refresh")}
-          variant="ghost"
-          onClick={() => setRefreshCount((count) => count + 1)}
-        >
-          <LuRefreshCw size={13} />
-        </IconButton>
-      </PanelHeader>
+      />
       <PanelBody pt={1}>
         {findings.length === 0 && instructions.length === 0 ? (
           <PanelEmptyState

@@ -215,12 +215,16 @@ async def _session_append_ledger(params: dict) -> dict:
     """Append entries to a session's ledger. Append-only, so this neither revises nor removes."""
     if state.turn_store is None:
         return {"appended": 0}
+    session_id = str(params.get("session_id") or "")
     entries = params.get("entries") or []
     appended = await state.turn_store.append_ledger(
-        str(params.get("session_id") or ""),
+        session_id,
         str(params.get("ledger") or "observations"),
         list(entries),
     )
+    # The one place the record ever grows, so whoever is reading it is told here rather than left to poll.
+    if appended:
+        state.broadcaster.publish({"type": "record_changed", "session": session_id})
     return {"appended": appended}
 
 
