@@ -25,6 +25,19 @@ from langmesh.base.serialization import content_address, lines
 logger = logging.getLogger(__name__)
 
 
+def _opens_an_exchange(message) -> bool:
+    """Whether a message begins a unit of work: the person's own words, or a note standing in for them.
+
+    The goal review's instruction is the second kind. It is not the person and never becomes a directive, but
+    it does open work worth recording — read as a mere reminder, a goal running for a dozen turns would fold
+    every one of them into the exchange that started it, and so record nothing at all.
+    """
+    if not isinstance(message, HumanMessage):
+        return False
+    tags = message.additional_kwargs
+    return not tags.get("reminder") or bool(tags.get("opens_exchange"))
+
+
 def _without_provider_reasoning(messages: list) -> list:
     """The same messages with the provider-native reasoning cut out, since the turns it explained are gone."""
     # A sweep for its effect, not a transformation: `forget_carried_reasoning` edits each message in place.
@@ -193,7 +206,7 @@ class _CompactsContext:
         return {
             self._exchange_of(message)
             for message in self._conversation
-            if isinstance(message, HumanMessage) and not message.additional_kwargs.get("reminder")
+            if _opens_an_exchange(message)
         }
 
     async def observe_exchange(self) -> None:
@@ -226,19 +239,22 @@ class _CompactsContext:
             return []
 
     async def carried_record(self):
-        """The record to carry into this turn: what was established in exchanges the model can no longer see."""
+        """The record to carry into this turn, which the two ledgers earn a place in on different terms."""
         if self._turn_store is None:
             return None
         present = self._exchanges_present()
+        # A finding is a compressed account of turns that may still be in front of the model, and the turns
+        # themselves are the better copy. So it waits until they are gone, and then stands in for them.
         observations = [
             entry
             for entry in await self._ledger("observations")
             if entry.get("exchange") not in present
         ]
+        # An instruction does not wait. It governs the work rather than describing it, and being visible is not
+        # the same as being followed: a preference stated once, two hundred turns back, is buried long before it
+        # is forgotten. Restated last on every request, it is read last, which is the whole of what it needs.
         directives = [
-            entry
-            for entry in await self._ledger("directives")
-            if entry.get("exchange") not in present and entry.get("still_binding", True)
+            entry for entry in await self._ledger("directives") if entry.get("still_binding", True)
         ]
         if not observations and not directives:
             return None

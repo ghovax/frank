@@ -133,6 +133,8 @@ class _ComposedTurn:
     prepared: _Prepared
     turn_input: Any
     as_system_note: bool
+    # Whether the note begins a unit of work the record is written for, which a bare wake does not.
+    opens_exchange: bool
 
 
 class _TurnRunner:
@@ -531,6 +533,8 @@ class _TurnRunner:
             prepared=prepared,
             turn_input=self._turn_input,
             as_system_note=self._as_system_note,
+            # A goal turn is work, and work that recorded nothing would leave a long run with no memory at all.
+            opens_exchange=self._goal_continuation,
         )
 
     async def _stream_and_finalize(self, composed: _ComposedTurn) -> None:
@@ -541,7 +545,9 @@ class _TurnRunner:
             composed.prepared.runtime.resume_stream(resolved.resume_plans, resolved.resume_answers)
             if resolved.is_resume
             else composed.prepared.runtime.stream(
-                composed.turn_input, as_system_note=composed.as_system_note
+                composed.turn_input,
+                as_system_note=composed.as_system_note,
+                opens_exchange=composed.opens_exchange,
             )
         )
         async for event in event_source:

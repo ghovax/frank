@@ -423,7 +423,9 @@ class Session:
             if goal is None or not goal.is_open or not goal.direction.strip():
                 return
             self.runtime.note_goal_continuation()
-            async for event in self.runtime.stream(goal.direction, as_system_note=True):
+            async for event in self.runtime.stream(
+                goal.direction, as_system_note=True, opens_exchange=True
+            ):
                 yield event
 
     async def ask(self, message: str, *, attachments: Sequence[str | Path] = ()) -> str:

@@ -435,6 +435,8 @@ class _RunsTurns:
         self,
         user_message: str | list,
         as_system_note: bool = False,
+        # A note that nonetheless begins a unit of work, which is what the record is written per.
+        opens_exchange: bool = False,
         resume_plans: Optional[dict[str, dict]] = None,
         resume_answers: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator[TurnEvent]:
@@ -474,7 +476,9 @@ class _RunsTurns:
             self._close_dangling_tool_calls()
             # Usually prose, but an attachment turn carries a content list so a vision model sees the pixels.
             turn_message = (
-                self._reminder_message(user_message)
+                self._reminder_message(
+                    user_message, marks={"opens_exchange": True} if opens_exchange else None
+                )
                 if as_system_note and isinstance(user_message, str)
                 else HumanMessage(content=user_message)
             )
